@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+!.env.example
+.claude.local.md
+scratch/
+*.user.js.bak
+.tampermonkey/
