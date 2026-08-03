@@ -121,14 +121,32 @@ So: **the multiplier is read, never derived.** The whole band-intersection
 mechanism is deleted. The core calculation does not need to know why the
 player's reduction is what it is, only what it is.
 
-Two secondary observations, neither of which the calculation depends on:
+#### Reduction perks stack additively, not multiplicatively
 
-- `0.6` is exactly what **additive** stacking of the three documented perks
-  gives (20 + 10 + 10 = 40% off). The multiplicative model the guides assert
-  gives `0.648`. This is evidence that the guides are wrong about stacking, or
-  that Torn changed it.
-- `originCost` equals `actualCost` for every course in the sample, so no cost
-  reduction is in play. The field exists, so the model supports one.
+The player whose account produced this capture holds all three documented
+reduction perks: 10 education merits (−20%), Principal rank in the Education
+starter job (−10%), and the West Side University stock benefit block (−10%).
+
+- Additive: `1 − (0.20 + 0.10 + 0.10)` = **`0.60`**
+- Multiplicative, as guides 7 and 8 assert: `0.8 × 0.9 × 0.9` = `0.648`
+
+The observed ratio is `0.60` exactly. **The guides are wrong about stacking.**
+Guide 7 states the claim explicitly — "The −% perks don't stack additively, but
+are multiplied together. So the max you can get from perks is .8*.9*.9 = .648"
+— and the live payload contradicts it.
+
+Scope of the claim: this confirms the three perks *together* yield exactly 40%.
+It does not independently prove each perk's individual contribution, since only
+the combined figure is observable on one account. What-if overrides therefore
+assume additivity across arbitrary subsets, which is the natural reading but
+remains an assumption. It becomes falsifiable the moment any player's observed
+ratio disagrees with the sum of the perks they hold — so the panel reports both
+the observed ratio and the predicted one, and flags a mismatch rather than
+hiding it.
+
+One further observation the calculation does not depend on: `originCost` equals
+`actualCost` for every course in the sample, so no cost reduction is in play.
+The field exists, so the model supports one.
 
 ### Prerequisites are a real tree, not a tier heuristic
 
@@ -405,20 +423,15 @@ together in one commit, per repo rule 3.
 
 ## Open items
 
-1. **Reduction stacking rule, for what-if overrides only.** The core
-   calculation reads `actualDuration` and never needs it. But "what would this
-   look like with the WSU block?" requires knowing whether reductions stack
-   additively or multiplicatively. The observed `0.6` is consistent with
-   additive stacking of the three documented perks and inconsistent with the
-   guides' multiplicative claim — but that inference assumes the player holds
-   exactly those three perks, which is unconfirmed. **Resolve by asking the
-   player which reduction perks they hold**, then either ship additive or
-   drop what-if overrides from scope.
-2. **Book of Carols reduction.** 2h vs 6h, absent from the payload. Verify
+1. **Book of Carols reduction.** 2h vs 6h, absent from the payload. Verify
    in-game before v0.3.0.
-3. **Whether `actualDuration` updates live** as job points are spent on the
+2. **Whether `actualDuration` updates live** as job points are spent on the
    current course, or only recalculates at course start. Affects whether the
    consumable model can be validated against the payload.
+
+Resolved: the reduction stacking rule. Confirmed additive — see *Reduction
+perks stack additively, not multiplicatively* above. What-if overrides are in
+scope and ship with the ordering work.
 
 ## Decisions and alternatives
 
