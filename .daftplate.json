@@ -1,0 +1,101 @@
+{
+  "daftplate": "1.3.0",
+  "profile": "userscript",
+  "tokens": {
+    "YEAR": "2026",
+    "PROJECT_NAME": "torn-education-scheduler",
+    "PROJECT_SUMMARY": "A Tampermonkey userscript that turns Torn's education page into a live planner: it reads your own course progress and time-reduction perks, lets you pick a set of courses, and computes the exact finish date for the whole path. Runs only on torn.com's education page, with a collapsible themed panel modelled on Torn Bookie Live Scores."
+  },
+  "files": {
+    ".claude/orient-hook.mjs": {
+      "digest": "sha256:f737c68c211837818fbdf3a41f41bd7a7df1de396c536258a26379f82d61580c",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".claude/question-gate.mjs": {
+      "digest": "sha256:1e643590ba1d2e9f3b7c2c4efcdb88001dc9c59721f6d16d5cbfc1718e503812",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".claude/settings.json": {
+      "digest": "sha256:ebe5111706692fe5a5be01f16b1c2dcc4382fa44ad5432521b803206545e4e6c",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".editorconfig": {
+      "digest": "sha256:a6b98ea7cb6d61ed8d430dd0dffa46c87012b5cf859d4ce7207898954951fdcd",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".env.example": {
+      "digest": "sha256:84a9abecb4f1b0189132d0509add5825035ab4944e909654b61493e618ea118b",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".gitattributes": {
+      "digest": "sha256:52dc531ccfb106d91450d86f6e039145202b606cbb32394813d762cf608e1f7c",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".github/dependabot.yml": {
+      "digest": "sha256:f0376f2b1327cfcb7f7ce97b28b3c405f6f1b6290b2abddb31919db200bbf2d2",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".github/ISSUE_TEMPLATE/bug-report.yml": {
+      "digest": "sha256:0d83ba654fc3b8c33e91a5f81d0028d9942b7143fd5f1da98d8c9e77b6c3bc92",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".github/ISSUE_TEMPLATE/feature-request.yml": {
+      "digest": "sha256:f4f04872f58b20f99f445937225afdc103262ebc94efa95fcb33fef71777e30a",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".github/PULL_REQUEST_TEMPLATE.md": {
+      "digest": "sha256:dc76c0dde7bbb3c96c8dfee44c560181112826d44b00c58ca54f16e18cf8fab8",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".github/workflows/ci.yml": {
+      "digest": "sha256:9de4cdc19ccbfcd7d0f926e0e50acc378d5e606baed7ea0e1deffafd41aadf67",
+      "layer": "base",
+      "mode": "copied"
+    },
+    ".gitignore": {
+      "digest": "sha256:667b34df7d6dcb830b99098c87ed87acfb39b55405b6d5f24011e4f311d56c6f",
+      "layer": "profile",
+      "mode": "appended"
+    },
+    "CHANGELOG.md": {
+      "digest": "sha256:835e2e8e263c51aaad7340c64ed2da00252bfb4f4b657d48bf0317cd0d4eee95",
+      "layer": "base",
+      "mode": "copied"
+    },
+    "CLAUDE.md": {
+      "digest": "sha256:2a1e0f6c90d0742210e302ca22a5b7fc7c27e4c44e04b2c6116fccde52ad891e",
+      "layer": "base",
+      "mode": "copied"
+    },
+    "docs/architecture.md": {
+      "digest": "sha256:970c89c6d55bfa369006c2115c546b2a8517eb8bc9ba3e4ba3a42d69c2094f02",
+      "layer": "base",
+      "mode": "copied"
+    },
+    "docs/quick-ref-workflow.md": {
+      "digest": "sha256:00027a6c8480eca20d994ccf6584bf3a276eb669065f1a94137eee22140e9a77",
+      "layer": "base",
+      "mode": "copied"
+    },
+    "LICENSE": {
+      "digest": "sha256:3562c88a119f320e3e4dea2d97dd0b9313d797253db15924b1be2b02f55556c8",
+      "layer": "base",
+      "mode": "copied"
+    },
+    "README.md": {
+      "digest": "sha256:4408946405efa3d39ed14c7e52e8383673ba4d76b533338563f3922abf3a336d",
+      "layer": "base",
+      "mode": "copied"
+    }
+  }
+}
