@@ -20,6 +20,7 @@ In scope:
 
 - Course queue with prerequisite validation.
 - Finish date and time for the queue, and cumulative finish per course.
+- An earliest-possible finish date, computed from maximum consumable use.
 - A consumable budget (job points, Book of Carols) bounded by the schedule.
 - Ordering modes that front-load benefit.
 - Presets drawn from the community guides.
@@ -267,6 +268,41 @@ Ordering modes:
 All modes are a topological sort over the `parentId` graph, plus the tier-3
 rule, with a different tiebreak.
 
+## Two dates: planned and floor
+
+The panel reports **two** finish times for the same queue.
+
+| Figure | Meaning |
+| --- | --- |
+| **Planned finish** | Using the consumables the player says they will actually spend |
+| **Earliest possible finish** | Using the most consumables that could physically be spent |
+
+The second is a **floor computed from scratch**, not the planned date minus the
+leftover. It answers "if I threw everything at this, how fast could it go?" —
+and the gap between the two figures is the cost of not doing that.
+
+The two consumables are bounded differently, and this asymmetry is the point:
+
+- **Books of Carols are cooldown-bounded.** Each use adds a booster cooldown,
+  so a schedule of a given length admits only so many. The ceiling is derived,
+  and the player cannot exceed it however many they own.
+- **Job points are not bounded by the schedule.** A player may arrive with a
+  stockpile banked from months of working, so there is no defensible ceiling to
+  derive. The player enters the number they have or expect, and the floor
+  calculation takes them at their word.
+
+So the floor is: *maximum derivable Books of Carols* + *the job points the
+player says are available*. Only the first has a computed ceiling.
+
+### Booster cooldown
+
+Deriving the Book of Carols ceiling needs the player's current booster
+cooldown, which is **not** in `educationInitData`. Two same-origin endpoints the
+page already calls may carry it — `page.php?sid=UserApiData` and
+`sidebarAjaxAction.php?q=getBars`. If either exposes it, it is read; otherwise
+the panel takes it as a manual field. This is settled by inspection before the
+consumable work starts, not guessed at.
+
 ## Consumable budget and its fixed point
 
 The player enters how many job points and Books of Carols they expect to spend.
@@ -276,14 +312,18 @@ Carols reduces the current course and carries a 6-hour booster cooldown.
 
 Neither appears in `educationInitData`, so both stay user-entered.
 
-These couple in both directions: the schedule length bounds how many the player
-could possibly spend, but spending them shortens the schedule, which lowers
-that bound.
+The Book of Carols ceiling couples in both directions: the schedule length
+bounds how many can be used, but using them shortens the schedule, which lowers
+the bound.
 
-The engine resolves this by iteration:
+```text
+maxBooks(T) = floor((T − currentBoosterCooldown) / BOOSTER_COOLDOWN)
+```
+
+The engine resolves the circularity by iteration:
 
 1. Compute the schedule with the current spend.
-2. Compute the ceiling implied by that schedule length.
+2. Compute the Book ceiling implied by that schedule length.
 3. Clamp the spend to the ceiling.
 4. Repeat until stable.
 
@@ -291,8 +331,11 @@ The sequence is monotone decreasing and bounded below, so it converges. The
 implementation caps the iteration count and treats non-convergence as a bug,
 asserted in tests rather than silently truncated.
 
-The panel shows the entered figure alongside "you could use at most N over this
-period", so the ceiling is visible rather than an invisible clamp.
+Job points skip this loop entirely — they have no derived ceiling, so the
+entered figure is used directly in both the planned and floor calculations.
+
+The panel shows the entered Book figure alongside "you could use at most N over
+this period", so the ceiling is visible rather than an invisible clamp.
 
 A consumable can only reduce the course currently in progress, and cannot take
 a course below zero. Surplus spend does not roll forward into the next course;
@@ -309,7 +352,9 @@ A collapsible themed panel, modelled on Torn Bookie Live Scores: default theme
 matching Torn's styling, style settings, and an open/hide action.
 
 The panel carries the queue, the reduction figure read from the payload,
-what-if overrides, the consumable budget, and the schedule output.
+what-if overrides, the consumable budget, and the schedule output — which is
+two dates, not one: the planned finish and the earliest possible finish, shown
+together with the gap between them.
 
 Torn's own course list receives an ordinal marker and a highlight class on
 queued courses. No text is injected into the host page's rows. This gives the
@@ -382,6 +427,13 @@ The engine is tested in Node under `npm test`, with no browser and no network:
 - Reduction-ratio constancy, including the failure path when it is not
   constant.
 - Fixed-point convergence, including that it terminates.
+- The floor is never later than the planned finish, for any budget — a property
+  test, since an "earliest possible" date that lands after the planned one is
+  the failure mode a reader would not question.
+- The floor equals the planned finish exactly when the player already spends
+  the maximum.
+- Book ceiling derivation against booster cooldown, including a cooldown longer
+  than the whole schedule (ceiling zero, not negative).
 - Payload validation: missing fields, `success: false`, unknown status values.
 - Import parsing: malformed, hostile, and stale-catalogue inputs.
 
@@ -414,7 +466,7 @@ to go public never has to re-litigate it.
 | --- | --- |
 | v0.1.0 | Payload fetch, engine, panel, hand-built queue, finish date, local persistence |
 | v0.2.0 | Row markers, prerequisite validation surfaced in the UI, drift and failure states |
-| v0.3.0 | Consumable budget and fixed point |
+| v0.3.0 | Consumable budget, fixed point, and the earliest-possible floor date |
 | v0.4.0 | Ordering modes |
 | v0.5.0 | Guide presets, export/import string |
 
@@ -425,7 +477,12 @@ together in one commit, per repo rule 3.
 
 1. **Book of Carols reduction.** 2h vs 6h, absent from the payload. Verify
    in-game before v0.3.0.
-2. **Whether `actualDuration` updates live** as job points are spent on the
+2. **Booster cooldown source.** Needed for the Book ceiling. Check
+   `page.php?sid=UserApiData` and `sidebarAjaxAction.php?q=getBars` before the
+   consumable work; fall back to a manual field if neither carries it.
+3. **Whether the booster cooldown blocks or stacks.** The ceiling formula
+   assumes one Book per cooldown period. Verify in-game alongside item 1.
+4. **Whether `actualDuration` updates live** as job points are spent on the
    current course, or only recalculates at course start. Affects whether the
    consumable model can be validated against the payload.
 

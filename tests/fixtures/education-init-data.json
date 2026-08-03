@@ -1,0 +1,2695 @@
+{
+ "success": true,
+ "categories": [
+  {
+   "id": 4,
+   "name": "Biology",
+   "courses": [
+    {
+     "id": 34,
+     "prefix": "BIO1340",
+     "name": "Introduction to Biochemistry",
+     "description": "Vaginal Didelphys to start, followed by a course of DNA synthesis, finished off with a crash course in mitosis. The most exciting introduction in science.",
+     "status": "completed",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 5 manual labor upon completion",
+      "Gain 50 intelligence upon completion",
+      "Gain 5 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 35,
+     "prefix": "BIO2350",
+     "name": "Evolution",
+     "description": "Are you the missing link? At the end of this course you'll know more about Neanderthal man than the Discovery Channel.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a 1% damage bonus to all weapons"
+     ],
+     "workingStatsGain": [
+      "Gain 50 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 2000,
+     "actualCost": 2000,
+     "parentId": 34
+    },
+    {
+     "id": 36,
+     "prefix": "BIO2360",
+     "name": "Intermediate Biochemistry",
+     "description": "It's time to start learning about the world of medicine, when to use it, how to administer it, and finally its synthesis.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a bonus of 10% to medical item effectiveness"
+     ],
+     "workingStatsGain": [
+      "Gain 5 manual labor upon completion",
+      "Gain 55 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 2500,
+     "actualCost": 2500,
+     "parentId": 34
+    },
+    {
+     "id": 37,
+     "prefix": "BIO2370",
+     "name": "Advanced Biochemistry",
+     "description": "Starting with the dark world of narcotics and the recreational use of drugs, and finishing with making your own pain killers, you'll learn all there is to know about medicine. ",
+     "status": "inProgress",
+     "learningOutcomes": [
+      "Gain a further 10% bonus to medical item effectiveness"
+     ],
+     "workingStatsGain": [
+      "Gain 65 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 2750,
+     "actualCost": 2750,
+     "parentId": 36
+    },
+    {
+     "id": 38,
+     "prefix": "BIO2380",
+     "name": "Fundamentals of Neurobiology",
+     "description": "We all know how to strike a nerve with someone. Here you'll learn which nerve will have your opponent on the floor crying like a 5 year old girl.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain a 10% damage increase when hitting an opponent's throat"
+     ],
+     "workingStatsGain": [
+      "Gain 65 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2800,
+     "actualCost": 2800,
+     "parentId": 34
+    },
+    {
+     "id": 39,
+     "prefix": "BIO2390",
+     "name": "Chromosomes and Gene Functions",
+     "description": "We don't just wear them. Learn about their chemical structure and composition here.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 5 manual labor upon completion",
+      "Gain 170 intelligence upon completion",
+      "Gain 120 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 900,
+     "actualCost": 900,
+     "parentId": 34
+    },
+    {
+     "id": 40,
+     "prefix": "BIO2400",
+     "name": "Forensic Science",
+     "description": "You've seen it on TV. Now find out how to do it in real life.",
+     "status": "available",
+     "learningOutcomes": [
+      "Decrease an opponent's stealthiness by 0.5"
+     ],
+     "workingStatsGain": [
+      "Gain 10 manual labor upon completion",
+      "Gain 80 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 3000,
+     "actualCost": 3000,
+     "parentId": 34
+    },
+    {
+     "id": 41,
+     "prefix": "BIO2410",
+     "name": "Anatomy",
+     "description": "The foot bone is connected to the ankle bone, The ankle bone is connected to the leg bone, The leg bone is connected to the hip bone, and so on...",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain a 3% chance increase of achieving a critical hit"
+     ],
+     "workingStatsGain": [
+      "Gain 15 manual labor upon completion",
+      "Gain 75 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 34
+    },
+    {
+     "id": 127,
+     "prefix": "BIO2127",
+     "name": "Intravenous Therapy",
+     "description": "Put that fear of needles behind you by learning how to successfully administer a blood transfusion.",
+     "status": "available",
+     "learningOutcomes": [
+      "Ability to withdraw and deliver blood"
+     ],
+     "workingStatsGain": [
+      "Gain 40 intelligence upon completion",
+      "Gain 35 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 34
+    },
+    {
+     "id": 42,
+     "prefix": "BIO3420",
+     "name": "Bachelor of Biology",
+     "description": "To end your degree in biology you will learn about hormones and neurotransmitters.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain the ability to equip needles in your temporary slot"
+     ],
+     "workingStatsGain": [
+      "Gain 25 manual labor upon completion",
+      "Gain 75 intelligence upon completion",
+      "Gain 30 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3024000,
+     "actualDuration": 1814400,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 1,
+   "name": "Business",
+   "courses": [
+    {
+     "id": 1,
+     "prefix": "BUS1100",
+     "name": "Introduction to Business",
+     "description": "This is where you'll start your life in the fast moving world of business. Basics will be learnt here.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 50 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 2,
+     "prefix": "BUS2200",
+     "name": "Statistics",
+     "description": "Everything has an outcome. This course will help you to understand the maths and basis behind this.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 2% productivity for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 5 manual labor upon completion",
+      "Gain 60 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 500,
+     "actualCost": 500,
+     "parentId": 1
+    },
+    {
+     "id": 3,
+     "prefix": "BUS2300",
+     "name": "Communication",
+     "description": "In today's world, communication cannot be avoided. Learn how to leave a huge impact with very little words.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 5 effectiveness for the employees in your company"
+     ],
+     "workingStatsGain": [
+      "Gain 65 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 600,
+     "actualCost": 600,
+     "parentId": 1
+    },
+    {
+     "id": 4,
+     "prefix": "BUS2400",
+     "name": "Marketing",
+     "description": "Being seen is key. This course will help you to understand, when and where to market your product.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 3% increase in advertising effectiveness for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 15 manual labor upon completion",
+      "Gain 75 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 800,
+     "actualCost": 800,
+     "parentId": 1
+    },
+    {
+     "id": 5,
+     "prefix": "BUS2500",
+     "name": "Corporate Finance",
+     "description": "Keeping a correct record of finances is very important. Here you will learn basic book keeping.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 2% productivity for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 80 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 500,
+     "actualCost": 500,
+     "parentId": 1
+    },
+    {
+     "id": 6,
+     "prefix": "BUS2600",
+     "name": "Corporate Strategy",
+     "description": "Strategizing within a company environment is essential. Learn how to maximize your efforts with brainstorming and flowcharts.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 7 effectiveness for the employees in your company"
+     ],
+     "workingStatsGain": [
+      "Gain 95 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 1
+    },
+    {
+     "id": 7,
+     "prefix": "BUS2700",
+     "name": "Pricing Strategy",
+     "description": "Learn how to price your products to stay ahead of your competitors - making maximum profit.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 10% perceived product value for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 75 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 800,
+     "actualCost": 800,
+     "parentId": 1
+    },
+    {
+     "id": 8,
+     "prefix": "BUS2800",
+     "name": "Logistics",
+     "description": "Everything has to get from A to B. Using simple mathematics you can work out the easiest method.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 2% productivity for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 25 manual labor upon completion",
+      "Gain 50 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 500,
+     "actualCost": 500,
+     "parentId": 1
+    },
+    {
+     "id": 9,
+     "prefix": "BUS2900",
+     "name": "Product Management",
+     "description": "Knowing which products to sell and when will make or break your business. Learn how to determine trends and fashions.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 5% perceived product value for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 10 manual labor upon completion",
+      "Gain 60 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 750,
+     "actualCost": 750,
+     "parentId": 1
+    },
+    {
+     "id": 10,
+     "prefix": "BUS2100",
+     "name": "Business Ethics",
+     "description": "Before even starting a business, whether it's Politics or Religion, you need to establish your own set of morals.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 2% productivity for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 60 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 600,
+     "actualCost": 600,
+     "parentId": 1
+    },
+    {
+     "id": 11,
+     "prefix": "BUS2110",
+     "name": "Human Resource Management",
+     "description": "Too many cooks spoil the broth. Employ only who you need, and learn how to decipher who is worth their weight in gold.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 20% passive bonus to employee working stats in your company"
+     ],
+     "workingStatsGain": [
+      "Gain 20 manual labor upon completion",
+      "Gain 50 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 750,
+     "actualCost": 750,
+     "parentId": 1
+    },
+    {
+     "id": 12,
+     "prefix": "BUS2120",
+     "name": "E-Commerce",
+     "description": "With the internet dominating business sectors, learn how to promote and sell your product globally.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 2% productivity for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 50 intelligence upon completion",
+      "Gain 40 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 800,
+     "actualCost": 800,
+     "parentId": 1
+    },
+    {
+     "id": 13,
+     "prefix": "BUS3130",
+     "name": "Bachelor of Commerce",
+     "description": "Finalise your degree by learning how to get the most of your competitors and staff.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock new size, storage size & staff room upgrades for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 100 intelligence upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3024000,
+     "actualDuration": 1814400,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "name": "Combat Training",
+   "courses": [
+    {
+     "id": 78,
+     "prefix": "CBT1780",
+     "name": "Introduction to Combat",
+     "description": "The purposeful violent conflict intended to hurt an opponent. This introductory course will afford you all the combat knowledge you'll need.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 50 manual labor upon completion",
+      "Gain 50 intelligence upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 79,
+     "prefix": "CBT2790",
+     "name": "Military Psychology",
+     "description": "Learn the psychology behind war. Research the design and application of experiments during military operations.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to speed"
+     ],
+     "workingStatsGain": [
+      "Gain 45 manual labor upon completion",
+      "Gain 55 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1200,
+     "actualCost": 1200,
+     "parentId": 78
+    },
+    {
+     "id": 80,
+     "prefix": "CBT2800",
+     "name": "Study of War and Technology",
+     "description": "Technology has been used in battle for hundreds of years - discover the history of military technology through the ages.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 20 manual labor upon completion",
+      "Gain 95 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1250,
+     "actualCost": 1250,
+     "parentId": 78
+    },
+    {
+     "id": 81,
+     "prefix": "CBT2810",
+     "name": "Study of Society and Warfare",
+     "description": "Learn about the social impact of war. What are the short and long term effects of major conflict?",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 20 manual labor upon completion",
+      "Gain 110 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1300,
+     "actualCost": 1300,
+     "parentId": 78
+    },
+    {
+     "id": 82,
+     "prefix": "CBT2820",
+     "name": "Study of Machine Guns",
+     "description": "Here you will learn the history, science, evolution and technology behind the machine gun.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a +1.00 accuracy increase with Machine Guns"
+     ],
+     "workingStatsGain": [
+      "Gain 30 manual labor upon completion",
+      "Gain 70 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 78
+    },
+    {
+     "id": 83,
+     "prefix": "CBT2830",
+     "name": "Study of Submachine Guns",
+     "description": "The bastard love child of a pistol and a machine gun, generally used by law enforcement and tactical teams. Learn how they came about with this course.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a +1.00 accuracy increase with Submachine guns"
+     ],
+     "workingStatsGain": [
+      "Gain 30 manual labor upon completion",
+      "Gain 70 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 78
+    },
+    {
+     "id": 84,
+     "prefix": "CBT2840",
+     "name": "Study of Pistols",
+     "description": "Contrary to popular belief, a pistol is not the same as a handgun. Learn this and more with this popular course.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a +1.00 accuracy increase with Pistols"
+     ],
+     "workingStatsGain": [
+      "Gain 30 manual labor upon completion",
+      "Gain 70 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 78
+    },
+    {
+     "id": 85,
+     "prefix": "CBT2850",
+     "name": "Study of Rifles",
+     "description": "Aimed to be shot from the shoulder and used during warfare, hunting and shooting sports there is more to this gun than meets the eye.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a +1.00 accuracy increase with Rifles"
+     ],
+     "workingStatsGain": [
+      "Gain 30 manual labor upon completion",
+      "Gain 70 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 78
+    },
+    {
+     "id": 86,
+     "prefix": "CBT2860",
+     "name": "Study of Heavy Artillery",
+     "description": "These weapons deliver a huge blow. Originating in ancient times, heavy artillery bases its firepower on using an engine of sort to discharge the weapons.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a +1.00 accuracy increase with Heavy Artillery"
+     ],
+     "workingStatsGain": [
+      "Gain 30 manual labor upon completion",
+      "Gain 70 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 78
+    },
+    {
+     "id": 125,
+     "prefix": "CBT2125",
+     "name": "Study of Shotguns",
+     "description": "One of the primary weapons used in close-quarter combat. They fire loads consisting of small metal balls held in a cartridge. Learn more in this course!",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a +1.00 accuracy increase with Shotguns"
+     ],
+     "workingStatsGain": [
+      "Gain 30 manual labor upon completion",
+      "Gain 70 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 78
+    },
+    {
+     "id": 87,
+     "prefix": "CBT3870",
+     "name": "Bachelor of Military Arts and Science",
+     "description": "Finally, which weapon will you specialize in. Find out in this course.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Start gaining weapon experience, specializing in individual weapons for increased damage and accuracy"
+     ],
+     "workingStatsGain": [
+      "Gain 75 manual labor upon completion",
+      "Gain 75 intelligence upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 4233600,
+     "actualDuration": 2540160,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "name": "Computer Science",
+   "courses": [
+    {
+     "id": 52,
+     "prefix": "CMT1520",
+     "name": "Introduction to Computing",
+     "description": "Mastered touch typing? Now continue your journey into the world of Information Technology with our introductory course.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Unlock the Cracking crime",
+      "Gain the ability to code Simple viruses"
+     ],
+     "workingStatsGain": [
+      "Gain 45 intelligence upon completion",
+      "Gain 50 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 23,
+     "prefix": "CMT2230",
+     "name": "Web Design and Development",
+     "description": "Anyone can make a website. But how do you make a good one? Learn the fundamentals of web design and development in this short yet comprehensive course.",
+     "status": "available",
+     "learningOutcomes": [
+      "Unlock the ability to create websites for use in Bootlegging and Scamming"
+     ],
+     "workingStatsGain": [
+      "Gain 35 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 300,
+     "actualCost": 300,
+     "parentId": 52
+    },
+    {
+     "id": 53,
+     "prefix": "CMT2530",
+     "name": "Intermediate Programming",
+     "description": "Before we start making our own websites we need to learn the code. Plus you'll look cool.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain the ability to code Polymorphic and Tunneling viruses"
+     ],
+     "workingStatsGain": [
+      "Gain 65 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 800,
+     "actualCost": 800,
+     "parentId": 52
+    },
+    {
+     "id": 56,
+     "prefix": "CMT2560",
+     "name": "Algorithms and Advanced Programming",
+     "description": "This course delves into complex algorithms and programming techniques that enhance problem-solving skills in computer science. Students will learn about data structures, algorithmic strategies like recursion, and optimization techniques, applying these in various programming languages.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain the ability to code Armored, Stealth, and Firewalk viruses"
+     ],
+     "workingStatsGain": [
+      "Gain 100 intelligence upon completion",
+      "Gain 50 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1200,
+     "actualCost": 1200,
+     "parentId": 53
+    },
+    {
+     "id": 130,
+     "prefix": "CMT2130",
+     "name": "Web Security and Penetration Testing",
+     "description": "Participants learn to identify, analyze, and mitigate vulnerabilities in web applications. The course covers techniques in ethical hacking, including how to perform penetration tests to assess the security of web systems.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock the extraction of email addresses through data breaches in Scamming"
+     ],
+     "workingStatsGain": [
+      "Gain 40 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 53
+    },
+    {
+     "id": 131,
+     "prefix": "CMT2131",
+     "name": "Automated Data Mining & Processing",
+     "description": "Here we learn how to utilize algorithms and automation to extract and process large sets of data efficiently. ",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock the development of scrapers to extract email addresses from websites for use in Scamming"
+     ],
+     "workingStatsGain": [
+      "Gain 85 intelligence upon completion",
+      "Gain 60 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 53
+    },
+    {
+     "id": 54,
+     "prefix": "CMT2540",
+     "name": "Networking",
+     "description": "Maybe the most problematic area of IT. Learn how to set up your own home network without exposing your details to the rest of your street.",
+     "status": "available",
+     "learningOutcomes": [
+      "Unlock hacking crimes (Crimes 1.0)"
+     ],
+     "workingStatsGain": [
+      "Gain 75 intelligence upon completion",
+      "Gain 35 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 900,
+     "actualCost": 900,
+     "parentId": 52
+    },
+    {
+     "id": 61,
+     "prefix": "CMT2610",
+     "name": "Computer Security and Defense",
+     "description": "Annoyed with a firewall not letting you access your friend's computers? Learn here how to bypass most modern security systems.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 10% increase in hacking crime success rate (Crimes 1.0)"
+     ],
+     "workingStatsGain": [
+      "Gain 175 intelligence upon completion",
+      "Gain 55 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 3200,
+     "actualCost": 3200,
+     "parentId": 54
+    },
+    {
+     "id": 55,
+     "prefix": "CMT2550",
+     "name": "Computer Repair",
+     "description": "Make a business out of it. Repairing computers is so much easier than you'd have thought. ",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 25 manual labor upon completion",
+      "Gain 90 intelligence upon completion",
+      "Gain 55 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 850,
+     "actualCost": 850,
+     "parentId": 52
+    },
+    {
+     "id": 57,
+     "prefix": "CMT2570",
+     "name": "Fundamentals of Computer Architecture",
+     "description": "The thermal dynamics of a high-performance computer rig are crucial for its efficiency and stability. In this course, you will learn to identify signs of overheating through system diagnostics and apply targeted optimization techniques to reduce the strain on your hardware.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain a 25% reduction in heat generated by rig components"
+     ],
+     "workingStatsGain": [
+      "Gain 150 intelligence upon completion",
+      "Gain 95 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 52
+    },
+    {
+     "id": 128,
+     "prefix": "CMT2128",
+     "name": "Overclocking",
+     "description": "CPUs are capable of more than the manufacturer would have you believe. Learn how to safely push your computing components to levels of performance far beyond their factory settings.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock rig overclocking up to 30%"
+     ],
+     "workingStatsGain": [
+      "Gain 25 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 500,
+     "actualCost": 500,
+     "parentId": 57
+    },
+    {
+     "id": 129,
+     "prefix": "CMT2129",
+     "name": "Advanced Overclocking",
+     "description": "This class investigates sophisticated, cutting-edge techniques for maximizing the computing power of your rig. By taking some calculated risks, you will discover how to fully optimize your system by exploring the very limit of its capabilities.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock rig overclocking up to 50%"
+     ],
+     "workingStatsGain": [
+      "Gain 30 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 500,
+     "actualCost": 500,
+     "parentId": 128
+    },
+    {
+     "id": 58,
+     "prefix": "CMT2580",
+     "name": "Software Engineering",
+     "description": "This course equips students with the principles and practices of designing, developing, and maintaining reliable and efficient software systems.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain a 20% decrease in virus coding times"
+     ],
+     "workingStatsGain": [
+      "Gain 120 intelligence upon completion",
+      "Gain 65 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2200,
+     "actualCost": 2200,
+     "parentId": 52
+    },
+    {
+     "id": 59,
+     "prefix": "CMT2590",
+     "name": "Quantum Computing",
+     "description": "An introduction to the principles and applications of quantum mechanics in computing. Students will explore quantum algorithms, quantum entanglement, and superposition, understanding how these concepts enable vastly enhanced computing power.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 250 intelligence upon completion",
+      "Gain 30 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1950,
+     "actualCost": 1950,
+     "parentId": 52
+    },
+    {
+     "id": 60,
+     "prefix": "CMT2600",
+     "name": "Natural Language Engineering",
+     "description": "Theoretical or descriptive linguistics for computers. The bridge between traditional languages and the application of real world use.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain a 10% decrease in virus coding times"
+     ],
+     "workingStatsGain": [
+      "Gain 275 intelligence upon completion",
+      "Gain 55 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2350,
+     "actualCost": 2350,
+     "parentId": 52
+    },
+    {
+     "id": 62,
+     "prefix": "CMT3620",
+     "name": "Bachelor of Computer Science",
+     "description": "To finish off your course you will learn more about cryptology, in particular how to completely hide your tracks and stay anonymous within the digital world.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain the ability to send mails and cash anonymously"
+     ],
+     "workingStatsGain": [
+      "Gain 115 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 4233600,
+     "actualDuration": 2540160,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "name": "General Studies",
+   "courses": [
+    {
+     "id": 112,
+     "prefix": "GEN1112",
+     "name": "Introduction to General Studies",
+     "description": "Don't let the name fool you. This degree is made up from difficult courses designed to give you a better understanding in life.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 25 manual labor upon completion",
+      "Gain 25 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 113,
+     "prefix": "GEN2113",
+     "name": "Driving License",
+     "description": "You'll need this to get around the city. Our crash course should give you a license without fail.\t",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock driving related crimes (Crimes 1.0)"
+     ],
+     "workingStatsGain": [
+      "Gain 25 manual labor upon completion",
+      "Gain 35 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 112
+    },
+    {
+     "id": 114,
+     "prefix": "GEN2114",
+     "name": "Astronomy",
+     "description": "Orion's Belt does actually exist, if you know where to look. This will give you an understanding of the constellations of the night sky.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 75 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 500,
+     "actualCost": 500,
+     "parentId": 112
+    },
+    {
+     "id": 115,
+     "prefix": "GEN2115",
+     "name": "Mechanical Arts",
+     "description": "Jack of all trades, master of none is no more with our Tailoring, Agriculture, Architecture, Warfare, Trade, Cooking and Blacksmithing module.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 45 manual labor upon completion",
+      "Gain 75 intelligence upon completion",
+      "Gain 45 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 600,
+     "actualCost": 600,
+     "parentId": 112
+    },
+    {
+     "id": 116,
+     "prefix": "GEN2116",
+     "name": "General Mechanics",
+     "description": "Here you'll learn about constant acceleration equations and general kinematics.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a +1.00 accuracy increase with Temporary weapons"
+     ],
+     "workingStatsGain": [
+      "Gain 25 manual labor upon completion",
+      "Gain 35 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 112
+    },
+    {
+     "id": 117,
+     "prefix": "GEN2117",
+     "name": "Basic English",
+     "description": "Before we can write a book we need to get a grip on the concept of English.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 75 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 890,
+     "actualCost": 890,
+     "parentId": 112
+    },
+    {
+     "id": 118,
+     "prefix": "GEN2118",
+     "name": "Creative Writing",
+     "description": "Story time! Learn how to keep a mind infatuated with your own literature.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 85 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 895,
+     "actualCost": 895,
+     "parentId": 112
+    },
+    {
+     "id": 119,
+     "prefix": "GEN2119",
+     "name": "General Science",
+     "description": "Basic chemistry will have you well on your way to making your own bombs.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 5% damage increase with Temporary weapons"
+     ],
+     "workingStatsGain": [
+      "Gain 100 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1200,
+     "actualCost": 1200,
+     "parentId": 112
+    },
+    {
+     "id": 120,
+     "prefix": "GEN2120",
+     "name": "Survival Skills",
+     "description": "Learning how to exist in the wild is a difficult thing. People have made a living from it. Can you?",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 15% hunting bonus"
+     ],
+     "workingStatsGain": [
+      "Gain 75 manual labor upon completion",
+      "Gain 45 intelligence upon completion",
+      "Gain 55 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 725,
+     "actualCost": 725,
+     "parentId": 112
+    },
+    {
+     "id": 122,
+     "prefix": "GEN2122",
+     "name": "Newtonian Physics",
+     "description": "Did you know that no matter what, you are attracted to the person next to you? Learn more about gravity on this course.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 125 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 2500,
+     "actualCost": 2500,
+     "parentId": 112
+    },
+    {
+     "id": 123,
+     "prefix": "GEN2123",
+     "name": "Ivory Crafting",
+     "description": "The teeth and tusks of the 'ebur', Latin for elephant, can be very beautiful when carved. In this course you will learn the required skills to do so.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 40 manual labor upon completion",
+      "Gain 60 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 112
+    },
+    {
+     "id": 121,
+     "prefix": "GEN3121",
+     "name": "Bachelor of General Studies",
+     "description": "Education only broadens the mind. The rest is up to you. In this final course you will learn how to research and make the most of what you discover.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 10% working stat increase bonus for all future educations that are completed"
+     ],
+     "workingStatsGain": [
+      "Gain 75 manual labor upon completion",
+      "Gain 25 intelligence upon completion",
+      "Gain 35 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3628800,
+     "actualDuration": 2177280,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "name": "Health & Fitness",
+   "courses": [
+    {
+     "id": 103,
+     "prefix": "HAF1103",
+     "name": "Introduction to Health and Fitness",
+     "description": "This course will send you on your way to a healthy lifestyle. These basic courses will train your overall fitness and ability in physical activities.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 75 manual labor upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 104,
+     "prefix": "HAF2104",
+     "name": "Aerobics",
+     "description": "Nothing like a stretch in the morning to help yourself feel better. Combine this with general strength exercise to create an all-round, more active you.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to dexterity"
+     ],
+     "workingStatsGain": [
+      "Gain 65 manual labor upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 900,
+     "actualCost": 900,
+     "parentId": 103
+    },
+    {
+     "id": 105,
+     "prefix": "HAF2105",
+     "name": "Acrobatics",
+     "description": "Performing arts. This combines balance, agility and motor coordination. This will increase your speed and full body movement.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to speed"
+     ],
+     "workingStatsGain": [
+      "Gain 65 manual labor upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 103
+    },
+    {
+     "id": 106,
+     "prefix": "HAF2106",
+     "name": "Power Lifting",
+     "description": "Not just weight lifting. These exercises won't leave you bulkier than a purchase from Makro. ",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to strength"
+     ],
+     "workingStatsGain": [
+      "Gain 125 manual labor upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1150,
+     "actualCost": 1150,
+     "parentId": 103
+    },
+    {
+     "id": 107,
+     "prefix": "HAF2107",
+     "name": "Yoga",
+     "description": "Originating in India, and commonly a Hindu form of exercise, help find mental and physical discipline with this traditional method.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 2% passive bonus to strength"
+     ],
+     "workingStatsGain": [
+      "Gain 75 manual labor upon completion",
+      "Gain 45 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1200,
+     "actualCost": 1200,
+     "parentId": 103
+    },
+    {
+     "id": 108,
+     "prefix": "HAF2108",
+     "name": "Swimming",
+     "description": "Forget floats, slides, rapids and fun swim. To pass this course you'll have to be able to swim 10 miles.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to dexterity"
+     ],
+     "workingStatsGain": [
+      "Gain 95 manual labor upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 103
+    },
+    {
+     "id": 109,
+     "prefix": "HAF2109",
+     "name": "Marathon Training",
+     "description": "26 miles? Crazy? Not with this course, train up to achieve your goal.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 3% passive bonus to speed"
+     ],
+     "workingStatsGain": [
+      "Gain 150 manual labor upon completion",
+      "Gain 75 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 2000,
+     "actualCost": 2000,
+     "parentId": 103
+    },
+    {
+     "id": 110,
+     "prefix": "HAF2110",
+     "name": "Sailing",
+     "description": "Sail the 7 seas with our course. Here you'll learn how to set sail and catch the wind!",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 65 manual labor upon completion",
+      "Gain 45 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 103
+    },
+    {
+     "id": 111,
+     "prefix": "HAF3111",
+     "name": "Bachelor of Health Sciences",
+     "description": "After all this exercise you'll be as fit as a flea. No one will be able to run away from you now!",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 25% increase in speed during an opponent's escape attempt"
+     ],
+     "workingStatsGain": [
+      "Gain 75 manual labor upon completion",
+      "Gain 20 intelligence upon completion",
+      "Gain 65 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3024000,
+     "actualDuration": 1814400,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "name": "History",
+   "courses": [
+    {
+     "id": 14,
+     "prefix": "HIS1140",
+     "name": "Introduction to History",
+     "description": "You don't need to be old to discover history. Start your journey through the tales of time with this introductory course.",
+     "status": "completed",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 30 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 15,
+     "prefix": "HIS2150",
+     "name": "Aims & Methods in Archaeology",
+     "description": "Who says a rusty sword isn't worth anything? Learn here what to look for and how to work out if something is valuable.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 15 manual labor upon completion",
+      "Gain 135 intelligence upon completion",
+      "Gain 75 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 500,
+     "actualCost": 500,
+     "parentId": 14
+    },
+    {
+     "id": 16,
+     "prefix": "HIS2160",
+     "name": "Ancient Japanese History",
+     "description": "They are not only famous for silicon boards and bad karaoke. Learn the mysterious art and methods of the ancient Japanese.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain a 10% damage increase with Japanese blade weapons"
+     ],
+     "workingStatsGain": [
+      "Gain 20 manual labor upon completion",
+      "Gain 15 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 950,
+     "actualCost": 950,
+     "parentId": 14
+    },
+    {
+     "id": 17,
+     "prefix": "HIS2170",
+     "name": "Medieval History",
+     "description": "This wasn't any mid life crisis. Learn about the fall of the Western Roman Empire against the Barbarian's brutal attacks in the middle ages.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain a 2% bonus to all melee damage"
+     ],
+     "workingStatsGain": [
+      "Gain 25 manual labor upon completion",
+      "Gain 15 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 950,
+     "actualCost": 950,
+     "parentId": 14
+    },
+    {
+     "id": 18,
+     "prefix": "HIS2180",
+     "name": "Medieval Archaeology",
+     "description": "Although this course focuses on medieval coins - learn what other relics from 500-1500 AD are actually worth keeping, and all the ins and outs of the dark ages.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain the ability to find medieval coins"
+     ],
+     "workingStatsGain": [
+      "Gain 35 manual labor upon completion",
+      "Gain 10 intelligence upon completion",
+      "Gain 40 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 850,
+     "actualCost": 850,
+     "parentId": 14
+    },
+    {
+     "id": 19,
+     "prefix": "HIS2190",
+     "name": "South Asian Archaeology",
+     "description": "In this module, learn about Diwali - The Festival of lights, and other South Asian religious festivals. You will also study the fine sculptures crafted by the Buddhists and the Hindus. ",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain the ability to find Asian sculptures and Companion pages"
+     ],
+     "workingStatsGain": [
+      "Gain 15 manual labor upon completion",
+      "Gain 35 intelligence upon completion",
+      "Gain 35 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 850,
+     "actualCost": 850,
+     "parentId": 14
+    },
+    {
+     "id": 20,
+     "prefix": "HIS2200",
+     "name": "Egyptian Archaeology",
+     "description": "Most of the knowledge learnt here will be about things even older than your grandparents! Here you'll learn all about the Egyptian way of life including the complicated rules of some early board games.",
+     "status": "available",
+     "learningOutcomes": [
+      "Gain the ability to find Senet board pieces and amulets"
+     ],
+     "workingStatsGain": [
+      "Gain 10 manual labor upon completion",
+      "Gain 35 intelligence upon completion",
+      "Gain 45 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 850,
+     "actualCost": 850,
+     "parentId": 14
+    },
+    {
+     "id": 21,
+     "prefix": "HIS3210",
+     "name": "Bachelor of History",
+     "description": "Putting a price on history isn't an easy task. Finish your degree by learning how to value precious items. ",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock the museum, sets of artifacts and other collectibles can be exchanged here for points"
+     ],
+     "workingStatsGain": [
+      "Gain 50 intelligence upon completion",
+      "Gain 55 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3628800,
+     "actualDuration": 2177280,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "name": "Law",
+   "courses": [
+    {
+     "id": 88,
+     "prefix": "LAW1880",
+     "name": "Introduction to Law",
+     "description": "A system of rules? Most of which can be bent slightly! This introduction to Law will not leave you bored.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 50 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 89,
+     "prefix": "LAW2890",
+     "name": "Public Law",
+     "description": "Learn about the part of law that governs the relationship between the people and the country.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Reduce the chance of being caught when trying to escape from jail"
+     ],
+     "workingStatsGain": [
+      "Gain 45 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 88
+    },
+    {
+     "id": 90,
+     "prefix": "LAW2900",
+     "name": "Common Law",
+     "description": "The only time most of you will put on a suit. This part of law is used in courts for decisions and judgements.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain the ability to buy yourself and others out of jail while you are in jail yourself"
+     ],
+     "workingStatsGain": [
+      "Gain 65 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2000,
+     "actualCost": 2000,
+     "parentId": 88
+    },
+    {
+     "id": 91,
+     "prefix": "LAW2910",
+     "name": "Property Law",
+     "description": "A sub division of common law. Learn the rule book for owning a house.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 5% discount when buying properties from the estate agents"
+     ],
+     "workingStatsGain": [
+      "Gain 75 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 2000,
+     "actualCost": 2000,
+     "parentId": 88
+    },
+    {
+     "id": 92,
+     "prefix": "LAW2920",
+     "name": "Criminal Law",
+     "description": "Often named penal law. Learn the set of rules that decide what to do with someone when they've been naughty.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 5% bonus to your skill in busting"
+     ],
+     "workingStatsGain": [
+      "Gain 75 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 88
+    },
+    {
+     "id": 93,
+     "prefix": "LAW2930",
+     "name": "Administrative Law",
+     "description": "The part of the law that concerns all our politicians and the government. Learn about this, and you may be able to put those MPs right.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 5% discount when buying people out of jail"
+     ],
+     "workingStatsGain": [
+      "Gain 85 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 88
+    },
+    {
+     "id": 94,
+     "prefix": "LAW2940",
+     "name": "Commercial and Consumer Law",
+     "description": "Every time you buy something from a shop this comes into play. Know your rights when buying those top shelf items.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 120 intelligence upon completion",
+      "Gain 35 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 900,
+     "actualCost": 900,
+     "parentId": 88
+    },
+    {
+     "id": 95,
+     "prefix": "LAW2950",
+     "name": "Family Law",
+     "description": "Learn here about the part of the law that stops children being abused, and prosecutes against domestic violence.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 125 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 850,
+     "actualCost": 850,
+     "parentId": 88
+    },
+    {
+     "id": 96,
+     "prefix": "LAW2960",
+     "name": "Labor Law",
+     "description": "A job? This may be news to some of you, but even employees have to adhere to a law. This is it. Don't be abused at work again and learn this simple set of rules.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 135 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1050,
+     "actualCost": 1050,
+     "parentId": 88
+    },
+    {
+     "id": 97,
+     "prefix": "LAW2970",
+     "name": "Social and Economic Law",
+     "description": "This course joins criminal law, and commercial law. Concerning most investment bankers, this is the sector that stops economic breakdown. ",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 10% bonus to your skill in busting"
+     ],
+     "workingStatsGain": [
+      "Gain 80 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1780,
+     "actualCost": 1780,
+     "parentId": 88
+    },
+    {
+     "id": 98,
+     "prefix": "LAW2980",
+     "name": "Use of Force in International Law",
+     "description": "Learn when your government is allowed to use force in disputes.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 10% discount when buying people out of jail"
+     ],
+     "workingStatsGain": [
+      "Gain 75 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2490,
+     "actualCost": 2490,
+     "parentId": 88
+    },
+    {
+     "id": 99,
+     "prefix": "LAW2990",
+     "name": "International Human Rights",
+     "description": "Although not strictly law - international human rights covers the rights that a human has to be free.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Use less nerve when trying to escape from jail"
+     ],
+     "workingStatsGain": [
+      "Gain 70 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2925,
+     "actualCost": 2925,
+     "parentId": 88
+    },
+    {
+     "id": 100,
+     "prefix": "LAW2100",
+     "name": "Media Law",
+     "description": "As more and more people use e-commerce, fraud becomes more common. Learn where you stand in the legal field of telecommunications, IT, copyright and advertising.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 3% increase in advertising effectiveness for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 85 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2350,
+     "actualCost": 2350,
+     "parentId": 88
+    },
+    {
+     "id": 101,
+     "prefix": "LAW2101",
+     "name": "Revenue Law",
+     "description": "Tax. Know when you should be taxed and when the Government is legally allowed to steal your money.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 175 intelligence upon completion",
+      "Gain 40 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 3200,
+     "actualCost": 3200,
+     "parentId": 88
+    },
+    {
+     "id": 102,
+     "prefix": "LAW3102",
+     "name": "Bachelor of Law",
+     "description": "Finishing this course, will enable you to be a fully fledged lawyer. You'll save people from spending too long in jail with ease.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain two bonuses: Busting is 50% easier and bailing is 50% cheaper"
+     ],
+     "workingStatsGain": [
+      "Gain 125 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3628800,
+     "actualDuration": 2177280,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "name": "Mathematics",
+   "courses": [
+    {
+     "id": 22,
+     "prefix": "MTH1220",
+     "name": "Introduction to Mathematics",
+     "description": "Still afraid of numbers because 7 ate 9? Learn the beautiful language of numbers and equations here.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 35 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 24,
+     "prefix": "MTH2240",
+     "name": "Essential Foundation Mathematics",
+     "description": "Maths skills rustier than your back gate? Covered within this course is the ability to make quick calculations in your head. ",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to speed"
+     ],
+     "workingStatsGain": [
+      "Gain 10 manual labor upon completion",
+      "Gain 40 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 22
+    },
+    {
+     "id": 25,
+     "prefix": "MTH2250",
+     "name": "Intermediate Mathematics",
+     "description": "Further your ability to make calculations without a calculator whilst learning the basis on which to continue your course in mathematics.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to speed"
+     ],
+     "workingStatsGain": [
+      "Gain 50 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1100,
+     "actualCost": 1100,
+     "parentId": 22
+    },
+    {
+     "id": 26,
+     "prefix": "MTH2260",
+     "name": "Geometry",
+     "description": "Being the oldest mathematical science it's almost a history course. Learn the angle formulae and basic lines of sight, cover and elevation.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to defense"
+     ],
+     "workingStatsGain": [
+      "Gain 55 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1150,
+     "actualCost": 1150,
+     "parentId": 22
+    },
+    {
+     "id": 32,
+     "prefix": "MTH2320",
+     "name": "Geometry 2",
+     "description": "The geekiest of our courses. Learn further calculations and formulae to evade oncoming attacks from those jealous of you.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 2% passive bonus to defense"
+     ],
+     "workingStatsGain": [
+      "Gain 120 intelligence upon completion",
+      "Gain 35 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1100,
+     "actualCost": 1100,
+     "parentId": 26
+    },
+    {
+     "id": 27,
+     "prefix": "MTH2270",
+     "name": "Algebra",
+     "description": "The ability to manipulate algebraic fractions and equations has underestimated power. Here you'll learn the fool proof - quick methods of calculation.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 165 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 500,
+     "actualCost": 500,
+     "parentId": 22
+    },
+    {
+     "id": 28,
+     "prefix": "MTH2280",
+     "name": "Probability",
+     "description": "Chances of getting heads or tails are 50/50 right? Fail. Working out probable outcomes will help you in all areas of life. Start here.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain 1% productivity for your company"
+     ],
+     "workingStatsGain": [
+      "Gain 75 intelligence upon completion",
+      "Gain 20 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 980,
+     "actualCost": 980,
+     "parentId": 22
+    },
+    {
+     "id": 29,
+     "prefix": "MTH2290",
+     "name": "Trigonometry",
+     "description": "Silly Old Harry Caught A Herring Trawling Off Afghanistan. Learn how to use Sin, Cos and Tan to work out angles.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 100 intelligence upon completion",
+      "Gain 145 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 22
+    },
+    {
+     "id": 30,
+     "prefix": "MTH2300",
+     "name": "Calculus",
+     "description": "Does everything have a limit? Use calculus to derive even the most complicated of answers.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 120 intelligence upon completion",
+      "Gain 95 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 800,
+     "actualCost": 800,
+     "parentId": 22
+    },
+    {
+     "id": 31,
+     "prefix": "MTH2310",
+     "name": "Discrete Mathematics",
+     "description": "To sum it up - \"Mathematics is the queen of the sciences and number theory is the queen of mathematics.\" Gauss (1856). Learn the basics here.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 5% bonus to ammo conservation"
+     ],
+     "workingStatsGain": [
+      "Gain 80 intelligence upon completion",
+      "Gain 25 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 1250,
+     "actualCost": 1250,
+     "parentId": 22
+    },
+    {
+     "id": 33,
+     "prefix": "MTH3330",
+     "name": "Bachelor of Mathematics",
+     "description": "It's time to put all the previously learnt concepts into use. This finale will have you scratching your brain. On the plus side you'll have a better understanding of how much to use and when.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 20% bonus to ammo conservation"
+     ],
+     "workingStatsGain": [
+      "Gain 10 manual labor upon completion",
+      "Gain 150 intelligence upon completion",
+      "Gain 40 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3628800,
+     "actualDuration": 2177280,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "name": "Psychology",
+   "courses": [
+    {
+     "id": 63,
+     "prefix": "PSY1630",
+     "name": "Introduction to Psychology",
+     "description": "Imagine having the ability to know what your opponent is thinking. Learn how to quickly calculate what someone is thinking.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 50 intelligence upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 64,
+     "prefix": "PSY2640",
+     "name": "Memory and Decision",
+     "description": "Training your memory is more important than you think, this along with learning how to make the correct decision will help you through the remainder of your life.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to dexterity"
+     ],
+     "workingStatsGain": [
+      "Gain 65 manual labor upon completion",
+      "Gain 100 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 900,
+     "actualCost": 900,
+     "parentId": 63
+    },
+    {
+     "id": 65,
+     "prefix": "PSY2650",
+     "name": "Brain and Behaviour",
+     "description": "How will someone react when they're angry? How about when they're upset? Although human behaviour is very individual, this course will help your judgement.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 2% passive bonus to dexterity"
+     ],
+     "workingStatsGain": [
+      "Gain 80 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1100,
+     "actualCost": 1100,
+     "parentId": 63
+    },
+    {
+     "id": 66,
+     "prefix": "PSY2660",
+     "name": "Quantitative Methods in Psychology",
+     "description": "Exact measurements. Sounds easy, but you'll be blown away by the complexity of this course.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 4% passive bonus to dexterity"
+     ],
+     "workingStatsGain": [
+      "Gain 100 intelligence upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1150,
+     "actualCost": 1150,
+     "parentId": 63
+    },
+    {
+     "id": 67,
+     "prefix": "PSY2670",
+     "name": "Applied Decision Methods",
+     "description": "Decision making was covered before, but now we're going to put science into the equation.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain an 8% passive bonus to dexterity"
+     ],
+     "workingStatsGain": [
+      "Gain 125 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 63
+    },
+    {
+     "id": 68,
+     "prefix": "PSY2680",
+     "name": "Attention and Awareness",
+     "description": "Nintendo weren't joking when they said you had to train your brain. Regain your youthful awareness with this course.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 10% increase to awareness"
+     ],
+     "workingStatsGain": [
+      "Gain 115 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 2330,
+     "actualCost": 2330,
+     "parentId": 63
+    },
+    {
+     "id": 132,
+     "prefix": "PSY2132",
+     "name": "Interpersonal Dynamics",
+     "description": "Delve into the mechanics of human relationships and effective communication strategies. Students will learn to analyze and influence social interactions, enhancing their ability to navigate and manipulate complex interpersonal situations.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock response range indicators in Scamming"
+     ],
+     "workingStatsGain": [
+      "Gain 70 intelligence upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 63
+    },
+    {
+     "id": 69,
+     "prefix": "PSY3690",
+     "name": "Bachelor of Psychological Sciences",
+     "description": "Knowing how to make people believe things is a huge advantage. In this course we will help you to talk your way out of most common situations.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 10% increase to crime exp & skill progression"
+     ],
+     "workingStatsGain": [
+      "Gain 120 intelligence upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 4233600,
+     "actualDuration": 2540160,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "name": "Self Defense",
+   "courses": [
+    {
+     "id": 70,
+     "prefix": "DEF1700",
+     "name": "Introduction to Self Defense",
+     "description": "Bored of using the excuse 'I fell down the stairs'. Calling all victims of wife beatings - this course is for you.",
+     "status": "available",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 50 manual labor upon completion",
+      "Gain 50 intelligence upon completion",
+      "Gain 50 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 71,
+     "prefix": "DEF2710",
+     "name": "Judo",
+     "description": "Judo means 'Gentle Way'. This Japanese combat sport originating in the late 1800's will soon leave your enemies on the floor.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 1% passive bonus to defense"
+     ],
+     "workingStatsGain": [
+      "Gain 65 manual labor upon completion",
+      "Gain 50 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1000,
+     "actualCost": 1000,
+     "parentId": 70
+    },
+    {
+     "id": 72,
+     "prefix": "DEF2720",
+     "name": "Kick Boxing",
+     "description": "Although you're not allowed to touch your opponent whilst they're on the floor, this won't stop you having some fun before. Learn how to make a guaranteed hit.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Unlock kick attack when in a battle"
+     ],
+     "workingStatsGain": [
+      "Gain 75 manual labor upon completion",
+      "Gain 45 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 70
+    },
+    {
+     "id": 73,
+     "prefix": "DEF2730",
+     "name": "Krav Maga",
+     "description": "Taught to the Israeli army - this close hand to hand combat sport was derived from street fighting skills to protect the Jewish quarter during conflict in Bratislava.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 2% passive bonus to defense"
+     ],
+     "workingStatsGain": [
+      "Gain 90 manual labor upon completion",
+      "Gain 75 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 2500,
+     "actualCost": 2500,
+     "parentId": 70
+    },
+    {
+     "id": 74,
+     "prefix": "DEF2740",
+     "name": "Jujitsu",
+     "description": "Literally translated - the art of softness - should not be underestimated. This martial art is used as a method of defeating an armed opponent without weapons.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 3% passive bonus to defense"
+     ],
+     "workingStatsGain": [
+      "Gain 75 manual labor upon completion",
+      "Gain 70 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1800,
+     "actualCost": 1800,
+     "parentId": 70
+    },
+    {
+     "id": 75,
+     "prefix": "DEF2750",
+     "name": "Tae Kwon Do",
+     "description": "The national sport of Korea. Meaning the method of breaking something with either a foot or fist, this art will soon have street fights wrapped up.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 2% passive bonus to speed"
+     ],
+     "workingStatsGain": [
+      "Gain 80 manual labor upon completion",
+      "Gain 45 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 2000,
+     "actualCost": 2000,
+     "parentId": 70
+    },
+    {
+     "id": 76,
+     "prefix": "DEF2760",
+     "name": "Muay Thai",
+     "description": "Muay Thai - The sport of 8 limbs will leave you like Neo from the Matrix. After completing this course - taking on 100 people will be an easy task.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 3% passive bonus to speed"
+     ],
+     "workingStatsGain": [
+      "Gain 100 manual labor upon completion",
+      "Gain 75 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 3500,
+     "actualCost": 3500,
+     "parentId": 70
+    },
+    {
+     "id": 77,
+     "prefix": "DEF3770",
+     "name": "Bachelor of Self Defense",
+     "description": "Using no weapons, we will show you how to use your body to attack and defend -  Passing this course will put you in the elite group of masters.",
+     "status": "notMeetRequirement",
+     "learningOutcomes": [
+      "Gain a 100% increase in damage dealt when using fists alone"
+     ],
+     "workingStatsGain": [
+      "Gain 150 manual labor upon completion",
+      "Gain 10 intelligence upon completion",
+      "Gain 75 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3024000,
+     "actualDuration": 1814400,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "name": "Sports Science",
+   "courses": [
+    {
+     "id": 43,
+     "prefix": "SPT1430",
+     "name": "Introduction to Sports Science",
+     "description": "Sport isn't all about being a jock. It's about looking good in the shower, and being able to catch a long ball too.",
+     "status": "completed",
+     "learningOutcomes": [],
+     "workingStatsGain": [
+      "Gain 50 manual labor upon completion",
+      "Gain 10 endurance upon completion"
+     ],
+     "tier": 1,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 200,
+     "actualCost": 200,
+     "parentId": null
+    },
+    {
+     "id": 44,
+     "prefix": "SPT2440",
+     "name": "Strength and Conditioning",
+     "description": "Strength isn't just about being able to lift a lot. Its application is the difficult bit. Learn here how to utilise your strength.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a 1% bonus to strength gains in the gym"
+     ],
+     "workingStatsGain": [
+      "Gain 55 manual labor upon completion",
+      "Gain 5 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1150,
+     "actualCost": 1150,
+     "parentId": 43
+    },
+    {
+     "id": 45,
+     "prefix": "SPT2450",
+     "name": "Physiological Testing",
+     "description": "Reckon you can run a marathon? Here you can efficiently train your speed and stamina.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a 1% bonus to speed gains in the gym"
+     ],
+     "workingStatsGain": [
+      "Gain 45 manual labor upon completion",
+      "Gain 55 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1200,
+     "actualCost": 1200,
+     "parentId": 43
+    },
+    {
+     "id": 46,
+     "prefix": "SPT2460",
+     "name": "Human Movement Analysis",
+     "description": "Where is your opponent going to next? Without studying the human movement you'll have no chance.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a 1% bonus to defense gains in the gym"
+     ],
+     "workingStatsGain": [
+      "Gain 60 manual labor upon completion",
+      "Gain 5 intelligence upon completion",
+      "Gain 45 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1209600,
+     "actualDuration": 725760,
+     "originCost": 1500,
+     "actualCost": 1500,
+     "parentId": 43
+    },
+    {
+     "id": 47,
+     "prefix": "SPT2470",
+     "name": "Bio Mechanical Determinants of Skill",
+     "description": "Skill? Surely that's only applied in computer games? Wrong. You'd be surprised at what we can help you achieve.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a 1% bonus to dexterity gains in the gym"
+     ],
+     "workingStatsGain": [
+      "Gain 55 manual labor upon completion",
+      "Gain 10 intelligence upon completion",
+      "Gain 35 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 1750,
+     "actualCost": 1750,
+     "parentId": 43
+    },
+    {
+     "id": 48,
+     "prefix": "SPT2480",
+     "name": "Sports Medicine",
+     "description": "Protein? Creatine? It's all rubbish - learn here what supplements really help.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a 10% increase in needle effectiveness"
+     ],
+     "workingStatsGain": [
+      "Gain 15 manual labor upon completion",
+      "Gain 75 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 2419200,
+     "actualDuration": 1451520,
+     "originCost": 2250,
+     "actualCost": 2250,
+     "parentId": 43
+    },
+    {
+     "id": 49,
+     "prefix": "SPT2490",
+     "name": "Nutritional Science",
+     "description": "Good food is so much more to nutrition than you could even imagine. Discover a diet to help you achieve your goals here.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a 2% passive bonus to speed and strength"
+     ],
+     "workingStatsGain": [
+      "Gain 10 manual labor upon completion",
+      "Gain 65 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2500,
+     "actualCost": 2500,
+     "parentId": 43
+    },
+    {
+     "id": 50,
+     "prefix": "SPT2500",
+     "name": "Analysis and Performance",
+     "description": "Doing your best is always important. Work out a way of putting in 100% effort, 100% of the time.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a 2% passive bonus to defense and dexterity"
+     ],
+     "workingStatsGain": [
+      "Gain 65 manual labor upon completion",
+      "Gain 5 intelligence upon completion",
+      "Gain 15 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 1814400,
+     "actualDuration": 1088640,
+     "originCost": 2880,
+     "actualCost": 2880,
+     "parentId": 43
+    },
+    {
+     "id": 126,
+     "prefix": "SPT2126",
+     "name": "Sports Administration",
+     "description": "This course is designed to give you the skills and competitive edge that will distinguish you from others when applying in sports management.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Unlock the sports shop"
+     ],
+     "workingStatsGain": [
+      "Gain 20 manual labor upon completion",
+      "Gain 5 intelligence upon completion",
+      "Gain 30 endurance upon completion"
+     ],
+     "tier": 2,
+     "originDuration": 604800,
+     "actualDuration": 362880,
+     "originCost": 400,
+     "actualCost": 400,
+     "parentId": 43
+    },
+    {
+     "id": 51,
+     "prefix": "SPT3510",
+     "name": "Bachelor of Sports Science",
+     "description": "As the ultimate module - you will focus on maximum gym gain with the least amount of input.",
+     "status": "completed",
+     "learningOutcomes": [
+      "Gain a further 1% boost in all gym gains"
+     ],
+     "workingStatsGain": [
+      "Gain 95 manual labor upon completion",
+      "Gain 15 intelligence upon completion",
+      "Gain 65 endurance upon completion"
+     ],
+     "tier": 3,
+     "originDuration": 3628800,
+     "actualDuration": 2177280,
+     "originCost": 5000,
+     "actualCost": 5000,
+     "parentId": null
+    }
+   ]
+  }
+ ],
+ "activeCourse": {
+  "id": 37,
+  "category": 4,
+  "name": "Advanced Biochemistry",
+  "completedAt": 1767225600
+ },
+ "completedCourse": null,
+ "pageHeader": {
+  "titles": {
+   "default": {
+    "ID": 0,
+    "title": "Education"
+   }
+  },
+  "tutorials": {
+   "showTutorial": false,
+   "default": {
+    "ID": 7,
+    "items": [
+     {
+      "title": "Education",
+      "text": "Here you can take courses in the local college to increase your working stats. Some courses even allow you to do new crimes, unlock new areas, provide unique skills, and make special abilities available. Courses will often take several weeks to complete and cost money."
+     }
+    ]
+   }
+  }
+ }
+}
