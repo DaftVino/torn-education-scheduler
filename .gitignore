@@ -9,3 +9,16 @@ Thumbs.db
 scratch/
 *.user.js.bak
 .tampermonkey/
+
+# Saved-page asset bundles from browser "Save As" — the .html is the fixture, the
+# 8.6MB of images and vendor JS beside it is not.
+tests/fixtures/*_files/
+
+# Raw education payload captures are personal data (which courses this account
+# has completed, when the current one ends). Only the scrubbed fixture that
+# scripts/scrub-fixture.mjs emits is committed.
+tests/fixtures/raw/
+
+# Saved page captures embed a live session: userID, logoutHash, and a signed
+# websocket JWT. Keep them local; the JSON payload is the fixture we test on.
+tests/fixtures/*.html

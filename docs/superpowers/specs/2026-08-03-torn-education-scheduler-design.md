@@ -1,7 +1,7 @@
 # Torn Education Scheduler — Design
 
 Date: 2026-08-03
-Status: approved (design), pending implementation plan
+Status: approved (design), revised after live-data probe, pending implementation plan
 
 ## Purpose
 
@@ -10,9 +10,9 @@ Players currently answer "when do I finish?" with private spreadsheets, rebuilt
 from scratch by each player and shared as forum posts that drift out of date.
 
 This userscript replaces that spreadsheet. It runs only on
-`https://www.torn.com/page.php?sid=education`, reads the player's own progress
-off the page, lets them build a queue of courses, and computes the exact finish
-date and time for the whole path.
+`https://www.torn.com/page.php?sid=education`, reads the player's own progress,
+lets them build a queue of courses, and computes the exact finish date and time
+for the whole path.
 
 ## Scope
 
@@ -20,7 +20,6 @@ In scope:
 
 - Course queue with prerequisite validation.
 - Finish date and time for the queue, and cumulative finish per course.
-- Perk-reduction handling, derived from the page rather than entered.
 - A consumable budget (job points, Book of Carols) bounded by the schedule.
 - Ordering modes that front-load benefit.
 - Presets drawn from the community guides.
@@ -28,151 +27,236 @@ In scope:
 
 Out of scope:
 
-- Any Torn API use. No API key, therefore no secret in the script.
+- The public Torn API. No API key, therefore no secret in the script.
 - Modelling perks acquired part-way through the schedule.
 - Any server, account, or hosted component.
-- Recommending *which* courses to take on the player's behalf. Presets carry
-  guide recommendations; the script does not editorialise beyond them.
+- Recommending *which* courses to take. Presets carry guide recommendations;
+  the script does not editorialise beyond them.
 
-## Source-data warning
+## The data source
 
-`docs/initial-spec.md` collects nine community guides spanning roughly 2019 to
-2025. They contradict each other on specifics, and at least one author states
-they quit the game years before writing. Known conflicts:
+The education page is a React bundle (`webpackChunk_torn_education`) that
+fetches its state from:
 
-| Item | Conflict |
-|---|---|
-| Book of Carols | "past 2 hours" (guide 2) vs "-6 hours" (guides 7, 8, 9) |
-| BIO2410 Anatomy | +5% critical hit (five places) vs +3% (guide 8) |
-| MTH3330 Bachelor of Mathematics | +30% ammo (guides 4, 6) vs +20% (guide 8) |
-| DEF2730 Krav Maga | +1% defense (guide 4) vs +2% (guides 6, 8) |
-| BIO1340 | "Introduction to Biology" vs "Introduction to Biochemistry" |
-| CBT2790 Military Psychology | +1% hit rate vs +1% passive speed (guide 8) |
-| HAF3111 | "50% decrease in escape chance" vs "+25% speed during escape" |
+```http
+GET /page.php?sid=educationInitData
+```
 
-**No duration, cost, or outcome from these guides is authoritative.** Torn's
-own education page is the only non-contradictory source. The guides are used
-for two things only: the *membership* of preset paths (which courses, not what
-they do), and as a cross-check when the bundled catalogue is first built.
+Same-origin, session cookie sent automatically, no API key, no `@connect`
+needed. It returns the complete model. Every course carries:
+
+```json
+{ "id": 34, "prefix": "BIO1340", "name": "Introduction to Biochemistry",
+  "description": "...", "status": "completed",
+  "learningOutcomes": [], "workingStatsGain": ["Gain 50 intelligence..."],
+  "tier": 1,
+  "originDuration": 604800, "actualDuration": 362880,
+  "originCost": 200, "actualCost": 200,
+  "parentId": null }
+```
+
+Plus `activeCourse`, carrying the exact finish timestamp of the course in
+progress:
+
+```json
+"activeCourse": { "id": 119, "category": 12, "name": "General Science",
+                  "completedAt": 1786497780 }
+```
+
+**The script never parses HTML for data.** Durations, costs, statuses, the
+prerequisite graph, and the current course's finish time all arrive as typed
+JSON. Selectors survive only for mounting the panel and drawing row markers —
+cosmetic surface, where a break is visible and harmless, rather than
+load-bearing surface where a break produces a wrong date.
+
+This matters because Torn's class names are CSS-module hashes
+(`courseWrapper___MMeaD`, `courseIndicator___njtf2`). The `___XXXXX` suffix is
+generated at build time and changes whenever Torn rebuilds its frontend. Any
+selector the script does keep must match on the stable prefix
+(`[class*="courseWrapper___"]`), never the full hashed name. This is a rule,
+not a preference.
+
+Acquisition order, most to least preferred:
+
+1. `fetch('/page.php?sid=educationInitData')` — the primary path.
+2. The React fiber props, where the same `sections` array is reachable — a
+   fallback if the endpoint changes shape or name.
+3. A bundled catalogue snapshot — offline fallback only, and the source for
+   preset course lists. It cannot supply the player's own status or durations.
+
+## What the live data overturned
+
+An earlier draft of this design was built on the assumption that the page
+displayed rounded durations in text. Two sections were wrong, and one of them
+would have shipped a wrong answer.
+
+### The perk multiplier needs no derivation
+
+The earlier design proposed deriving the player's perk reduction from rounded
+display text, by collecting `(base, reduced)` pairs, intersecting their
+constraint bands, and **snapping to the nearest achievable value** — where the
+achievable set was computed from the guides' model of the three documented
+reduction perks (merits −20%, Principal −10%, WSU block −10%, multiplied:
+`0.8 × 0.9 × 0.9 = 0.648`).
+
+The live data gives `originDuration` and `actualDuration` as exact integer
+seconds, per course, for every course including locked ones. The ratio is
+constant across all 131 courses in the captured sample:
+
+```text
+604800 → 362880    1209600 → 725760    1814400 → 1088640
+2419200 → 1451520  3024000 → 1814400   3628800 → 2177280
+4233600 → 2540160
+```
+
+Every one is exactly `0.6`.
+
+**`0.6` is not in the achievable set the earlier design would have snapped
+to.** The guides' model puts the maximum reduction at `0.648`; the observed
+value is a larger reduction than the model says is possible. The snap would
+have silently moved a correct `0.6` to an incorrect `0.648` — a 7.4% error
+compounded across a multi-year queue, presented with full confidence.
+
+So: **the multiplier is read, never derived.** The whole band-intersection
+mechanism is deleted. The core calculation does not need to know why the
+player's reduction is what it is, only what it is.
+
+Two secondary observations, neither of which the calculation depends on:
+
+- `0.6` is exactly what **additive** stacking of the three documented perks
+  gives (20 + 10 + 10 = 40% off). The multiplicative model the guides assert
+  gives `0.648`. This is evidence that the guides are wrong about stacking, or
+  that Torn changed it.
+- `originCost` equals `actualCost` for every course in the sample, so no cost
+  reduction is in play. The field exists, so the model supports one.
+
+### Prerequisites are a real tree, not a tier heuristic
+
+The earlier design encoded the guides' rule: a tier-1 introduction unlocks the
+tier-2 courses in its degree, and all tier-2 courses gate the tier-3 bachelor.
+
+`parentId` shows this is too coarse. Prerequisites chain arbitrarily deep
+within a category:
+
+- `BIO2370` → parent `BIO2360` → parent `BIO1340`
+- `CMT2129` → parent `CMT2128` → parent `CMT2570` → parent `CMT1520`
+- `MTH2320` → parent `MTH2260` → parent `MTH1220`
+- `CMT2610` → parent `CMT2540` → parent `CMT1520`
+
+A tier-based model would let the player queue `MTH2320` immediately after
+`MTH1220` and produce a schedule they cannot actually follow.
+
+**`parentId` is the prerequisite graph.** The one rule not present in the data
+is tier-3 gating: bachelors have `parentId: null` but require every tier-2
+course in their category. That rule is encoded separately, and is the only
+prerequisite knowledge the script holds that Torn did not hand it.
+
+### The guides are worse than "contradictory"
+
+The initial spec's nine community guides disagree with each other, which the
+earlier draft catalogued. The live data now resolves each conflict — and in
+most cases **the majority of guides are wrong**:
+
+| Item | Guide majority | Live data |
+| --- | --- | --- |
+| BIO2410 Anatomy | +5% crit (5 guides) | **+3% crit** (1 guide) |
+| MTH3330 Bachelor of Maths | +30% ammo (2 guides) | **+20%** (1 guide) |
+| DEF2730 Krav Maga | +1% defense | **+2% defense** |
+| BIO2380 Neurobiology | damage to the *neck* | damage to the **throat** |
+| BIO2400 Forensic Science | stealth −25% | **stealthiness −0.5** |
+| CBT28xx weapon studies | +5% accuracy | **+1.00 accuracy** (flat, not %) |
+| HAF3111 | 50% decrease in escape chance | **+25% speed during escape** |
+| DEF3770 | "Master of Self Defense" | **"Bachelor of Self Defense"** |
+| LAW2910 | "Law of Property" | **"Property Law"** |
+| BIO1340 | "Introduction to Biology" | **"Introduction to Biochemistry"** |
+
+A majority vote across the guides would have been wrong on the first three
+rows. The live data also contains courses no guide mentions at all — `CMT2230`
+Web Design, `CMT2130` Web Security, `CMT2131` Automated Data Mining,
+`CMT2128`/`CMT2129` Overclocking, `PSY2132` Interpersonal Dynamics, `CMT2570`,
+`CMT2590` Quantum Computing, `GEN2114` Astronomy — evidently added for
+Crimes 2.0, years after most of the guides were written.
+
+**No duration, cost, outcome, or course list from the guides is authoritative
+or is used as such.** The guides are used for exactly one thing: the
+*membership* of preset paths — which courses a recommended route contains, and
+whose recommendation it was. Everything displayed about a course comes from the
+live payload.
 
 ## Architecture
 
 Three layers with a hard boundary between them.
 
 | Layer | Contents | Fragility |
-|---|---|---|
-| `catalogue` | Bundled course table: code, name, degree, tier, base duration, prerequisites, cost | Can go stale; cannot break |
-| `engine` | Pure functions. No DOM, no browser API, no ambient clock | None — testable in Node |
-| `adapter` | Scrape, panel render, row ordinals, storage | All of it |
+| --- | --- | --- |
+| `catalogue` | Bundled snapshot: offline fallback and preset course lists | Can go stale; cannot break |
+| `engine` | Pure functions. No DOM, no network, no ambient clock | None — testable in Node |
+| `adapter` | Fetch, panel render, row markers, storage | All of it |
 
 The engine is the part worth testing. The adapter is the part worth guarding.
-Everything Torn-shaped stays in the adapter, so a markup change on Torn's side
-can never reach the mathematics.
 
-The engine takes an explicit `now` parameter. It never reads the clock itself,
-because a function that reads the clock cannot be tested against a fixed
-expected date.
+The engine takes an explicit `now`. It never reads the clock itself, because a
+function that reads the clock cannot be tested against a fixed expected date.
 
 ### Data flow
 
-```
-education page
-  → scrape:    completed set, current course + remaining, base and reduced durations
-  → reconcile: bundled catalogue vs observed → drift notice on mismatch
-  → derive:    account-wide perk multiplier
-  → engine.schedule(catalogue, completed, current, multiplier, budget, queue, now)
-  → render:    panel + row ordinals
-  ↺ user edits queue or sets a what-if override → re-run engine → re-render
+```text
+fetch /page.php?sid=educationInitData
+  → parse and validate payload
+  → engine.schedule(courses, activeCourse, queue, budget, now)
+  → render panel + row markers
+  ↺ user edits queue or budget → re-run engine → re-render
 ```
 
-## Catalogue: bundled with live reconcile
+### The core calculation
 
-A verified course table ships in the script as the baseline. On each run the
-adapter compares it against whatever the page renders and prefers the live
-value where they differ, surfacing a visible drift notice naming the course
-and both values.
+Because `actualDuration` already carries the player's reductions, the base case
+is one line:
 
-This is deliberately the most expensive of the three options considered
-(bundled-only, scrape-only, bundled-with-reconcile). It is chosen because
-bundled-only goes stale silently — the failure mode is a confidently wrong
-date — and scrape-only cannot function if the page renders degrees lazily.
+```text
+finish = activeCourse.completedAt + Σ actualDuration(queued) − consumableSeconds
+```
 
-The bundled table is built once during development by reading the real page,
-cross-checked against the guides, with any disagreement resolved in favour of
-the page.
-
-## Perk multiplier: derived, not entered
-
-The education page displays both the base duration of a course and the reduced
-duration after the player's perks. The multiplier is therefore observable, and
-the player is never asked to enumerate their merits, job rank, or stock block.
-
-Per the spec, reductions multiply rather than add: merits (up to −20%),
-Principal rank in the Education starter job (−10%), and a West Side University
-stock benefit block (−10%) give `0.8 × 0.9 × 0.9 = 0.648`, a 35.2% reduction.
-
-### The rounding problem
-
-Displayed durations are rounded. A 7-day course shown as 5 days yields a naive
-ratio of 0.714, when the truth may be 0.648. One pair is not enough.
-
-### Derivation
-
-1. Collect every visible `(base, reduced)` pair.
-2. Treat each as a constraint band, given the display granularity — a value
-   shown as *n* days constrains the true value to a known interval.
-3. Intersect the bands across all pairs.
-4. Snap to the nearest value in the achievable set. That set is small and
-   discrete: 11 merit levels × Principal present/absent × WSU block
-   present/absent ≈ 44 values. Snapping to it pins the multiplier exactly.
-5. If the intersection is empty, or no achievable value falls inside it, do not
-   guess. Show the observed range in the panel and ask the player to confirm.
-
-An empty intersection is a real signal — it means either a display assumption
-is wrong or Torn has changed the mechanic. Silently picking a midpoint would
-hide that.
-
-The multiplier is reported to the player as a single total, e.g. "total perk
-reduction: 35.2%". The breakdown is not knowable from the page and is not
-claimed. Manual fields exist only as **what-if overrides** — "what would this
-look like with the WSU block?" — never as required input.
+The engine is genuinely small. The complexity that remains lives in
+prerequisite validation, ordering, and the consumable fixed point — not in the
+arithmetic.
 
 ## Ordering: what it does and does not do
 
 **Ordering does not change the finish date.** Courses run one at a time, so the
 total is a sum over the queue, and a sum is order-independent. Prerequisites
 constrain which orders are legal; they do not change the total. The consumable
-budget removes a fixed number of hours from the total regardless of when it is
-spent.
+budget removes a fixed number of seconds regardless of when it is spent.
 
 The spec asks for "the final date and time". That figure is order-independent,
-and the UI states so plainly.
+and the UI says so plainly.
 
 What ordering *does* change is **time-to-benefit**: how early each perk starts
 paying off. This is the real content of "do Sports Science first" — the
 bachelor's compounding gym-gain bonus is worth far more claimed a year earlier,
-while the finish date is identical either way. Several of the source guides
-blur these two things together. The UI will not.
+while the finish date is identical either way. Several source guides blur these
+two things together. The UI will not.
 
 Ordering modes:
 
 - **As listed** — the player's own order, prerequisites enforced.
-- **Shortest first** — quickest courses first, maximising completions early.
-- **Days per bonus** — the efficiency metric from guide 7's table.
+- **Shortest first** — by `actualDuration`, maximising early completions.
+- **Days per bonus** — the efficiency metric from guide 7's table, recomputed
+  from live durations rather than the guide's stale numbers.
 - **Unlocks first** — bachelors and ability-unlocking courses as early as
   prerequisites allow.
 
-All modes are a topological sort over the prerequisite graph with a different
-tiebreak. Prerequisite rules, per the spec: a tier-1 introduction unlocks the
-tier-2 courses in its degree; all tier-2 courses in a degree must complete
-before its tier-3 bachelor.
+All modes are a topological sort over the `parentId` graph, plus the tier-3
+rule, with a different tiebreak.
 
 ## Consumable budget and its fixed point
 
 The player enters how many job points and Books of Carols they expect to spend.
-Per the spec, a job point buys 30 minutes off the current course, and a 10★
-Fitness Center or Hair Salon supports about 5 hours per 24 hours. A Book of
+Per the initial spec, a job point buys 30 minutes off the current course, and a
+10★ Fitness Center or Hair Salon supports about 5 hours per 24 hours. A Book of
 Carols reduces the current course and carries a 6-hour booster cooldown.
+
+Neither appears in `educationInitData`, so both stay user-entered.
 
 These couple in both directions: the schedule length bounds how many the player
 could possibly spend, but spending them shortens the schedule, which lowers
@@ -192,52 +276,61 @@ asserted in tests rather than silently truncated.
 The panel shows the entered figure alongside "you could use at most N over this
 period", so the ceiling is visible rather than an invisible clamp.
 
-The exact Book of Carols reduction is disputed in the sources (2h vs 6h). It is
-a configurable constant with the conflict recorded next to it, defaulting to
-the value the majority of sources give, and must be verified against the game
-before release.
+A consumable can only reduce the course currently in progress, and cannot take
+a course below zero. Surplus spend does not roll forward into the next course;
+it is capped per course and the remainder reported as unusable.
+
+The Book of Carols reduction is disputed in the sources — "past 2 hours"
+(guide 2) against "−6 hours" (guides 7, 8, 9) — and does not appear in the live
+payload. It is a named constant with the conflict recorded beside it, and must
+be verified in-game before the v0.3.0 release rather than resolved by vote.
 
 ## UI
 
 A collapsible themed panel, modelled on Torn Bookie Live Scores: default theme
-matching Torn's own styling, style settings, and an open/hide action.
+matching Torn's styling, style settings, and an open/hide action.
 
-The panel carries the queue, the derived multiplier, what-if overrides, the
-consumable budget, and the schedule output.
+The panel carries the queue, the reduction figure read from the payload,
+what-if overrides, the consumable budget, and the schedule output.
 
-Torn's own course list is modified minimally: queued courses receive an ordinal
-marker and a highlight class. No text is injected into the host page's rows.
-This gives the visual link between queue and list at a fraction of the selector
-dependency that inline text badges would need.
+Torn's own course list receives an ordinal marker and a highlight class on
+queued courses. No text is injected into the host page's rows. This gives the
+visual link between queue and list at a fraction of the selector dependency
+that inline text badges would need — and each of those selectors uses prefix
+matching against the hashed class names.
 
 ## Failure behaviour
 
 Every host-site selector is null-guarded, and every failure is **visible in the
-panel**. "Couldn't read your completed courses" is a better outcome than a
-silently wrong date, because a userscript that fails quietly reads to the user
-as the host site breaking.
-
-Each selector carries a comment recording what it targets and why, so that
-repair is possible when Torn changes the markup.
+panel**. "Couldn't load your education data" beats a silently wrong date,
+because a userscript that fails quietly reads to the user as the host site
+breaking.
 
 Failure states:
 
-- Scrape returned nothing → panel shows a read failure, names what it could not
-  find, offers a retry.
-- Catalogue drift → notice naming the course, bundled value, and observed value.
-- Multiplier underdetermined → observed range shown, player asked to confirm.
+- Fetch failed or returned non-JSON → panel reports it, offers retry, falls
+  back to React props, then to the bundled snapshot in read-only mode.
+- Payload shape unrecognised — missing `actualDuration`, missing `parentId`,
+  `success` not true → refuse to compute and say why. A schedule from a
+  half-understood payload is worse than no schedule.
+- `originDuration`/`actualDuration` ratio **not constant across courses** →
+  surface it. The current model assumes one account-wide reduction; a
+  per-course ratio would mean Torn changed the mechanic, and guessing would
+  hide that.
+- Mount point not found → panel falls back to a fixed-position container rather
+  than not rendering.
 - Import string invalid → rejected with the reason; existing plan untouched.
 
 ## Persistence and sharing
 
-Plan state — queue, overrides, budget, panel settings — persists in script
-storage via `GM_setValue` / `GM_getValue`, keyed per Torn account.
+Plan state — queue, overrides, budget, panel settings — persists via
+`GM_setValue` / `GM_getValue`, keyed per Torn account.
 
 Export produces a copyable text string encoding the queue and modifiers, so a
 plan can be pasted into faction chat or a forum post. Import parses it
-defensively: validated against the catalogue, unknown codes rejected with a
-named reason, never evaluated as code. The import string is untrusted input and
-is treated as such.
+defensively: validated against the catalogue, unknown course IDs rejected with
+a named reason, never evaluated as code. The import string is untrusted input
+and is treated as such.
 
 No server, no accounts, nothing leaves the browser unless the player copies it
 out deliberately.
@@ -251,62 +344,91 @@ out deliberately.
 - `@grant GM_setValue`, `@grant GM_getValue`. The repo's default is
   `@grant none`, to be argued against rather than for. The argument: plan data
   survives a site-data clear, and is not readable by torn.com's own page
-  scripts. Both matter for data the player may have spent months building.
-- `@connect` is not required — the script makes no network requests.
+  scripts. Both matter for a plan representing months of intent.
+- `@connect` is **not** required. The only request is same-origin to
+  `torn.com`, which the page already makes itself.
 - No API key, so no secret reaches the script. Repo rule 5 holds trivially.
 - Torn navigates without a full page load, so the script observes for
-  navigation and mounts and unmounts accordingly rather than assuming a single
-  page load.
+  navigation and mounts and unmounts accordingly rather than assuming one load.
 
 ## Testing
 
-The engine is tested in Node under `npm test`, with no browser:
+The engine is tested in Node under `npm test`, with no browser and no network:
 
-- Schedule arithmetic against fixed `now` values.
-- Order-independence of the total — a property test asserting that any legal
-  permutation of a queue yields the same finish date.
-- Prerequisite validation: tier-1 gating, bachelor gating, cycle rejection.
-- Multiplier derivation: band intersection, snapping, and the underdetermined
-  case producing a range rather than a guess.
-- Fixed-point convergence, including the assertion that it terminates.
+- Schedule arithmetic against a fixed `now` and the captured fixture.
+- Order-independence of the total — a property test asserting every legal
+  permutation of a queue yields the same finish timestamp.
+- Prerequisite validation over the real `parentId` graph, including the
+  three-deep chains (`CMT1520 → CMT2570 → CMT2128 → CMT2129`), tier-3 gating,
+  and cycle rejection.
+- Reduction-ratio constancy, including the failure path when it is not
+  constant.
+- Fixed-point convergence, including that it terminates.
+- Payload validation: missing fields, `success: false`, unknown status values.
 - Import parsing: malformed, hostile, and stale-catalogue inputs.
 
-The adapter is tested against **saved HTML fixtures** captured from the real
-education page. Fixtures are what make the scraping layer testable at all, and
-capturing them is a prerequisite for implementing that layer.
+### Fixtures
+
+The **JSON payload is the fixture**, not saved HTML. A saved copy of the page
+contains one `courseWrapper` and zero course codes, because React renders the
+list client-side after fetching — so HTML is useless for testing the data path.
+
+Saved page captures are additionally **unsafe to commit at all**: a capture
+taken while logged in embeds `userID`, `logoutHash`, and a signed websocket JWT
+in inline script tags. `tests/fixtures/*.html` is therefore gitignored
+wholesale. Keep a capture locally if a panel-mount reference is useful; it never
+enters the repository. gitleaks did not flag these, which is the point — the
+control that works here is not committing the file.
+
+The captured payload is personal data: it encodes which courses this account
+has completed and when the current one finishes. **It is scrubbed before it is
+committed.** `scripts/scrub-fixture.mjs` reads a raw capture from
+`tests/fixtures/raw/` — which is gitignored and never committed — and emits a
+scrubbed fixture with a synthetic, deterministic progress state. The catalogue
+itself is identical for every player and is preserved intact.
+
+This holds regardless of the repo's visibility today, so that a later decision
+to go public never has to re-litigate it.
 
 ## Release sequence
 
 | Version | Contents |
-|---|---|
-| v0.1.0 | Catalogue, engine, panel, hand-built queue, finish date, local persistence |
-| v0.2.0 | Row ordinals, multiplier derivation, drift notice |
+| --- | --- |
+| v0.1.0 | Payload fetch, engine, panel, hand-built queue, finish date, local persistence |
+| v0.2.0 | Row markers, prerequisite validation surfaced in the UI, drift and failure states |
 | v0.3.0 | Consumable budget and fixed point |
 | v0.4.0 | Ordering modes |
 | v0.5.0 | Guide presets, export/import string |
 
-Each version tags, and moves `@version`, the `CHANGELOG.md` heading, and the
-git tag together in one commit, per repo rule 3.
+Each version moves `@version`, the `CHANGELOG.md` heading, and the git tag
+together in one commit, per repo rule 3.
 
 ## Open items
 
-These block implementation of specific layers, not the design:
-
-1. **Page structure unknown.** Whether all degrees render at once or lazily per
-   degree, and the granularity durations display in. This sets both the scrape
-   strategy and how tight the multiplier snap can be. Resolved by capturing the
-   real page.
-2. **HTML fixtures not yet captured.** Required before the adapter layer.
-3. **Book of Carols reduction unverified.** Sources conflict; must be checked
-   in-game before the v0.3.0 release.
+1. **Reduction stacking rule, for what-if overrides only.** The core
+   calculation reads `actualDuration` and never needs it. But "what would this
+   look like with the WSU block?" requires knowing whether reductions stack
+   additively or multiplicatively. The observed `0.6` is consistent with
+   additive stacking of the three documented perks and inconsistent with the
+   guides' multiplicative claim — but that inference assumes the player holds
+   exactly those three perks, which is unconfirmed. **Resolve by asking the
+   player which reduction perks they hold**, then either ship additive or
+   drop what-if overrides from scope.
+2. **Book of Carols reduction.** 2h vs 6h, absent from the payload. Verify
+   in-game before v0.3.0.
+3. **Whether `actualDuration` updates live** as job points are spent on the
+   current course, or only recalculates at course start. Affects whether the
+   consumable model can be validated against the payload.
 
 ## Decisions and alternatives
 
 | Decision | Chosen | Rejected |
-|---|---|---|
-| Data source | DOM with manual what-if overrides | Torn API (adds a key and a setup flow, killing the lightweight feel) |
-| Catalogue | Bundled with live reconcile | Bundled-only (stales silently); scrape-only (fails on lazy rendering) |
-| Perk input | Derived from the page | Player enumerates merits, rank, stock block |
-| Host page changes | Ordinal and highlight only | Inline text badges (more selector dependency) |
+| --- | --- | --- |
+| Data source | `educationInitData` JSON, same-origin | HTML scraping (fragile, and the data is not in the HTML); public Torn API (needs a key) |
+| Catalogue authority | Live payload | Bundled table (stales silently); community guides (demonstrably wrong) |
+| Perk reduction | Read from `actualDuration` | Derived from display text and snapped to a modelled achievable set — **would have produced a wrong answer** |
+| Prerequisites | `parentId` graph + tier-3 rule | Tier heuristic from the guides (too coarse; permits illegal queues) |
+| Host page changes | Ordinal and highlight only, prefix-matched selectors | Inline text badges; full hashed class names |
 | Sharing | Export/import string | Shareable URL (parses untrusted input on a page holding a live session) |
 | Storage | `GM_setValue` | `localStorage` under `@grant none` |
+| Fixture | Scrubbed JSON payload | Saved HTML (contains no course data) |
