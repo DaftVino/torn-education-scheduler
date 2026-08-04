@@ -31,15 +31,40 @@ const EXPORT_NAMES = [
   // rfcv token
   'readRfcvToken',
   // prerequisites
-  'unmetPrerequisites', 'validateQueue', 'requiredCoursesFor',
+  'unmetPrerequisites', 'validateQueue', 'requiredCoursesFor', 'allRemainingCourses',
+  'plannedCompletions',
+  // the picker's all-remaining sentinel
+  'ALL_COURSES_OPTION',
   // schedule
-  'schedule',
+  'schedule', 'buildDegreeGrid',
+  // queue ordering
+  'ORDER_MODE_LABELS', 'orderQueue', 'dependentCount', 'upstreamOf',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
+  // settings
+  'SETTINGS_KEY', 'normaliseSettings', 'freshSettings', 'loadSettings', 'saveSettings',
+  // perks
+  'inferPerks',
+  // the share string — the only input this script parses from outside the
+  // player's own browser
+  'SHARE_PREFIX', 'encodePlan', 'decodePlan',
+  // consumables: the Books ceiling, the floor date, and what it costs
+  'SECONDS_PER_BOOK', 'booksCeiling', 'planConsumables', 'formatMoney',
   // adapter
   'fetchEducationData',
+  // acquisition
+  'looksLikePayload', 'searchForPayload', 'newWalkState', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
   'formatTimestamp', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
+  // errorModel/noopHandlers are exported as a pair: the render path treats
+  // noopHandlers by identity, so a test asserting that needs the real object.
+  'errorModel', 'noopHandlers',
+  // views
+  'renderScheduleView', 'renderSettingsView', 'renderGridView',
+  // navigation
+  'unmountPanel', 'observeNavigation',
+  // debug report and the (still unresolved) guide links
+  'GREASY_FORK_URL', 'FORUM_POST_URL', 'buildDebugReport', 'gatherDebugContext',
 ];
 
 function buildInstrumentedSource() {
@@ -89,12 +114,40 @@ function makeSandbox(options = {}) {
     body: { appendChild() {} },
   };
 
+  // A real listener registry, not a no-op: observeNavigation() installs a
+  // popstate listener and history patches, and the navigation tests have to be
+  // able to fire them. `fire` is the test-side trigger.
+  const historyStub = {
+    pushState() {}, replaceState() {},
+  };
+  const observers = [];
   const windowStub = {
     location: { ...defaultLocation, ...(options.location || {}) },
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    history: historyStub,
+    listeners: {},
+    addEventListener(type, fn) { (windowStub.listeners[type] = windowStub.listeners[type] || []).push(fn); },
+    removeEventListener(type, fn) {
+      const list = windowStub.listeners[type] || [];
+      const i = list.indexOf(fn);
+      if (i !== -1) list.splice(i, 1);
+    },
+    fire(type) { for (const fn of (windowStub.listeners[type] || []).slice()) fn({ type }); },
     fetch: options.fetch || (async () => { throw new Error('fetch not stubbed'); }),
-    MutationObserver: class { observe() {} disconnect() {} },
+    MutationObserver: class {
+      constructor(cb) { this.cb = cb; observers.push(this); }
+      observe() {}
+      disconnect() {}
+    },
+  };
+
+  // Timers are recorded rather than run: the bootstrap debounces route changes
+  // through setTimeout, so a test needs to decide when that deadline arrives.
+  let nextTimerId = 1;
+  const timers = new Map();
+  const runTimers = () => {
+    const due = Array.from(timers.values());
+    timers.clear();
+    for (const fn of due) if (typeof fn === 'function') fn();
   };
 
   const sandbox = {
@@ -102,11 +155,12 @@ function makeSandbox(options = {}) {
     Date: MockDate,
     location: windowStub.location,
     window: windowStub,
+    history: historyStub,
     document: options.document || documentStub,
     fetch: windowStub.fetch,
     MutationObserver: windowStub.MutationObserver,
-    setTimeout: () => 0,
-    clearTimeout: () => {},
+    setTimeout: (fn) => { const id = nextTimerId++; timers.set(id, fn); return id; },
+    clearTimeout: (id) => { timers.delete(id); },
     setInterval: () => 0,
     clearInterval: () => {},
     GM_setValue: (k, v) => { gmStore.set(k, v); },
@@ -116,11 +170,11 @@ function makeSandbox(options = {}) {
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
 
-  return { sandbox, gmStore, setNow: (ms) => { currentNow = ms; } };
+  return { sandbox, gmStore, setNow: (ms) => { currentNow = ms; }, win: windowStub, observers, runTimers };
 }
 
 function loadUserscript(options = {}) {
-  const { sandbox, gmStore, setNow } = makeSandbox(options);
+  const { sandbox, gmStore, setNow, win, observers, runTimers } = makeSandbox(options);
   const context = vm.createContext(sandbox);
   vm.runInContext(buildInstrumentedSource(), context, { filename: 'torn-education-scheduler.user.js' });
   if (sandbox.__TES_ERR__) throw sandbox.__TES_ERR__;
@@ -211,6 +265,9 @@ function loadUserscript(options = {}) {
   return {
     exports: wrapExports(sandbox.__TES__),
     sandbox,
+    win,
+    observers,
+    runTimers,
     gmStore,
     setNow,
     transform: transformFromVM,
