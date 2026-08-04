@@ -45,6 +45,9 @@ const EXPORT_NAMES = [
   'SETTINGS_KEY', 'normaliseSettings', 'freshSettings', 'loadSettings', 'saveSettings',
   // perks
   'inferPerks',
+  // the share string — the only input this script parses from outside the
+  // player's own browser
+  'SHARE_PREFIX', 'encodePlan', 'decodePlan',
   // consumables: the Books ceiling, the floor date, and what it costs
   'SECONDS_PER_BOOK', 'booksCeiling', 'planConsumables', 'formatMoney',
   // adapter
