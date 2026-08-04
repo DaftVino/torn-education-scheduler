@@ -541,10 +541,9 @@ test('the shell renders the requested view and offers nav to the other two', () 
 
   const grid = draw('grid');
   assert.match(grid.panel.children[0].textContent, /^Degrees/);
-  assert.ok(
-    grid.body.children.some((c) => c.className === 'tes-summary' && c.textContent === 'Degrees'),
-    'the grid view rendered nothing'
-  );
+  // Content only the grid view produces: a degree box titled with its bachelor.
+  // tests/grid.test.js owns the view's behaviour; this pins the dispatch.
+  assert.ok(hasText(grid.body, 'Biology (BIO3420)'), 'the grid view did not render its boxes');
   assert.ok(!hasText(grid.body, 'Education perks'), 'the grid view rendered settings content');
 
   // The nav always offers exactly the two views you are not looking at, so
