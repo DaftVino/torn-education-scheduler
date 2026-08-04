@@ -31,7 +31,10 @@ const EXPORT_NAMES = [
   // rfcv token
   'readRfcvToken',
   // prerequisites
-  'unmetPrerequisites', 'validateQueue', 'requiredCoursesFor',
+  'unmetPrerequisites', 'validateQueue', 'requiredCoursesFor', 'allRemainingCourses',
+  'plannedCompletions',
+  // the picker's all-remaining sentinel
+  'ALL_COURSES_OPTION',
   // schedule
   'schedule',
   // storage

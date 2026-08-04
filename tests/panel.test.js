@@ -358,6 +358,109 @@ test('adding a course already in the queue does not duplicate it or its prerequi
   assert.strictEqual(new Set(afterSecond).size, afterSecond.length);
 });
 
+test('the picker leads with an all-remaining entry and marks the bachelors', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const model = exports.buildPanelModel(state);
+  const panel = exports.renderPanel(doc, mount, model, noopHandlers);
+  const picker = panel.children[1].children.find((c) => c.tagName === 'select');
+
+  const first = picker.children[0];
+  assert.strictEqual(first.value, exports.ALL_COURSES_OPTION, 'the all-remaining entry is not first');
+  assert.match(first.textContent, /all remaining courses \(115\)/);
+  assert.strictEqual(picker.children.length, model.addable.length + 1);
+  // The marker has to survive into the option the player actually reads, not
+  // just the model: an <option> cannot be styled portably, so the text is it.
+  const bachelor = picker.children.find((c) => /BIO3420/.test(c.textContent));
+  assert.ok(bachelor.textContent.startsWith('[bachelor] '), 'the bachelor is unmarked in the picker');
+  const plain = picker.children.find((c) => /BIO2380/.test(c.textContent));
+  assert.ok(plain.textContent.indexOf('[bachelor]') === -1);
+});
+
+test('an empty addable list offers no all-remaining entry to click', () => {
+  const { exports } = loadUserscript();
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const model = {
+    status: 'ok', message: null, reductionLabel: '40% off',
+    queue: [], addable: [], stale: [], problems: [],
+    finishLabel: null, totalLabel: null, collapsed: false,
+    saveError: false, selectedCourseId: null,
+  };
+  let addedAll = false;
+  const handlers = {
+    onToggle() {}, onAdd() {}, onRemove() {}, onPickerChange() {},
+    onAddAll: () => { addedAll = true; },
+  };
+  const panel = exports.renderPanel(doc, mount, model, handlers);
+  const body = panel.children[1];
+  const picker = body.children.find((c) => c.tagName === 'select');
+  assert.strictEqual(picker.children.length, 0, 'nothing is addable, so nothing may be offered');
+  const addButton = body.children.find((c) => c.textContent === 'add');
+  for (const fn of (addButton.listeners.click || [])) fn();
+  assert.strictEqual(addedAll, false, 'onAddAll fired with nothing to add');
+});
+
+// The sentinel is a string in a field that otherwise carries integers, and it
+// passes Number() as NaN. Both handlers have to recognise it before converting,
+// or "add all" silently queues nothing.
+test('the all-remaining entry queues every remaining course, in a followable order', async () => {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm';
+  const { exports, gmStore } = loadUserscript({
+    location: { search: '' },
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  await exports.init();
+
+  const body = doc.querySelector('#tes-panel').children[1];
+  const picker = body.children.find((c) => c.tagName === 'select');
+  const addButton = body.children.find((c) => c.textContent === 'add');
+  picker.value = exports.ALL_COURSES_OPTION;
+  for (const fn of (picker.listeners.change || [])) fn();
+  for (const fn of addButton.listeners.click) fn();
+
+  const stored = JSON.parse(gmStore.get(exports.STORAGE_KEY)).queue;
+  const data = exports.parsePayload(loadFixture());
+  assert.deepStrictEqual(stored, exports.allRemainingCourses(data.completedIds, data.courses));
+  assert.strictEqual(stored.length, 115);
+  assert.strictEqual(new Set(stored).size, stored.length, 'the stored queue has duplicates');
+
+  // The point of the feature: a plan the panel will actually date. A queue the
+  // panel reports problems for gets no finish line at all.
+  const redrawn = doc.querySelector('#tes-panel').children[1];
+  const summary = redrawn.children.find((c) => c.className === 'tes-summary');
+  assert.ok(!/cannot be followed/.test(summary.textContent), summary.textContent.split('\n')[1]);
+  assert.ok(redrawn.children.some((c) => c.className === 'tes-finish'), 'no finish date for the full plan');
+});
+
+test('adding everything twice does not queue anything a second time', async () => {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm';
+  const { exports, gmStore } = loadUserscript({
+    location: { search: '' },
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  await exports.init();
+
+  function clickAddAll() {
+    const body = doc.querySelector('#tes-panel').children[1];
+    const picker = body.children.find((c) => c.tagName === 'select');
+    const addButton = body.children.find((c) => c.textContent === 'add');
+    picker.value = exports.ALL_COURSES_OPTION;
+    for (const fn of addButton.listeners.click) fn();
+  }
+
+  clickAddAll();
+  const afterFirst = JSON.parse(gmStore.get(exports.STORAGE_KEY)).queue;
+  clickAddAll(); // everything is queued; the second click has nothing to add
+  const afterSecond = JSON.parse(gmStore.get(exports.STORAGE_KEY)).queue;
+  assert.deepStrictEqual(afterSecond, afterFirst);
+});
+
 // Every element under `el`, itself included. The settings view nests its rows
 // inside sections, so a one-level scan of body.children no longer sees them.
 function descendants(el) {
