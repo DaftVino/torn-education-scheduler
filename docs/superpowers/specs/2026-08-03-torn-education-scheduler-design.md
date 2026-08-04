@@ -78,13 +78,20 @@ selector the script does keep must match on the stable prefix
 not a preference.
 
 Acquisition order, most to least preferred. **As of v0.1.0 only path 1 is
-implemented** — see D1 in `docs/designs/v0.2.0-scope.md`:
+implemented**; path 2 is scoped in `docs/designs/v0.2.0-scope.md` § A1:
 
 1. `fetch('/page.php?sid=educationInitData')` — the primary path.
 2. The React fiber props, where the same `sections` array is reachable — a
    fallback if the endpoint changes shape or name.
-3. A bundled catalogue snapshot — offline fallback only, and the source for
-   preset course lists. It cannot supply the player's own status or durations.
+
+A third path, a bundled catalogue snapshot, was specified here and **dropped on
+2026-08-04**. A snapshot can only carry fields identical for every player, and
+both `status` and `actualDuration` vary by account — the first says what that
+player has completed, the second carries their perk reduction. A bundled
+catalogue could therefore render a course list but never produce a finish date,
+which is the purpose of the tool. Preset course lists, its other stated use, need
+only an array of course codes. A debug report (§ B3 of the roadmap) covers the
+diagnosis case instead.
 
 ## What the live data overturned
 
