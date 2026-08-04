@@ -926,6 +926,71 @@
     return panel;
   }
 
+  // Leaving the education page has to take the panel with it: Torn's SPA
+  // swaps the page content without a load, so a panel left behind would sit on
+  // an unrelated page quoting a plan nobody asked for. Both ids are removed —
+  // #tes-fallback-mount is ours too, and orphaning it leaks a fixed-position
+  // container over the rest of the site.
+  function unmountPanel(doc) {
+    if (!doc || typeof doc.querySelector !== 'function') return;
+    for (const id of ['#tes-panel', '#tes-fallback-mount']) {
+      let el = null;
+      try { el = doc.querySelector(id); } catch (e) { el = null; }
+      if (el && typeof el.remove === 'function') el.remove();
+    }
+  }
+
+  // Torn is a single-page app: arriving at education from the sidebar fires no
+  // page load, so @run-at document-idle never runs again and the panel simply
+  // is not there. Three signals, because no one of them is reliable alone:
+  // history patches catch programmatic navigation, popstate catches the back
+  // button, and the observer catches a re-render that replaces our mount.
+  const NAV_INSTALLED_FLAG = '__tesNavInstalled';
+
+  function observeNavigation(doc, win, handlers) {
+    if (!win || win[NAV_INSTALLED_FLAG]) return function () {};
+    win[NAV_INSTALLED_FLAG] = true;
+
+    const notify = function () {
+      try { handlers.onRouteChange(); } catch (e) { /* a bad handler must not break navigation */ }
+    };
+
+    const history = win.history;
+    const originals = {};
+    if (history) {
+      for (const name of ['pushState', 'replaceState']) {
+        if (typeof history[name] === 'function') {
+          originals[name] = history[name];
+          history[name] = function () {
+            const result = originals[name].apply(this, arguments);
+            notify();
+            return result;
+          };
+        }
+      }
+    }
+
+    if (typeof win.addEventListener === 'function') win.addEventListener('popstate', notify);
+
+    let observer = null;
+    const Observer = win.MutationObserver;
+    if (typeof Observer === 'function' && doc && doc.documentElement) {
+      try {
+        observer = new Observer(function () { notify(); });
+        observer.observe(doc.documentElement, { childList: true, subtree: true });
+      } catch (e) { observer = null; }
+    }
+
+    return function disconnect() {
+      if (history) {
+        for (const name of Object.keys(originals)) history[name] = originals[name];
+      }
+      if (typeof win.removeEventListener === 'function') win.removeEventListener('popstate', notify);
+      if (observer && typeof observer.disconnect === 'function') observer.disconnect();
+      win[NAV_INSTALLED_FLAG] = false;
+    };
+  }
+
   // A fallback error model, shared by buildPanelModel's fetch-failure path
   // and the catch block below, so renderPanel always gets a complete shape.
   function errorModel(message) {
@@ -948,15 +1013,35 @@
     // The design requires the panel to be visible even when Torn's markup
     // does not match any known mount selector, rather than rendering
     // nothing with no explanation.
-    let mount = findMountPoint(document);
+    //
+    // findMountPoint runs our selectors against a document we do not control,
+    // and init() is now called again on every route change rather than once at
+    // load. An unguarded throw here becomes an unhandled rejection and the page
+    // goes blank with no hint why — the same failure draw()'s try/catch below
+    // already exists to prevent, so the discipline extends to this phase too.
+    let mount = null;
+    let mountError = null;
+    try {
+      mount = findMountPoint(document);
+    } catch (e) {
+      mountError = (e && e.message) || String(e);
+      mount = null;
+    }
     if (!mount) {
-      mount = document.createElement('div');
-      mount.id = 'tes-fallback-mount';
-      mount.style.position = 'fixed';
-      mount.style.bottom = '12px';
-      mount.style.right = '12px';
-      mount.style.zIndex = '2147483647';
-      document.body.appendChild(mount);
+      try {
+        mount = document.createElement('div');
+        mount.id = 'tes-fallback-mount';
+        mount.style.position = 'fixed';
+        mount.style.bottom = '12px';
+        mount.style.right = '12px';
+        mount.style.zIndex = '2147483647';
+        document.body.appendChild(mount);
+      } catch (e) {
+        // There is nowhere left to draw, so there is no way to show this in
+        // the panel. Returning null is the honest end of the line: the host
+        // document is unusable and rejecting would only blank the page.
+        return null;
+      }
     }
 
     let selectedCourseId = null;
@@ -1016,14 +1101,55 @@
       }
     }
 
-    return draw(plan, false);
+    // renderPanel itself queries the document, so even the error path can
+    // throw on a host page that is actively broken. This is the last catch
+    // before the promise escapes into the bootstrap.
+    try {
+      if (mountError !== null) {
+        return renderPanel(document, mount, errorModel(`Education Scheduler could not read the page: ${mountError}`), noopHandlers);
+      }
+      return draw(plan, false);
+    } catch (e) {
+      return null;
+    }
   }
 
   // The guard wraps only the bootstrap, never the IIFE body. Torn Bookie's
   // harness documents the failure this avoids: if the whole body is guarded and
   // a test forgets location.search, the script early-returns, the export
   // injection never runs, and the test fails with no usable hint.
-  if (isEducationPage()) {
-    init();
+  //
+  // init() is re-entrant — it holds no module state — so a route change can
+  // call it again. The mounted flag lives here, at IIFE scope rather than
+  // inside init(), and is what stops the observer (which fires on every DOM
+  // mutation) from turning into a request storm against Torn.
+  let mounted = false;
+  let pending = null;
+
+  function syncToRoute() {
+    const onEducation = isEducationPage();
+    if (onEducation && !mounted) {
+      mounted = true;
+      // Deliberately re-acquired on every mount rather than cached: the old
+      // mount node does not survive Torn's SPA navigation and the active
+      // course's remaining time keeps moving, so a cached finish date would be
+      // wrong by exactly as long as the player was away.
+      init().catch(function () { mounted = false; });
+      return;
+    }
+    if (!onEducation && mounted) {
+      mounted = false;
+      unmountPanel(document);
+    }
   }
+
+  function scheduleSync() {
+    if (pending !== null) return;
+    // A single frame's worth of coalescing: Torn's re-render fires the observer
+    // many times for one navigation.
+    pending = setTimeout(function () { pending = null; syncToRoute(); }, 150);
+  }
+
+  observeNavigation(document, window, { onRouteChange: scheduleSync });
+  syncToRoute();
 })();
