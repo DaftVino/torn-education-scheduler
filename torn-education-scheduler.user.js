@@ -138,9 +138,12 @@
       }
     }
 
+    const seen = new Set();
     let parentId = course.parentId;
     while (parentId !== null && parentId !== undefined) {
       if (completedIds.has(parentId)) break;
+      if (seen.has(parentId)) break;
+      seen.add(parentId);
       const parent = courses.get(parentId);
       if (!parent) { missing.add(-1); break; }
       missing.add(parent.id);
