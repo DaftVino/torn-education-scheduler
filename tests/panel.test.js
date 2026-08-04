@@ -813,21 +813,43 @@ test('an unanswered perk renders differently from a perk answered "no"', () => {
 test('the queue order is stored as its id, not coerced into a number', async () => {
   const { doc, stored } = await initWithFixture();
   const select = fieldFor(openSettings(doc), 'Queue order');
-  // Task 10 adds the other modes to the dropdown; the handler must already
-  // carry a string through intact, or every choice arrives as NaN and
-  // normaliseSettings silently restores the default.
-  //
-  // The option is appended first because a real <select> reports '' for a value
-  // none of its options offer — writing `shortest-first` into a one-option
-  // dropdown would test the write, not the handler. This is the mode Task 10
-  // adds; the assertion below is unchanged.
-  const mode = doc.createElement('option');
-  mode.value = 'shortest-first';
-  mode.textContent = 'Shortest first';
-  select.appendChild(mode);
+  // The ids are spelled out here rather than read back off ORDER_MODE_LABELS,
+  // which would assert only that the view renders whatever it was handed. This
+  // is the one place the rendered value and the string normaliseSettings
+  // accepts are compared against a third party, so a typo like `shortest_first`
+  // fails here instead of shipping as a preference that silently refuses to
+  // change. (Until Task 10 this test appended its own option, because
+  // production offered one — which meant it could not have caught that.)
+  assert.deepStrictEqual(
+    select.children.map((o) => o.value),
+    ['as-listed', 'shortest-first', 'unlocks-first'],
+    'the rendered dropdown does not offer exactly the three shipped modes',
+  );
+  // The handler must carry a string through intact, or every choice arrives as
+  // NaN and normaliseSettings silently restores the default.
   select.value = 'shortest-first';
   fire(select, 'change');
   assert.strictEqual(stored().orderMode, 'shortest-first');
+});
+
+test('the ordering control says on screen that it does not change the finish date', async () => {
+  // The one claim this feature must not be left to imply. Ordering changes
+  // time-to-benefit, not the total — courses run one at a time, so the total is
+  // a sum. Several community guides blur the two, and a dropdown offered with
+  // no note beside it lets a player carry that belief into the choice the panel
+  // just handed them. Asserted on screen rather than on the model, because a
+  // note nothing renders is how this would fail silently.
+  const { doc } = await initWithFixture();
+  const body = openSettings(doc);
+  const notes = descendants(body)
+    .filter((el) => el.className === 'tes-note')
+    .map((el) => el.textContent);
+  const orderNote = notes.find((t) => /finish date/.test(t));
+  assert.ok(orderNote, `no note beside the ordering control; the notes were: ${JSON.stringify(notes)}`);
+  assert.match(orderNote, /does not change the finish date/);
+  // And it must say what ordering *does* change, or it reads as a control with
+  // no purpose rather than one with a different purpose.
+  assert.match(orderNote, /paying off/);
 });
 
 test('findMountPoint uses prefix matching and tolerates absence', () => {
