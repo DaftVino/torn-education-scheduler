@@ -92,6 +92,20 @@ test('tolerates a payload with no active course', () => {
   assert.strictEqual(exports.parsePayload(raw).activeCourse, null);
 });
 
+test('rejects an active course whose completedAt is not an integer', () => {
+  const { exports } = loadUserscript();
+  const raw = loadFixture();
+  raw.activeCourse.completedAt = '1767225600';
+  assert.throws(() => exports.parsePayload(raw), (err) => err.reason === 'bad-active-course');
+});
+
+test('rejects an active course whose id is null', () => {
+  const { exports } = loadUserscript();
+  const raw = loadFixture();
+  raw.activeCourse.id = null;
+  assert.throws(() => exports.parsePayload(raw), (err) => err.reason === 'bad-active-course');
+});
+
 test('transform rebuilds vm-realm objects so deepStrictEqual can compare them', () => {
   const { transform, runInVm } = loadUserscript();
   const vmObj = runInVm('({ a: 1, b: [2, 3] })');

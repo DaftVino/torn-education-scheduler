@@ -37,3 +37,16 @@ test('non-numeric queue entries are dropped, not trusted', () => {
   gmStore.set(exports.STORAGE_KEY, JSON.stringify({ queue: [38, 'x', null, 39], collapsed: false }));
   assert.deepStrictEqual(exports.loadPlan().queue, [38, 39]);
 });
+
+test('a duplicated course id is deduped, keeping the first occurrence', () => {
+  const { exports, gmStore } = loadUserscript();
+  gmStore.set(exports.STORAGE_KEY, JSON.stringify({ queue: [38, 39, 38, 40, 39], collapsed: false }));
+  assert.deepStrictEqual(exports.loadPlan().queue, [38, 39, 40]);
+});
+
+test('savePlan reports success and failure to its caller', () => {
+  const { exports, sandbox } = loadUserscript();
+  assert.strictEqual(exports.savePlan({ queue: [38], collapsed: false }), true);
+  sandbox.GM_setValue = () => { throw new Error('storage unavailable'); };
+  assert.strictEqual(exports.savePlan({ queue: [38], collapsed: false }), false);
+});
