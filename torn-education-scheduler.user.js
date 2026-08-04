@@ -38,6 +38,28 @@
     return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v;
   }
 
+  // Torn requires an anti-CSRF token, rfcv, as a query parameter on every XHR
+  // it fires. Confirmed empirically on a live session: the token is the
+  // entire 13-character value of either the rfc_v or rfc_id cookie, rfc_v
+  // preferred. This function only parses a cookie string handed to it by the
+  // caller — it stays pure and testable without a real cookie jar.
+  function readRfcvToken(cookieString) {
+    if (typeof cookieString !== 'string' || cookieString.length === 0) return null;
+
+    const values = {};
+    for (const part of cookieString.split(';')) {
+      const eq = part.indexOf('=');
+      if (eq === -1) continue;
+      const name = part.slice(0, eq).trim();
+      if (name.length === 0 || Object.prototype.hasOwnProperty.call(values, name)) continue;
+      values[name] = part.slice(eq + 1).trim();
+    }
+
+    if (values.rfc_v) return values.rfc_v;
+    if (values.rfc_id) return values.rfc_id;
+    return null;
+  }
+
   // Sane Unix-seconds bounds for activeCourse.completedAt:
   // 2020-01-01T00:00:00Z (1577836800) to 2100-01-01T00:00:00Z (4102444800).
   // Torn launched well after the lower bound and this script will be long
@@ -98,7 +120,14 @@
   }
 
   function parsePayload(raw) {
-    if (!raw || raw.success !== true) throw PayloadError('not-a-payload');
+    if (!raw || raw.success !== true) {
+      // Torn tells us exactly what went wrong (e.g. "Wrong rfcv token") — carry
+      // it into the detail instead of discarding it. raw.error may be absent
+      // or a non-string; only a string is safe to splice into the message
+      // without rendering "[object Object]".
+      const detail = raw && typeof raw.error === 'string' ? raw.error : undefined;
+      throw PayloadError('not-a-payload', detail);
+    }
     if (!Array.isArray(raw.categories) || raw.categories.length === 0) throw PayloadError('no-categories');
 
     const courses = new Map();
@@ -287,13 +316,40 @@
   // Same-origin, so the session cookie rides along and no @connect is needed.
   // Always resolves: the panel must be able to say what went wrong, and a
   // rejected promise here would surface as a blank panel instead.
-  async function fetchEducationData(fetchImpl) {
+  //
+  // Torn rejects this endpoint without an rfcv anti-CSRF query parameter, so a
+  // token is required before any request goes out. When cookieString is not
+  // supplied, the ambient cookie jar is read here (RUNTIME, not the engine) —
+  // guarded so a realm with no such global cannot throw.
+  async function fetchEducationData(fetchImpl, cookieString) {
+    let cookies = cookieString;
+    if (typeof cookies !== 'string') {
+      try {
+        cookies = (typeof document !== 'undefined' && typeof document.cookie === 'string') ? document.cookie : '';
+      } catch (e) {
+        cookies = '';
+      }
+    }
+
+    const token = readRfcvToken(cookies);
+    if (!token) {
+      // Firing the request anyway is guaranteed to fail (Torn returns 200
+      // with success:false), so stop here instead of burning a round trip.
+      // The reason string does not carry the token, only its absence.
+      return { ok: false, reason: 'no-session-token', detail: 'could not read your Torn session token — try reloading the page' };
+    }
+
     const doFetch = fetchImpl || (typeof fetch === 'function' ? fetch : null);
     if (!doFetch) return { ok: false, reason: 'network', detail: 'no fetch available' };
 
+    // rfcv is a session-scoped anti-CSRF credential — it belongs on the URL
+    // sent to Torn and nowhere else. It must never reach a detail string, a
+    // rendered panel, or storage.
+    const url = `${EDU_ENDPOINT}&rfcv=${encodeURIComponent(token)}`;
+
     let response;
     try {
-      response = await doFetch(EDU_ENDPOINT, {
+      response = await doFetch(url, {
         credentials: 'same-origin',
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
       });
@@ -609,6 +665,8 @@
 
   async function init() {
     const plan = loadPlan();
+    // fetchImpl null selects the ambient fetch; cookieString omitted so
+    // fetchEducationData reads the ambient cookie jar itself.
     const fetchResult = await fetchEducationData(null);
 
     // The design requires the panel to be visible even when Torn's markup
