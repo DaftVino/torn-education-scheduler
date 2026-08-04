@@ -93,3 +93,47 @@ test('comment-like sequences inside ordinary string literals are not treated as 
   const matches = stripped.match(/\bdocument\b/g) || [];
   assert.strictEqual(matches.length, 2, 'code after a string containing // or /* was swallowed');
 });
+
+// tests/code-map.test.js resolves an anchor by index into the stripped text and
+// reports the line it lands on, so a stripper that dropped or added a line
+// would make that check report *wrong line numbers* — trusted wrong anchors,
+// the one failure the code-map check exists to prevent. The property holds
+// today and is relied on by a second test file, so it is asserted rather than
+// inferred from those tests passing.
+test('stripping comments never changes the number of lines', () => {
+  const samples = [
+    'const a = 1; // trailing\nconst b = 2;\n',
+    '/* a block\n   spanning\n   three lines */\nconst c = 3;\n',
+    'const d = 4;\r\n// crlf comment\r\nconst e = 5;\r\n',
+    'const re = /a\/*b/;\nfunction alpha() {}\nfunction beta() {}\n',
+    'const s = `outer ${`inner`}\nsecond line`;\n',
+    '// only a comment\n',
+    '',
+  ];
+  for (const sample of samples) {
+    assert.strictEqual(
+      stripComments(sample).split('\n').length,
+      sample.split('\n').length,
+      `line count changed for: ${JSON.stringify(sample.slice(0, 40))}`,
+    );
+  }
+
+  // And against the real file, which is what the code-map check runs on.
+  const src = fs.readFileSync(SOURCE_PATH, 'utf8');
+  assert.strictEqual(
+    stripComments(src).split('\n').length,
+    src.split('\n').length,
+    'stripping the userscript changed its line count',
+  );
+});
+
+// The line-for-line correspondence the above implies: a declaration must still
+// be findable at the same index after stripping.
+test('a declaration keeps its line number through stripping', () => {
+  const src = fs.readFileSync(SOURCE_PATH, 'utf8');
+  const raw = src.split(/\r?\n/);
+  const stripped = stripComments(src).split(/\r?\n/);
+  const i = raw.findIndex((line) => /^\s*async function init\(\) \{/.test(line));
+  assert.ok(i !== -1, 'init() declaration not found in the source');
+  assert.match(stripped[i], /async function init\(\) \{/, 'the declaration moved lines during stripping');
+});
