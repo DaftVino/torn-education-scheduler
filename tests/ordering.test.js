@@ -113,6 +113,62 @@ test('dependentCount counts the whole downstream chain', () => {
   assert.strictEqual(x.dependentCount(42, data.courses), 0);
 });
 
+test('upstreamOf composes the parent chain with the tier-3 rule, in one set', () => {
+  const { x, data } = load();
+  // Asserted on the closure itself rather than only through dependentCount's
+  // count, so the composition is visible as membership rather than inferred
+  // from a number being one larger. BIO3420 (42) is the Biology bachelor: it
+  // must pull in every Biology tier-2 course AND, through them, the tier-1
+  // root none of the tier-3 rules mention.
+  const upstream = x.upstreamOf(42, data.courses);
+  assert.ok(upstream.has(34), 'the tier-1 root is not upstream of its own bachelor');
+  for (const course of data.courses.values()) {
+    if (course.categoryId === data.courses.get(42).categoryId && course.tier === 2) {
+      assert.ok(upstream.has(course.id), `tier-2 course ${course.id} is not upstream of the bachelor`);
+    }
+  }
+  // And the closure of a tier-1 root is empty: nothing precedes it.
+  assert.strictEqual(x.upstreamOf(34, data.courses).size, 0);
+});
+
+test('upstreamOf terminates on every shape of cycle', () => {
+  const { x } = load();
+  // A corrupt parentId graph is Torn's to produce and ours to survive. `seen`
+  // is the cycle guard as well as the result, so each of these must return
+  // rather than spin.
+  const twoCycle = makeCourses([{ id: 1, parentId: 2 }, { id: 2, parentId: 1 }]);
+  assert.deepStrictEqual(Array.from(x.upstreamOf(1, twoCycle)).sort(), [1, 2]);
+
+  const selfCycle = makeCourses([{ id: 1, parentId: 1 }]);
+  assert.deepStrictEqual(Array.from(x.upstreamOf(1, selfCycle)), [1]);
+
+  // The rules pointing at each other: a tier-3 course pulls in a tier-2 course
+  // in its category whose parent is that same tier-3 course.
+  const ruleCycle = makeCourses([
+    { id: 1, tier: 3, categoryId: 1, parentId: 2 },
+    { id: 2, tier: 2, categoryId: 1, parentId: 1 },
+  ]);
+  assert.deepStrictEqual(Array.from(x.upstreamOf(1, ruleCycle)).sort(), [1, 2]);
+});
+
+test('a warmed cache gives the same answer as a cold walk', () => {
+  const { x, data } = load();
+  // The cache is keyed by course id alone and belongs to exactly one
+  // catalogue. Within that contract, warm and cold must agree — and must agree
+  // whichever order the entries were filled in, since a partial entry written
+  // mid-walk would be observable as a difference here.
+  const forward = new Map();
+  const backward = new Map();
+  const ids = [42, 34, 38, 39, 127, 1, 52];
+  for (const id of ids) x.upstreamOf(id, data.courses, forward);
+  for (const id of ids.slice().reverse()) x.upstreamOf(id, data.courses, backward);
+  for (const id of ids) {
+    const cold = Array.from(x.upstreamOf(id, data.courses)).sort((a, b) => a - b);
+    assert.deepStrictEqual(Array.from(x.upstreamOf(id, data.courses, forward)).sort((a, b) => a - b), cold, `id ${id}`);
+    assert.deepStrictEqual(Array.from(x.upstreamOf(id, data.courses, backward)).sort((a, b) => a - b), cold, `id ${id}`);
+  }
+});
+
 test('every category root reaches its whole category, bachelor included', () => {
   const { x, data } = load();
   // The catalogue-wide statement of the composition rule, checked across all

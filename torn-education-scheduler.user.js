@@ -373,9 +373,19 @@
   // is mixed. tests/ordering.test.js pins the exact counts now, and the mixed
   // band as its own case, rather than a floor that passes either way.
   //
-  // `cache` is optional caller-supplied scratch keyed by course id, so a caller
-  // asking about many courses over one catalogue walks each chain once.
-  // Omitted, the walk is private and the answer is identical.
+  // `cache` is optional caller-supplied scratch, so a caller asking about many
+  // courses over one catalogue walks each chain once. Omitted, the walk is
+  // private and the answer is identical. Two contracts come with it:
+  //
+  //   1. It is keyed by course id ALONE, not by catalogue. One cache belongs to
+  //      one `courses` map, and handing a cache warmed against a different one
+  //      returns confidently wrong answers rather than failing. No caller in
+  //      this file can — orderQueue creates its cache and drops it inside one
+  //      call — but dependentCount is exported taking it, so the rule is
+  //      written down rather than left to be inferred.
+  //   2. The returned Set on a cache hit IS the cached instance, not a copy.
+  //      Every caller reads it and nothing writes to it; that has to stay true,
+  //      or one caller's mutation silently rewrites another's graph.
   function upstreamOf(courseId, courses, cache) {
     if (cache && cache.has(courseId)) return cache.get(courseId);
     const seen = new Set();
