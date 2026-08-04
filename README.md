@@ -1,23 +1,28 @@
-# torn-education-scheduler
+# Torn Education Scheduler
 
-A Tampermonkey userscript that turns Torn's education page into a live planner: it reads your own course progress and time-reduction perks, lets you pick a set of courses, and computes the exact finish date for the whole path. Runs only on torn.com's education page, with a collapsible themed panel modelled on Torn Bookie Live Scores.
+A Tampermonkey userscript that turns Torn's education page into a live planner.
+Queue the courses you intend to take and it tells you the exact date and time
+you finish — reading your own progress and perk reduction straight from the
+page. No API key.
 
 ## Install
 
+1. Install [Tampermonkey](https://www.tampermonkey.net/).
+2. Open `torn-education-scheduler.user.js` from this repo and install it.
+3. Visit <https://www.torn.com/page.php?sid=education>.
+
+## Notes
+
+- Your plan is stored locally in Tampermonkey storage. Nothing leaves your browser.
+- The script makes no third-party requests and needs no API key.
+- Ordering a queue does not change the finish date — courses run one at a time,
+  so the total is a sum. Ordering changes how early each perk starts paying off.
+
+## Development
+
 ```
-npm test
+npm test           # unit tests, Node only, no browser
+npm run test:syntax
 ```
 
-## Usage
-
-TODO — replace before the first release.
-
-## Docs
-
-- Architecture: `docs/architecture.md`
-- Workflow quick reference: `docs/quick-ref-workflow.md`
-- Decisions: `docs/adr/`
-
-## License
-
-MIT — see `LICENSE`.
+Tests never modify the userscript on disk; see `tests/load-userscript.js`.
