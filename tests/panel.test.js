@@ -457,7 +457,15 @@ test('the all-remaining entry queues every remaining course, in a followable ord
   // The point of the feature: a plan the panel will actually date. A queue the
   // panel reports problems for gets no finish line at all.
   const redrawn = doc.querySelector('#tes-panel').children[1];
-  const summary = redrawn.children.find((c) => c.className === 'tes-summary');
+  // Asserting about the queue summary (the block that opens with "Perk
+  // reduction:"), not the consumables/Books block — that one also carries
+  // .tes-summary and renders first whenever the queue has a finish date
+  // (torn-education-scheduler.user.js ~2248 vs ~2268), and it can never
+  // contain "cannot be followed", so taking the first .tes-summary here
+  // would pass regardless of what the real summary says.
+  const summary = redrawn.children.find(
+    (c) => c.className === 'tes-summary' && /^Perk reduction:/.test(c.textContent)
+  );
   assert.ok(!/cannot be followed/.test(summary.textContent), summary.textContent.split('\n')[1]);
   assert.ok(redrawn.children.some((c) => c.className === 'tes-finish'), 'no finish date for the full plan');
 });
@@ -588,11 +596,14 @@ test('the settings view shows the inference as an inference, not as a reading', 
   assert.strictEqual(model.perkInference.determinate, true);
 
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
-  // The Boosters section carries its own .tes-note (job points) ahead of this
-  // one in document order, so match on content rather than taking the first.
-  const note = descendants(panel.children[1])
-    .filter((c) => c.className === 'tes-note')
-    .find((c) => /Inferred from your/.test(c.textContent));
+  // Scoped to the Education perks section itself (not just matched on
+  // content) so this stays pinned to the note leading that section — its
+  // whole job — rather than passing no matter where the note ends up on
+  // the page.
+  const perksSection = descendants(panel.children[1]).find(
+    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === 'Education perks'
+  );
+  const note = descendants(perksSection).find((c) => c.className === 'tes-note');
   assert.ok(note, 'the perks section has no inference note');
   assert.match(note.textContent, /Inferred from your 40% reduction/);
   assert.match(note.textContent, /Correct it if it is wrong/);
