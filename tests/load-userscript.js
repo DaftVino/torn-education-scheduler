@@ -36,6 +36,8 @@ const EXPORT_NAMES = [
   'DEFAULT_PLAN', 'loadPlan', 'savePlan',
   // adapter
   'fetchEducationData',
+  // panel
+  'formatTimestamp', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
 ];
 
 function buildInstrumentedSource() {

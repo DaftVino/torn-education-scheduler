@@ -294,11 +294,248 @@
       && /(\?|&)sid=education(&|$)/.test(location.search || '');
   }
 
+  function formatTimestamp(seconds) {
+    return new Date(seconds * 1000).toUTCString().replace(/GMT$/, 'UTC');
+  }
+
+  function formatDuration(seconds) {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const parts = [];
+    if (days > 0) parts.push(days === 1 ? '1 day' : `${days} days`);
+    if (hours > 0) parts.push(hours === 1 ? '1 hour' : `${hours} hours`);
+    if (parts.length === 0) return '0 hours';
+    return parts.join(' ');
+  }
+
+  function reductionLabel(reduction) {
+    if (!reduction.constant || reduction.ratio === null) return 'varies by course';
+    return `${Math.round((1 - reduction.ratio) * 100)}% off`;
+  }
+
+  function buildPanelModel(state) {
+    const empty = {
+      status: 'error', message: null, reductionLabel: null,
+      queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
+      collapsed: state.plan.collapsed === true,
+    };
+
+    if (!state.fetchResult.ok) {
+      empty.message = `Couldn't load your education data (${state.fetchResult.reason}: ${state.fetchResult.detail}).`;
+      return empty;
+    }
+
+    const data = state.fetchResult.data;
+    // A stored plan outlives the state it was written against. Two things can
+    // rot: a course can leave the game, and — far more likely — a queued course
+    // can be finished in-game between sessions. A completed course is not work
+    // remaining, so counting its weeks would push the finish date out by time
+    // the player has already served. Drop both, and say so rather than
+    // silently editing the player's plan.
+    const stale = [];
+    const queue = state.plan.queue.filter(function (id) {
+      const course = data.courses.get(id);
+      if (!course) { stale.push({ courseId: id, why: 'no longer in the catalogue' }); return false; }
+      if (course.status === 'completed') { stale.push({ courseId: id, prefix: course.prefix, why: 'already completed' }); return false; }
+      if (course.status === 'inProgress') { stale.push({ courseId: id, prefix: course.prefix, why: 'currently in progress' }); return false; }
+      return true;
+    });
+    const result = schedule({
+      courses: data.courses, activeCourse: data.activeCourse, queue: queue, now: state.now,
+    });
+
+    const finishById = new Map(result.items.map(function (i) { return [i.courseId, i.finishesAt]; }));
+
+    const problems = validateQueue(queue, data.completedIds, data.courses).map(function (problem) {
+      return {
+        courseId: problem.courseId,
+        prefix: data.courses.get(problem.courseId).prefix,
+        missing: problem.missing.map(function (id) {
+          const course = data.courses.get(id);
+          return { id: id, prefix: course ? course.prefix : 'unknown' };
+        }),
+      };
+    });
+
+    const queued = new Set(queue);
+    const addable = [];
+    for (const course of data.courses.values()) {
+      if (course.status === 'completed' || course.status === 'inProgress') continue;
+      if (queued.has(course.id)) continue;
+      addable.push({
+        courseId: course.id,
+        prefix: course.prefix,
+        name: course.name,
+        durationLabel: formatDuration(course.duration),
+      });
+    }
+    addable.sort(function (a, b) { return a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0; });
+
+    return {
+      status: 'ok',
+      message: null,
+      reductionLabel: reductionLabel(data.reduction),
+      addable: addable,
+      stale: stale,
+      queue: queue.map(function (id) {
+        const course = data.courses.get(id);
+        return {
+          courseId: id,
+          prefix: course.prefix,
+          name: course.name,
+          duration: course.duration,
+          durationLabel: formatDuration(course.duration),
+          finishesAt: finishById.get(id),
+          finishLabel: formatTimestamp(finishById.get(id)),
+        };
+      }),
+      problems: problems,
+      finishLabel: queue.length > 0 ? formatTimestamp(result.finishesAt) : null,
+      totalLabel: queue.length > 0 ? formatDuration(result.totalSeconds) : null,
+      collapsed: state.plan.collapsed === true,
+    };
+  }
+
+  // Torn's class names are CSS-module hashes whose suffix changes on every
+  // frontend rebuild, so every selector matches the stable prefix only.
+  const MOUNT_SELECTORS = [
+    '[class*="educationPage___"]',
+    '[class*="content-wrapper"]',
+    '#mainContainer',
+  ];
+
+  function findMountPoint(doc) {
+    for (const selector of MOUNT_SELECTORS) {
+      const el = doc.querySelector(selector);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  function renderPanel(doc, mount, model, handlers) {
+    const existing = doc.querySelector('#tes-panel');
+    if (existing && existing.remove) existing.remove();
+
+    const panel = doc.createElement('div');
+    panel.id = 'tes-panel';
+    panel.setAttribute('data-tes-version', SCRIPT_VERSION);
+
+    const header = doc.createElement('div');
+    header.textContent = `Education Scheduler — ${model.collapsed ? 'show' : 'hide'}`;
+    if (header.addEventListener) header.addEventListener('click', handlers.onToggle);
+    panel.appendChild(header);
+
+    if (!model.collapsed) {
+      const body = doc.createElement('div');
+
+      if (model.status === 'error') {
+        body.textContent = model.message;
+        panel.appendChild(body);
+        mount.appendChild(panel);
+        return panel;
+      }
+
+      const summary = doc.createElement('div');
+      const lines = [`Perk reduction: ${model.reductionLabel}`];
+      if (model.finishLabel) {
+        lines.push(`Queue finishes: ${model.finishLabel}`);
+        lines.push(`Total queued time: ${model.totalLabel}`);
+      } else {
+        lines.push('Queue is empty. Add a course below.');
+      }
+      for (const entry of model.stale) {
+        lines.push(`Removed ${entry.prefix || entry.courseId} from your queue — ${entry.why}.`);
+      }
+      for (const problem of model.problems) {
+        lines.push(`${problem.prefix} needs ${problem.missing.map(function (m) { return m.prefix; }).join(', ')}`);
+      }
+      // textContent throughout, never innerHTML: course names come from Torn
+      // and are not ours to trust into markup.
+      summary.textContent = lines.join('\n');
+      body.appendChild(summary);
+
+      for (const item of model.queue) {
+        const row = doc.createElement('div');
+        const label = doc.createElement('span');
+        label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — done ${item.finishLabel}`;
+        row.appendChild(label);
+        const remove = doc.createElement('button');
+        remove.textContent = 'remove';
+        remove.dataset.courseId = String(item.courseId);
+        if (remove.addEventListener) {
+          remove.addEventListener('click', function () { handlers.onRemove(item.courseId); });
+        }
+        row.appendChild(remove);
+        body.appendChild(row);
+      }
+
+      const picker = doc.createElement('select');
+      for (const option of model.addable) {
+        const opt = doc.createElement('option');
+        opt.value = String(option.courseId);
+        opt.textContent = `${option.prefix} ${option.name} (${option.durationLabel})`;
+        picker.appendChild(opt);
+      }
+      const add = doc.createElement('button');
+      add.textContent = 'add';
+      if (add.addEventListener) {
+        add.addEventListener('click', function () {
+          const chosen = Number(picker.value);
+          if (Number.isInteger(chosen)) handlers.onAdd(chosen);
+        });
+      }
+      body.appendChild(picker);
+      body.appendChild(add);
+
+      panel.appendChild(body);
+    }
+
+    mount.appendChild(panel);
+    return panel;
+  }
+
+  async function init() {
+    const plan = loadPlan();
+    const fetchResult = await fetchEducationData(null);
+    const mount = findMountPoint(document);
+    if (!mount) return null;
+
+    function draw(currentPlan) {
+      const model = buildPanelModel({
+        fetchResult: fetchResult,
+        plan: currentPlan,
+        now: Math.floor(Date.now() / 1000),
+      });
+      function commit(next) {
+        savePlan(next);
+        draw(next);
+      }
+
+      return renderPanel(document, mount, model, {
+        onToggle: function () {
+          commit({ queue: currentPlan.queue, collapsed: !currentPlan.collapsed });
+        },
+        onAdd: function (courseId) {
+          if (currentPlan.queue.indexOf(courseId) !== -1) return;
+          commit({ queue: currentPlan.queue.concat([courseId]), collapsed: currentPlan.collapsed });
+        },
+        onRemove: function (courseId) {
+          commit({
+            queue: currentPlan.queue.filter(function (id) { return id !== courseId; }),
+            collapsed: currentPlan.collapsed,
+          });
+        },
+      });
+    }
+
+    return draw(plan);
+  }
+
   // The guard wraps only the bootstrap, never the IIFE body. Torn Bookie's
   // harness documents the failure this avoids: if the whole body is guarded and
   // a test forgets location.search, the script early-returns, the export
   // injection never runs, and the test fails with no usable hint.
   if (isEducationPage()) {
-    // bootstrap lands in Task 7
+    init();
   }
 })();
