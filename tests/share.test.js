@@ -183,6 +183,36 @@ test('an id shaped like a number a coercing parser would take is judged on its d
   }
 });
 
+test('the offending token is quoted back bounded and printable, never whole', () => {
+  const { x, courses } = load();
+  // The detail becomes importError and renders on the panel. It is the only
+  // part of a pasted string that gets quoted back, so it is the only part that
+  // needs sizing — the habit gatherDebugContext already established for Torn's
+  // own error string, which comes from a *less* hostile source than this.
+  const long = x.decodePlan(`TES1|q=${'A'.repeat(1000000)}`, courses);
+  assert.strictEqual(long.reason, 'bad-course-id');
+  assert.ok(long.detail.length < 120, `a 1,000,000-character token produced a ${long.detail.length}-character detail`);
+  assert.match(long.detail, /truncated, 1000000 chars/, 'the truncation is not marked');
+  // A short token is quoted whole, with no truncation noise.
+  const short = x.decodePlan('TES1|q=abc', courses);
+  assert.match(short.detail, /"abc" is not a course id/);
+  assert.ok(!/truncated/.test(short.detail), 'a short token was reported as truncated');
+
+  // Invisible characters are replaced rather than echoed. A bidi override
+  // reverses the display of everything after it on the line it lands in, so an
+  // error message carrying one can be made to read as something else — and
+  // since the player could never have seen the character in their paste,
+  // removing it costs them nothing.
+  const bidi = x.decodePlan('TES1|q=' + '\u202E' + 'abc', courses);
+  assert.ok(!bidi.detail.includes('\u202E'), 'a bidi override reached the panel');
+  assert.match(bidi.detail, /\uFFFDabc/, 'the replacement did not preserve the rest of the token');
+  for (const ch of ['\u0000', '\u001B', '\u009F', '\u200B', '\u200E', '\u2066', '\uFEFF']) {
+    const out = x.decodePlan(`TES1|q=${ch}9`, courses);
+    assert.strictEqual(out.reason, 'bad-course-id');
+    assert.ok(!out.detail.includes(ch), `${JSON.stringify(ch)} reached the panel`);
+  }
+});
+
 test('an id that is all digits but astronomically large is rejected by the catalogue', () => {
   const { x, courses } = load();
   const out = x.decodePlan(`TES1|q=${'9'.repeat(500)}`, courses);
@@ -420,6 +450,44 @@ test('a plan whose settings are jointly absurd imports without taking the panel 
   assert.ok(!failure, `the panel fell over: ${failure && failure.textContent}`);
   const finish = descendants(schedule).find((el) => el.className === 'tes-finish');
   assert.ok(finish && finish.textContent.length > 0, 'no finish line survived the import');
+});
+
+test('with no course data there is nothing to check a plan against, and the panel says so', async () => {
+  // The branch a reachable-but-unasserted path always is. The settings view is
+  // reachable on an acquisition failure — that was itself a regression this
+  // release fixed — so the share box is on screen with no catalogue behind it,
+  // and clicking import has to report that rather than throw, blank the panel,
+  // or accept a plan it cannot validate a single id of.
+  const doc = makeFakeDocument();
+  const { exports: x } = loadUserscript({
+    location: { search: '' },
+    document: doc,
+    // No session cookie on the document and a 403 if one were found, so the
+    // fetch path fails; the fake document exposes no React internals, so the
+    // fiber path fails too.
+    fetch: async () => ({ ok: false, status: 403, text: async () => 'Forbidden' }),
+  });
+  await x.init();
+
+  const settings = openView(doc, 'settings');
+  const box = shareBox(settings);
+  assert.ok(box, 'the share box is unreachable in the state the settings view exists for');
+  assert.strictEqual(box.value, '', 'a share string was offered for a plan the panel could not build');
+
+  const btn = importButton(settings);
+  assert.ok(btn, 'the import button is unreachable on a failed acquisition');
+  assert.doesNotThrow(() => fire(btn, 'click'), 'importing with no catalogue threw');
+
+  const after = panelBody(doc);
+  const message = descendants(after).find((el) => /No course data loaded/.test(el.textContent || ''));
+  assert.ok(message, 'importing with no catalogue said nothing at all');
+  // And the failure line is still there: the panel did not lose its own state
+  // reporting this one.
+  assert.ok(
+    descendants(after).some((el) => /Couldn't load your education data/.test(el.textContent || '')) ||
+      descendants(doc.querySelector('#tes-panel')).some((el) => /Couldn't load your education data/.test(el.textContent || '')),
+    'the acquisition failure stopped being reported',
+  );
 });
 
 test('an imported plan never reaches the panel as markup', async () => {

@@ -1023,6 +1023,28 @@
     return parts.join('|');
   }
 
+  // The one piece of the share string that is quoted back to the player, so it
+  // is the one piece that needs sizing and sanitising. gatherDebugContext
+  // already clamps Torn's own `raw.error` on the reasoning that "that string is
+  // not ours to size" — and a pasted share string comes from a more hostile
+  // source than Torn does. 40 characters is enough to find the offending token
+  // in a paste and not enough to be a wall of text.
+  //
+  // The character replacement is the other half, and it is not decoration: a
+  // bidi override (U+202E) inside the quoted token reverses the display of the
+  // rest of the line it lands in, so an "error" message can be made to read as
+  // something else entirely. Every one of these is invisible by definition,
+  // which means removing them costs the player nothing — they could not have
+  // seen the character in their paste either way.
+  const MAX_TOKEN_CHARS = 40;
+  const UNPRINTABLE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+  function quoteToken(token) {
+    const safe = token.replace(UNPRINTABLE, '\uFFFD');
+    return safe.length <= MAX_TOKEN_CHARS
+      ? `"${safe}"`
+      : `"${safe.slice(0, MAX_TOKEN_CHARS)}…" (truncated, ${safe.length} chars)`;
+  }
+
   // Untrusted input, treated as such: every id is checked against the live
   // catalogue and an unknown one is rejected by name, unrecognised keys are
   // ignored, and the field bag is a null-prototype object so a key like
@@ -1030,8 +1052,11 @@
   //
   // This is the only thing in the script that parses text from outside the
   // player's own browser, so the one contract it must not break is that it
-  // never throws: a throw here reaches init()'s catch and blanks the panel,
-  // which is a worse outcome than any rejection it could return instead.
+  // never throws on any string: a throw here reaches init()'s catch and blanks
+  // the panel, which is a worse outcome than any rejection it could return
+  // instead. The catalogue is the caller's, not the string's, and the guard
+  // below covers every shape the one call site can produce — but a Map-like
+  // whose own `has` throws is still the caller's bug and is not caught here.
   function decodePlan(text, courses) {
     if (typeof text !== 'string') return { ok: false, reason: 'bad-prefix', detail: 'not a string' };
     const trimmed = text.trim();
@@ -1057,7 +1082,7 @@
     if (rawQueue.length > 0) {
       for (const token of rawQueue.split(',')) {
         if (!/^\d+$/.test(token)) {
-          return { ok: false, reason: 'bad-course-id', detail: `"${token}" is not a course id` };
+          return { ok: false, reason: 'bad-course-id', detail: `${quoteToken(token)} is not a course id` };
         }
         const id = Number(token);
         if (!catalogue || !catalogue.has(id)) {
