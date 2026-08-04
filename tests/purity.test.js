@@ -17,7 +17,7 @@ test('the engine section touches no browser, network, or clock API', () => {
   const forbidden = [
     /\bdocument\b/, /\bwindow\b/, /\blocation\b/, /\bGM_\w+/,
     /\bfetch\s*\(/, /\bXMLHttpRequest\b/, /\bDate\.now\b/, /new Date\s*\(\s*\)/,
-    /\bsetTimeout\b/, /\bsetInterval\b/, /\blocalStorage\b/,
+    /\bsetTimeout\b/, /\bsetInterval\b/, /\blocalStorage\b/, /\bMath\.random\b/,
   ];
   for (const pattern of forbidden) {
     assert.strictEqual(pattern.test(engine), false, `engine section must not use ${pattern}`);
