@@ -358,29 +358,62 @@
     { id: 'unlocks-first', label: 'Unlocks the most first' },
   ];
 
-  // How many courses sit downstream of this one. Walks each course's ancestor
-  // chain rather than building a child index, reusing the same parentId /
-  // tier-3 rules unmetPrerequisites uses, and guards cycles the same way.
-  function dependentCount(courseId, courses) {
+  // Everything that has to be done before this course can be: the parentId
+  // chain, plus the one rule the payload does not carry in parentId — a tier-3
+  // bachelor requires every tier-2 course in its own category.
+  //
+  // The two rules COMPOSE, and that is the whole reason this is a closure
+  // rather than two separate tests. A tier-1 root reaches its category's
+  // bachelor only through the tier-2 courses between them, so asking "is the
+  // target a tier-2 course in this bachelor's category?" as a second chance
+  // after the parent walk misses every tier-1 root by exactly one — its own
+  // bachelor. That was the defect in the first cut of dependentCount: uniform
+  // across all twelve roots, invisible on today's catalogue because tier-1
+  // counts (6-14) never cross tier-2's (1-2), and wrong the moment a rank band
+  // is mixed. tests/ordering.test.js pins the exact counts now, and the mixed
+  // band as its own case, rather than a floor that passes either way.
+  //
+  // `cache` is optional caller-supplied scratch keyed by course id, so a caller
+  // asking about many courses over one catalogue walks each chain once.
+  // Omitted, the walk is private and the answer is identical.
+  function upstreamOf(courseId, courses, cache) {
+    if (cache && cache.has(courseId)) return cache.get(courseId);
+    const seen = new Set();
+    const stack = [courseId];
+    // `seen` is the cycle guard as well as the result: nothing is pushed twice,
+    // so a corrupt parentId loop terminates the same way unmetPrerequisites'
+    // does.
+    while (stack.length > 0) {
+      const course = courses.get(stack.pop());
+      if (!course) continue;
+      const parentId = course.parentId;
+      if (parentId !== null && parentId !== undefined && !seen.has(parentId)) {
+        seen.add(parentId);
+        stack.push(parentId);
+      }
+      if (course.tier === 3) {
+        for (const other of courses.values()) {
+          if (other.tier === 2 && other.categoryId === course.categoryId && !seen.has(other.id)) {
+            seen.add(other.id);
+            stack.push(other.id);
+          }
+        }
+      }
+    }
+    if (cache) cache.set(courseId, seen);
+    return seen;
+  }
+
+  // How many courses sit downstream of this one — the whole chain, not the
+  // direct dependants. Asked of every course rather than built as a child
+  // index, so there is one description of the prerequisite graph in this file
+  // and unlocks-first cannot drift from what validateQueue enforces.
+  function dependentCount(courseId, courses, cache) {
+    const scratch = cache || new Map();
     let count = 0;
     for (const candidate of courses.values()) {
       if (candidate.id === courseId) continue;
-      const seen = new Set();
-      let cursor = candidate.parentId;
-      let found = false;
-      while (cursor !== null && cursor !== undefined && !seen.has(cursor)) {
-        seen.add(cursor);
-        if (cursor === courseId) { found = true; break; }
-        const parent = courses.get(cursor);
-        cursor = parent ? parent.parentId : null;
-      }
-      // A tier-3 bachelor requires every tier-2 course in its category, so
-      // those courses are upstream of it even though parentId says nothing.
-      if (!found && candidate.tier === 3) {
-        const target = courses.get(courseId);
-        if (target && target.tier === 2 && target.categoryId === candidate.categoryId) found = true;
-      }
-      if (found) count += 1;
+      if (upstreamOf(candidate.id, courses, scratch).has(courseId)) count += 1;
     }
     return count;
   }
@@ -390,79 +423,75 @@
   // algorithm rather than a sort-then-repair, so the result is followable by
   // construction and an unsatisfiable queue degrades to appending the
   // remainder rather than looping.
-  //
-  // The tiebreak is never the only key: the player's own ordering breaks a tie
-  // on rank, so a queue where every course scores the same comes back exactly
-  // as it went in. Without that second key the result is whatever order the
-  // filter happened to produce — stable today, and not a property this file
-  // should be relying on an engine to keep.
   function orderQueue(queue, mode, courses) {
     const chosen = ORDER_MODE_LABELS.some(function (m) { return m.id === mode; }) ? mode : 'as-listed';
     if (chosen === 'as-listed') return queue.slice();
 
     const inQueue = new Set(queue);
-    const position = new Map();
-    queue.forEach(function (id, i) { position.set(id, i); });
-
-    // Precomputed once: dependentCount is O(catalogue) per call and the
-    // tiebreak runs once per remaining course per step.
-    const rank = new Map();
-    for (const id of queue) {
-      const course = courses.get(id);
-      rank.set(id, chosen === 'shortest-first'
-        ? (course ? course.duration : 0)
-        : -dependentCount(id, courses));
-    }
+    // One walk of each course's prerequisite closure, shared by both passes
+    // below: dependentCount is O(catalogue) per call, and asking it once per
+    // queued course over a cold cache would walk the same chains 115 times.
+    const upstream = new Map();
 
     // A course is ready when every prerequisite of it that is also in this
-    // queue has already been placed.
+    // queue has already been placed. Both this and the rank read the same
+    // closure, so readiness and "unlocks the most" cannot describe different
+    // graphs.
+    const rank = new Map();
     const prerequisitesIn = new Map();
     for (const id of queue) {
       const needed = [];
-      const course = courses.get(id);
-      if (course) {
-        let cursor = course.parentId;
-        const seen = new Set();
-        while (cursor !== null && cursor !== undefined && !seen.has(cursor)) {
-          seen.add(cursor);
-          if (inQueue.has(cursor)) needed.push(cursor);
-          const parent = courses.get(cursor);
-          cursor = parent ? parent.parentId : null;
-        }
-        if (course.tier === 3) {
-          for (const other of courses.values()) {
-            if (other.tier === 2 && other.categoryId === course.categoryId && inQueue.has(other.id)) {
-              needed.push(other.id);
-            }
-          }
-        }
+      for (const up of upstreamOf(id, courses, upstream)) {
+        if (inQueue.has(up)) needed.push(up);
       }
       prerequisitesIn.set(id, needed);
+      const course = courses.get(id);
+      rank.set(id, chosen === 'shortest-first'
+        ? (course ? course.duration : 0)
+        : -dependentCount(id, courses, upstream));
     }
 
     const placed = new Set();
     const out = [];
-    let remaining = queue.slice();
+    // Indices, not ids. Removing by id drops every copy of a duplicated course,
+    // which would make shortest-first and as-listed disagree about the same
+    // input — as-listed returns exactly what it was handed. loadPlan dedupes
+    // and allRemainingCourses is duplicate-free, so no player reaches this;
+    // the modes still have to answer the same question the same way.
+    let remaining = queue.map(function (_, i) { return i; });
 
     while (remaining.length > 0) {
-      const ready = remaining.filter(function (id) {
-        return prerequisitesIn.get(id).every(function (p) { return placed.has(p); });
+      const ready = remaining.filter(function (i) {
+        return prerequisitesIn.get(queue[i]).every(function (p) { return placed.has(p); });
       });
       // Nothing ready means the queue itself is unsatisfiable — a cycle, or a
       // prerequisite outside the queue. Append the remainder in the order
       // given rather than spinning; validateQueue will report the real problem.
-      if (ready.length === 0) { out.push.apply(out, remaining); break; }
+      if (ready.length === 0) {
+        for (const i of remaining) out.push(queue[i]);
+        break;
+      }
 
       ready.sort(function (a, b) {
-        const byRank = rank.get(a) - rank.get(b);
+        const byRank = rank.get(queue[a]) - rank.get(queue[b]);
         if (byRank !== 0) return byRank;
-        return position.get(a) - position.get(b);
+        // The player's own ordering breaks a rank tie, so a queue whose courses
+        // all score the same comes back exactly as it went in.
+        //
+        // This is NOT a hedge against sort stability — Array.prototype.sort has
+        // been stable by specification since ES2019. It is here because
+        // `ready` arriving in queue order is incidental: it holds only while
+        // `remaining` is built by successive filters over an array, and a
+        // refactor to a Set or a Map breaks it silently. No test can guard this
+        // key (deleting it changes no output today), so this comment is the
+        // guard, and it has to carry the reason that is actually true.
+        return a - b;
       });
 
       const next = ready[0];
-      out.push(next);
-      placed.add(next);
-      remaining = remaining.filter(function (id) { return id !== next; });
+      out.push(queue[next]);
+      placed.add(queue[next]);
+      remaining = remaining.filter(function (i) { return i !== next; });
     }
 
     return out;
@@ -2254,11 +2283,15 @@
       // here so the fact stays incidental rather than load-bearing: a renderer
       // handed this model must not meet an undefined.
       settings: normaliseSettings(null), settingsSaveError: false,
-      // The real list, not an empty one: the settings view IS reachable from a
-      // rendered error model (renderPanel keeps the nav row for any real
-      // handler set), and an empty array draws a Queue order dropdown with no
-      // options in it — a control that looks broken in the state that is
-      // hardest to explain.
+      // The real list rather than an empty one, for the reason given directly
+      // above and for no stronger one. Check the mechanism before believing a
+      // claim of reachability here: BOTH errorModel call sites pass
+      // noopHandlers, renderPanel suppresses the nav row on an identity match
+      // with noopHandlers, and this model hardcodes view: 'schedule' — so the
+      // settings view is NOT reachable from a rendered error model and the
+      // empty array was never drawn. It is corrected because an empty list
+      // would draw an optionless dropdown if that ever changed, which is what
+      // this whole field group is here to prevent.
       perkInference: NO_INFERENCE, orderModes: ORDER_MODE_LABELS, debugReport: null, grid: null,
       consumables: null,
     };

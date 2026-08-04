@@ -101,10 +101,70 @@ test('shortest-first takes the shortest available course at each step', () => {
 
 test('dependentCount counts the whole downstream chain', () => {
   const { x, data } = load();
-  // BIO1340 (34) is the tier-1 root that BIO2380 (38) and BIO2390 (39) hang off.
-  assert.ok(x.dependentCount(34, data.courses) >= 2, 'a tier-1 root has no dependents');
+  // Exact numbers, not a floor. `>= 2` was the original assertion and it
+  // passed at 8 as happily as at 9 — which is precisely how a tier-1 root
+  // short by exactly one dependant (its own bachelor) survived a green suite.
+  // These four are checked against a true transitive closure over the fixture.
+  assert.strictEqual(x.dependentCount(34, data.courses), 9, 'BIO1340');
+  assert.strictEqual(x.dependentCount(1, data.courses), 12, 'BUS1100');
+  assert.strictEqual(x.dependentCount(52, data.courses), 15, 'CMT1520');
+  assert.strictEqual(x.dependentCount(88, data.courses), 14, 'LAW1880');
   // A tier-3 bachelor unlocks nothing further inside the catalogue.
   assert.strictEqual(x.dependentCount(42, data.courses), 0);
+});
+
+test('every category root reaches its whole category, bachelor included', () => {
+  const { x, data } = load();
+  // The catalogue-wide statement of the composition rule, checked across all
+  // twelve categories rather than spot-checked on one. The two prerequisite
+  // rules are not alternatives: a tier-1 root reaches its category's bachelor
+  // only THROUGH the tier-2 courses between them, so a check that asks "is the
+  // target a tier-2 course in this bachelor's category?" as a second chance
+  // after the parent walk misses every root by exactly one — its own bachelor.
+  // A uniform offset like that changes no order on this catalogue, which is
+  // why it needs a property rather than an eyeballed number.
+  const byCategory = new Map();
+  for (const course of data.courses.values()) {
+    if (!byCategory.has(course.categoryId)) byCategory.set(course.categoryId, []);
+    byCategory.get(course.categoryId).push(course);
+  }
+  assert.strictEqual(byCategory.size, 12, 'the fixture no longer has twelve categories');
+
+  for (const [categoryId, members] of byCategory) {
+    const roots = members.filter((c) => c.parentId === null && c.tier !== 3);
+    // Every category in this catalogue funnels through one tier-1 root, so
+    // every other course in it — the bachelor as much as the tier-2 courses —
+    // is downstream of that root. If Torn ever ships a second root the premise
+    // goes, and this assertion says so rather than reporting a wrong count.
+    assert.strictEqual(roots.length, 1, `category ${categoryId} no longer has exactly one root`);
+    assert.strictEqual(
+      x.dependentCount(roots[0].id, data.courses), members.length - 1,
+      `category ${categoryId}: its root does not reach every other course in it`,
+    );
+    assert.ok(
+      members.some((c) => c.tier === 3), `category ${categoryId} has no bachelor, so this proves nothing`,
+    );
+  }
+});
+
+test('a tier-1 root outranks a tier-2 course when the two bands meet', () => {
+  const { x } = load();
+  // The case the fixture cannot show. Its tier-1 counts (6-14) never cross its
+  // tier-2 counts (1-2), so the missing bachelor was invisible there — a
+  // uniform offset that changed no order. Here the bands are adjacent, and
+  // getting it wrong reverses the queue.
+  const courses = makeCourses([
+    { id: 1, tier: 1, categoryId: 1, duration: 100 },
+    { id: 2, tier: 2, categoryId: 1, parentId: 1, duration: 100 },
+    { id: 3, tier: 3, categoryId: 1, duration: 100 },
+    { id: 10, tier: 2, categoryId: 2, duration: 100 },
+    { id: 11, tier: 3, categoryId: 2, duration: 100 },
+  ]);
+  // Course 1 leads to course 2 and, through it, to bachelor 3. Course 10 leads
+  // only to bachelor 11.
+  assert.strictEqual(x.dependentCount(1, courses), 2);
+  assert.strictEqual(x.dependentCount(10, courses), 1);
+  assert.deepStrictEqual(x.orderQueue([10, 1], 'unlocks-first', courses), [1, 10]);
 });
 
 test('unlocks-first leads with a course that unlocks more than the last one does', () => {
@@ -257,6 +317,27 @@ test('a cyclic prerequisite graph terminates and keeps every queued course', () 
   assert.strictEqual(ordered.length, 3);
   assert.deepStrictEqual(new Set(ordered), new Set([1, 2, 3]));
   assert.strictEqual(ordered[0], 3, 'the course that was ready should still be taken first');
+});
+
+test('every mode answers a duplicated queue the same way', () => {
+  const { x } = load();
+  // No player reaches this — loadPlan dedupes and allRemainingCourses is
+  // duplicate-free — but as-listed returns exactly what it was handed, and a
+  // mode that quietly drops the second copy makes the modes disagree about the
+  // same input. Whether duplicates are possible is a question for the caller;
+  // whether the modes agree is a question for this function.
+  const courses = makeCourses([
+    { id: 1, duration: 100 },
+    { id: 2, parentId: 1, duration: 50 },
+  ]);
+  const queue = [1, 1, 2];
+  for (const mode of MODES) {
+    assert.strictEqual(x.orderQueue(queue, mode, courses).length, 3, `${mode} dropped a duplicate`);
+    assert.deepStrictEqual(
+      x.orderQueue(queue, mode, courses).filter((id) => id === 1).length, 2,
+      `${mode} kept only one copy of course 1`,
+    );
+  }
 });
 
 test('a queued id missing from the catalogue is carried through rather than throwing', () => {

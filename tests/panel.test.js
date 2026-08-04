@@ -658,7 +658,7 @@ test('switching view redraws the panel without persisting the choice', async () 
 
 // Boots init() against the real fixture with a live-looking session cookie, so
 // acquisition path 1 succeeds and the perk inference has data to work from.
-async function initWithFixture(seedSettings) {
+async function initWithFixture(seedSettings, seedPlan) {
   const doc = makeFakeDocument();
   doc.cookie = 'rfc_v=abcdefghijklm';
   const loaded = loadUserscript({
@@ -668,6 +668,11 @@ async function initWithFixture(seedSettings) {
   });
   if (seedSettings !== undefined) {
     loaded.gmStore.set(loaded.exports.SETTINGS_KEY, JSON.stringify(seedSettings));
+  }
+  // Seeded before init(), because loadPlan() runs inside it: a queue written
+  // afterwards would be read by nothing.
+  if (seedPlan !== undefined) {
+    loaded.gmStore.set(loaded.exports.STORAGE_KEY, JSON.stringify(seedPlan));
   }
   await loaded.exports.init();
   return { ...loaded, doc: doc, stored: () => JSON.parse(loaded.gmStore.get(loaded.exports.SETTINGS_KEY)) };
@@ -830,6 +835,43 @@ test('the queue order is stored as its id, not coerced into a number', async () 
   select.value = 'shortest-first';
   fire(select, 'change');
   assert.strictEqual(stored().orderMode, 'shortest-first');
+});
+
+// The queue rows as the player reads them, in the order they were drawn. Each
+// row's remove button carries its course id, which is the only place the
+// rendered row states which course it is without parsing a label.
+function renderedQueueIds(doc) {
+  const body = doc.querySelector('#tes-panel').children[1];
+  return descendants(body)
+    .filter((el) => el.className === 'tes-row')
+    .map((row) => (row.children || []).find((c) => c.dataset && c.dataset.courseId !== undefined))
+    .filter(Boolean)
+    .map((btn) => Number(btn.dataset.courseId));
+}
+
+test('the ordering the player chose is the order the panel renders', async () => {
+  // The wiring test. Every other assertion in this task calls orderQueue
+  // directly, so deleting the single line in buildPanelModel that applies
+  // settings.orderMode left the whole suite green while the control did
+  // nothing: the dropdown still rendered, the note still explained
+  // time-to-benefit, and the player's choice reached no queue. This release
+  // has already shipped one feature that was unreachable in the state it
+  // existed for, and the reason nothing caught it was the same — everything
+  // asserted the model, nothing asserted the wiring.
+  //
+  // Four tier-1 roots from four categories: no prerequisite relates any of
+  // them, so nothing but the chosen mode can decide the order. They also all
+  // share one duration, which is why the mode under test is unlocks-first —
+  // shortest-first has nothing to sort these by.
+  const QUEUE = [63, 112, 1, 88];
+  const plan = { queue: QUEUE, collapsed: false };
+
+  const asListed = await initWithFixture({ orderMode: 'as-listed' }, plan);
+  assert.deepStrictEqual(renderedQueueIds(asListed.doc), QUEUE, 'as-listed did not render the stored order');
+
+  const unlocks = await initWithFixture({ orderMode: 'unlocks-first' }, plan);
+  // LAW1880 (14 downstream), BUS1100 (12), GEN1112 (11), PSY1630 (7).
+  assert.deepStrictEqual(renderedQueueIds(unlocks.doc), [88, 1, 112, 63], 'the chosen ordering never reached the rendered queue');
 });
 
 test('the ordering control says on screen that it does not change the finish date', async () => {
