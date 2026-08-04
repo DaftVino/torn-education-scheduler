@@ -22,3 +22,6 @@ tests/fixtures/raw/
 # Saved page captures embed a live session: userID, logoutHash, and a signed
 # websocket JWT. Keep them local; the JSON payload is the fixture we test on.
 tests/fixtures/*.html
+
+# Subagent-driven-development scratch: ledgers, briefs, review packages.
+.superpowers/
