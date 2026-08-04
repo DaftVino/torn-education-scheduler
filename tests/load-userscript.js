@@ -30,6 +30,8 @@ const EXPORT_NAMES = [
   'PayloadError', 'parsePayload',
   // prerequisites
   'unmetPrerequisites', 'validateQueue',
+  // schedule
+  'schedule',
 ];
 
 function buildInstrumentedSource() {
