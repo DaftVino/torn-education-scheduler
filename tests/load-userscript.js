@@ -34,6 +34,8 @@ const EXPORT_NAMES = [
   'schedule',
   // storage
   'DEFAULT_PLAN', 'loadPlan', 'savePlan',
+  // adapter
+  'fetchEducationData',
 ];
 
 function buildInstrumentedSource() {
