@@ -95,3 +95,69 @@ test('a cyclic prerequisite graph terminates instead of hanging the tab', () => 
   courses.get(22).parentId = 32;
   assert.deepStrictEqual(exports.unmetPrerequisites(32, completedIds, courses), [22, 26, 32]);
 });
+
+// requiredCoursesFor: the full transitive chain a player must actually queue,
+// in an order validateQueue accepts, courseId last.
+
+test('a course with no unmet requirements returns just itself', () => {
+  const { exports, courses, completedIds } = setup();
+  // MTH1220 (22) is tier 1, parentId null, not completed in the fixture.
+  assert.deepStrictEqual(exports.requiredCoursesFor(22, completedIds, courses), [22]);
+});
+
+test('a tier-2 course with an uncompleted parent chain returns the chain then itself, in that order', () => {
+  const { exports, courses, completedIds } = setup();
+  // MTH1220 (22) → MTH2260 (26) → MTH2320 (32), none completed.
+  assert.deepStrictEqual(exports.requiredCoursesFor(32, completedIds, courses), [22, 26, 32]);
+});
+
+test("a tier-3 bachelor returns its category's tier-2 courses and their parents, itself last", () => {
+  const { exports, courses, completedIds } = setup();
+  // PSY3690 (69) needs all six Psychology tier-2 courses (64,65,66,67,68,132),
+  // each of which needs PSY1630 (63) first. 63 must appear exactly once,
+  // ahead of all six, with 69 last.
+  const result = exports.requiredCoursesFor(69, completedIds, courses);
+  assert.deepStrictEqual(result, [63, 64, 65, 66, 67, 68, 132, 69]);
+});
+
+test('completed courses never appear in the result', () => {
+  const { exports, courses, completedIds } = setup();
+  // BIO3420 (42) gates on Biology tier-2: 35 and 36 are completed in the
+  // fixture and must be excluded, along with the tier-1 parent (34) they
+  // share, which is also completed.
+  const result = exports.requiredCoursesFor(42, completedIds, courses);
+  assert.deepStrictEqual(result, [37, 38, 39, 40, 41, 127, 42]);
+  for (const completed of [34, 35, 36]) {
+    assert.ok(!result.includes(completed), `${completed} is completed and must not appear`);
+  }
+});
+
+test('the result contains no duplicates', () => {
+  const { exports, courses, completedIds } = setup();
+  const result = exports.requiredCoursesFor(69, completedIds, courses);
+  assert.strictEqual(new Set(result).size, result.length);
+});
+
+test('a cyclic parentId graph terminates rather than hanging', () => {
+  const { exports, courses, completedIds } = setup();
+  courses.get(22).parentId = 32;
+  const result = exports.requiredCoursesFor(32, completedIds, courses);
+  assert.deepStrictEqual(result, [22, 26, 32]);
+});
+
+// The property that matters most: for any course in the catalogue, queuing
+// requiredCoursesFor(courseId, ...) into an empty queue must produce a queue
+// validateQueue accepts. Run over the entire catalogue — every tier-3
+// bachelor is in here, since those have the largest chains, but nothing is
+// excluded, per the brief's instruction not to narrow the sample.
+test('requiredCoursesFor always produces a queue validateQueue accepts, for every course in the catalogue', () => {
+  const { exports, courses, completedIds } = setup();
+  for (const courseId of courses.keys()) {
+    const queue = exports.requiredCoursesFor(courseId, completedIds, courses);
+    const problems = exports.validateQueue(queue, completedIds, courses);
+    assert.deepStrictEqual(
+      problems, [],
+      `requiredCoursesFor(${courseId}) produced an unfollowable queue: ${JSON.stringify(queue)} -> ${JSON.stringify(problems)}`
+    );
+  }
+});

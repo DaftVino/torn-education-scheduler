@@ -208,6 +208,49 @@
     return [...missing].sort((a, b) => a - b);
   }
 
+  // Returns the full transitive prerequisite chain for courseId, ending with
+  // courseId itself, in an order the player can actually follow: every
+  // requirement is emitted before anything that depends on it. Already-
+  // completed courses are excluded entirely. A post-order depth-first walk —
+  // visit a course's direct requirements first, then emit the course — using
+  // the same visiting-set cycle guard as unmetPrerequisites, so a corrupt or
+  // cyclic parentId graph terminates instead of recursing forever. `done`
+  // tracks courses already emitted so a shared ancestor (e.g. every tier-2
+  // course in a category sharing one tier-1 parent) is only emitted once.
+  function requiredCoursesFor(courseId, completedIds, courses) {
+    const result = [];
+    const done = new Set();
+    const visiting = new Set();
+
+    function visit(id) {
+      if (completedIds.has(id)) return;
+      if (done.has(id)) return;
+      if (visiting.has(id)) return;
+      const course = courses.get(id);
+      if (!course) return;
+
+      visiting.add(id);
+
+      if (course.parentId !== null && course.parentId !== undefined) {
+        visit(course.parentId);
+      }
+      if (course.tier === 3) {
+        for (const other of courses.values()) {
+          if (other.categoryId === course.categoryId && other.tier === 2 && !completedIds.has(other.id)) {
+            visit(other.id);
+          }
+        }
+      }
+
+      visiting.delete(id);
+      done.add(id);
+      result.push(id);
+    }
+
+    visit(courseId);
+    return result;
+  }
+
   function validateQueue(queue, completedIds, courses) {
     const done = new Set(completedIds);
     const problems = [];
@@ -490,8 +533,13 @@
         };
       }),
       problems: problems,
-      finishLabel: queue.length > 0 ? formatTimestamp(result.finishesAt) : null,
-      totalLabel: queue.length > 0 ? formatDuration(result.totalSeconds) : null,
+      // A wrong date stated confidently is worse than no date at all. When the
+      // queue has unmet prerequisites it is not a plan the player can actually
+      // follow in order, so schedule()'s sum describes a fiction — withhold it
+      // rather than print it. The problems list itself (rendered above) already
+      // names what is missing.
+      finishLabel: (queue.length > 0 && problems.length === 0) ? formatTimestamp(result.finishesAt) : null,
+      totalLabel: (queue.length > 0 && problems.length === 0) ? formatDuration(result.totalSeconds) : null,
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
@@ -531,6 +579,9 @@
       '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
       '#tes-panel .tes-summary { white-space: pre-line; margin-bottom: 8px; }',
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
+      '#tes-panel button, #tes-panel select { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
+      '  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: inherit; }',
+      '#tes-panel button:hover { border-color: #7ee081; }',
     ].join('\n');
     const parent = doc.head || doc.body;
     if (parent && parent.appendChild) parent.appendChild(style);
@@ -584,8 +635,14 @@
       const lines = [`Perk reduction: ${model.reductionLabel}`];
       if (model.finishLabel) {
         lines.push(`Total queued time: ${model.totalLabel}`);
-      } else {
+      } else if (model.queue.length === 0) {
         lines.push('Queue is empty. Add a course below.');
+      } else {
+        // finishLabel is withheld (buildPanelModel) whenever problems is
+        // non-empty — a queue with unmet prerequisites is not a plan the
+        // player can actually follow, so no total is safe to print. The
+        // per-course detail lands below via the problems loop.
+        lines.push('This queue cannot be followed as ordered — missing prerequisites below.');
       }
       for (const entry of model.stale) {
         lines.push(`Removed ${entry.prefix || entry.courseId} from your queue — ${entry.why}.`);
@@ -602,7 +659,7 @@
         const row = doc.createElement('div');
         row.className = 'tes-row';
         const label = doc.createElement('span');
-        label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — done ${item.finishLabel}`;
+        label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — finishes ${item.finishLabel}`;
         row.appendChild(label);
         const remove = doc.createElement('button');
         remove.textContent = 'remove';
@@ -710,7 +767,18 @@
           },
           onAdd: function (courseId) {
             if (currentPlan.queue.indexOf(courseId) !== -1) return;
-            commit({ queue: currentPlan.queue.concat([courseId]), collapsed: currentPlan.collapsed });
+            // Queue the whole prerequisite chain, not just the course the
+            // player picked — the panel must never invite a plan validateQueue
+            // will reject. requiredCoursesFor already excludes completed
+            // courses and ends with courseId itself; only skip what is
+            // already queued so existing order is preserved.
+            const data = fetchResult.ok ? fetchResult.data : null;
+            const required = data
+              ? requiredCoursesFor(courseId, data.completedIds, data.courses)
+              : [courseId];
+            const toAdd = required.filter(function (id) { return currentPlan.queue.indexOf(id) === -1; });
+            if (toAdd.length === 0) return;
+            commit({ queue: currentPlan.queue.concat(toAdd), collapsed: currentPlan.collapsed });
           },
           onRemove: function (courseId) {
             commit({
