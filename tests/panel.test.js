@@ -906,3 +906,71 @@ test('findMountPoint uses prefix matching and tolerates absence', () => {
   assert.ok(selectors.some((s) => s.includes('___')), 'must query by hash prefix');
   assert.ok(!selectors.some((s) => /___[A-Za-z0-9]{4,}/.test(s)), 'must not use a full hashed class name');
 });
+
+test('init() renders a draw() that threw inside the panel instead of blanking the page', async () => {
+  // The last untested safety net in the file. init() is async, so an unguarded
+  // throw out of draw() is an unhandled rejection: no panel, no message, and a
+  // player who reads it as Torn being broken.
+  //
+  // There are now TWO guards in init() and this test is about the inner one.
+  // The outer guard wraps mount acquisition and renders "could not read the
+  // page"; the per-draw() catch renders "hit an error and stopped". The
+  // messages are disjoint, so the assertion below names which net caught it —
+  // a document that threw on querySelector would be caught by the other guard
+  // and produce the other message, and this test would fail.
+  const doc = makeFakeDocument({ cookie: 'rfc_v=abcdefghijklm' });
+
+  // A real element standing behind Torn's own education-page selector, so
+  // findMountPoint returns THIS node. Without it the panel is drawn into the
+  // #tes-fallback-mount init() creates for itself — a different element, whose
+  // appendChild does not throw, and the test would pass having exercised
+  // nothing. Asserted below rather than assumed.
+  const mount = doc.createElement('div');
+  doc.selectors['[class*="educationPage___"]'] = mount;
+
+  // `mount.appendChild(panel)` is the last statement in renderPanel, so the
+  // throw lands inside draw()'s try after a complete, otherwise-successful
+  // render — which is the realistic shape of the failure. It fails ONCE: the
+  // catch re-renders through this same mount, and a permanently exploding
+  // mount would take the safety net down with it and prove nothing about it.
+  let appendCalls = 0;
+  const realAppend = mount.appendChild.bind(mount);
+  mount.appendChild = function (child) {
+    appendCalls += 1;
+    if (appendCalls === 1) throw new Error('mount exploded');
+    return realAppend(child);
+  };
+
+  const { exports } = loadUserscript({
+    location: { search: '' }, // keeps the bootstrap from auto-running init()
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+
+  // Resolves rather than rejects: the whole point of the net.
+  await exports.init();
+
+  assert.strictEqual(appendCalls, 2, 'the catch did not re-render exactly once through the same mount');
+  assert.strictEqual(
+    doc.querySelector('#tes-fallback-mount'), null,
+    'init() fell back to its own mount, so the exploding one was never the mount under test',
+  );
+
+  const panel = mount.children.find((c) => c.id === 'tes-panel');
+  assert.ok(panel, 'nothing was drawn after the throw — this is the blank page the catch exists to prevent');
+
+  const body = panel.children[1];
+  const failure = body.children.find((c) => c.className === 'tes-error');
+  assert.ok(failure, 'the re-render carried no visible failure line');
+  assert.match(failure.textContent, /hit an error and stopped/, 'a different guard rendered this, not the per-draw catch');
+  assert.match(failure.textContent, /mount exploded/, 'the underlying message was swallowed');
+
+  // renderPanel suppresses the nav row on an identity match with noopHandlers,
+  // and the catch is the only thing that hands it noopHandlers alongside live
+  // course data. Buttons that render and do nothing read as the script being
+  // broken twice over.
+  assert.ok(
+    !body.children.some((c) => c.className === 'tes-nav'),
+    'the inert panel offered nav buttons nothing is listening to',
+  );
+});
