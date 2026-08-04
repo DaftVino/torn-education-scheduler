@@ -449,6 +449,36 @@ test('a reduction that varies by course refuses to name a combination', () => {
   });
   assert.strictEqual(model.perkInference.determinate, false);
   assert.match(model.perkInference.note, /varies by course/);
+  assert.strictEqual(model.reductionLabel, 'varies by course');
+});
+
+test('a reduction we could not read is not reported as one that varies', () => {
+  const { exports } = loadUserscript();
+  const data = exports.parsePayload(loadFixture());
+  function noteFor(reduction) {
+    return exports.buildPanelModel({
+      fetchResult: { ok: true, data: { ...data, reduction: reduction } },
+      plan: { queue: [], collapsed: false },
+      now: NOW,
+      view: 'settings',
+    });
+  }
+
+  // Every course with baseDuration <= 0 leaves deriveReduction with no ratios
+  // at all. Telling the player their reduction "varies by course" would state
+  // something about their account that nothing here supports.
+  const empty = noteFor({ ratio: null, constant: false, ratios: [] });
+  assert.strictEqual(empty.perkInference.determinate, false);
+  assert.match(empty.perkInference.note, /could not be read from this page/);
+  assert.doesNotMatch(empty.perkInference.note, /varies by course/);
+  assert.strictEqual(empty.reductionLabel, 'could not be read');
+
+  // typeof NaN === 'number': the panel must never print "Your NaN% reduction"
+  // or "NaN% off".
+  const notANumber = noteFor({ ratio: NaN, constant: true, ratios: [NaN] });
+  assert.doesNotMatch(notANumber.perkInference.note, /NaN/);
+  assert.doesNotMatch(notANumber.reductionLabel, /NaN/);
+  assert.strictEqual(notANumber.reductionLabel, 'could not be read');
 });
 
 test('switching view redraws the panel without persisting the choice', async () => {
@@ -571,13 +601,63 @@ test('clearing a perk field returns it to "has not said" rather than zero', asyn
   assert.strictEqual(stored().perks.meritsPercent, null);
 });
 
-test('unticking a perk stores false, which is an answer and not an absence', async () => {
+test('answering "no" to a perk stores false, which is an answer and not an absence', async () => {
   const { doc, stored } = await initWithFixture();
   const principal = fieldFor(openSettings(doc), 'Principal rank (10%)');
-  assert.strictEqual(principal.checked, true, 'the prefilled perk did not render as ticked');
-  principal.checked = false;
+  assert.strictEqual(principal.value, 'yes', 'the prefilled perk did not render as answered');
+  principal.value = 'no';
   fire(principal, 'change');
   assert.strictEqual(stored().perks.principal, false);
+
+  // And back to the unanswered state, which must be reachable from the form —
+  // otherwise the player can never undo an answer they did not mean to give.
+  // The commit redrew the settings view in place, so re-read the live body.
+  const again = fieldFor(doc.querySelector('#tes-panel').children[1], 'Principal rank (10%)');
+  assert.strictEqual(again.value, 'no');
+  again.value = '';
+  fire(again, 'change');
+  assert.strictEqual(stored().perks.principal, null);
+});
+
+test('an unanswered perk renders differently from a perk answered "no"', () => {
+  const { exports } = loadUserscript();
+  const data = exports.parsePayload(loadFixture());
+  const doc = makeFakeDocument();
+
+  // A perk is true, false or null, and null is the state this whole feature
+  // turns on. A control that renders null and false identically shows an
+  // unanswered question as a stated "no" — the panel answering on the player's
+  // behalf, which is the thing the inference itself refuses to do.
+  function renderWith(perks) {
+    const mount = doc.createElement('div');
+    const model = exports.buildPanelModel({
+      // An ambiguous 20%: nothing is inferred, so whatever the fields show is
+      // what the player themselves said.
+      fetchResult: { ok: true, data: { ...data, reduction: { ratio: 0.8, constant: true, ratios: [0.8] } } },
+      plan: { queue: [], collapsed: false },
+      now: NOW,
+      view: 'settings',
+      settings: { perks: perks },
+    });
+    assert.strictEqual(model.perkInference.determinate, false);
+    const panel = exports.renderPanel(doc, mount, model, noopHandlers);
+    return fieldFor(panel.children[1], 'Principal rank (10%)');
+  }
+
+  const unanswered = renderWith({ meritsPercent: null, principal: null, wsuBlock: null });
+  const answeredNo = renderWith({ meritsPercent: null, principal: false, wsuBlock: null });
+  const answeredYes = renderWith({ meritsPercent: null, principal: true, wsuBlock: null });
+
+  assert.notStrictEqual(unanswered.value, answeredNo.value, '"has not said" renders as a stated "no"');
+  assert.strictEqual(unanswered.value, '');
+  assert.strictEqual(answeredNo.value, 'no');
+  assert.strictEqual(answeredYes.value, 'yes');
+
+  // The unanswered state is named on screen, not merely a blank slot.
+  const selected = (field) => field.children.find((o) => o.selected === true);
+  assert.strictEqual(selected(unanswered).textContent, 'Not set');
+  assert.strictEqual(selected(answeredNo).textContent, 'No');
+  assert.strictEqual(selected(answeredYes).textContent, 'Yes');
 });
 
 test('the queue order is stored as its id, not coerced into a number', async () => {

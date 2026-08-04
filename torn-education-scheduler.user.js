@@ -439,12 +439,22 @@
   // This enumerates rather than consulting a table, so the unique/ambiguous
   // boundaries cannot drift away from the rule they came from.
   function inferPerks(reduction) {
-    // deriveReduction reports a non-constant ratio rather than picking a
-    // value, because a per-course ratio would mean Torn changed the mechanic.
-    // Guessing a decomposition from it would hide exactly that.
-    const varies = { determinate: false, totalPercent: null, candidates: 0, reason: 'varies' };
-    if (!reduction || typeof reduction !== 'object') return varies;
-    if (reduction.constant !== true || typeof reduction.ratio !== 'number') return varies;
+    function undetermined(reason) {
+      return { determinate: false, totalPercent: null, candidates: 0, reason: reason };
+    }
+
+    // 'varies' is a claim about the player's account — that their reduction
+    // genuinely differs course by course, which would mean Torn changed the
+    // mechanic. Only evidence of two or more real ratios earns that word. A
+    // missing, empty or malformed reduction is 'unreadable': we failed to read
+    // it, which is a fact about us and must not be reported as a fact about
+    // them. Number.isFinite, not typeof: a NaN ratio is a number and would
+    // otherwise reach the panel as the sentence "Your NaN% reduction".
+    if (!reduction || typeof reduction !== 'object') return undetermined('unreadable');
+    const realRatios = Array.isArray(reduction.ratios) ? reduction.ratios.filter(function (r) { return Number.isFinite(r); }) : [];
+    if (reduction.constant !== true || !Number.isFinite(reduction.ratio)) {
+      return undetermined(realRatios.length >= 2 ? 'varies' : 'unreadable');
+    }
 
     // The ratio is actualDuration/originDuration, so the reduction is its
     // complement. Round to whole percent: the ratio is a division of two
@@ -791,8 +801,16 @@
     return parts.join(' ');
   }
 
+  // Same distinction inferPerks draws, for the same reason: "varies by course"
+  // states something about the player's account, so it needs two real ratios
+  // behind it. Anything else we simply could not read — and a NaN ratio must
+  // never surface as "NaN% off".
   function reductionLabel(reduction) {
-    if (!reduction.constant || reduction.ratio === null) return 'varies by course';
+    if (!reduction || typeof reduction !== 'object') return 'could not be read';
+    if (reduction.constant !== true || !Number.isFinite(reduction.ratio)) {
+      const realRatios = Array.isArray(reduction.ratios) ? reduction.ratios.filter(function (r) { return Number.isFinite(r); }) : [];
+      return realRatios.length >= 2 ? 'varies by course' : 'could not be read';
+    }
     return `${Math.round((1 - reduction.ratio) * 100)}% off`;
   }
 
@@ -890,9 +908,14 @@
         ? `Inferred from your ${inference.totalPercent}% reduction: this total has only one possible combination. Correct it if it is wrong.`
         : inference.reason === 'varies'
           ? 'Your reduction varies by course, so no perk combination can be read from it. Enter what you hold.'
-          : inference.reason === 'unrecognised'
-            ? `Your ${inference.totalPercent}% reduction does not match any combination of the three known perks. Enter what you hold.`
-            : `Your ${inference.totalPercent}% reduction has ${inference.candidates} possible combinations, so it cannot be read. Enter what you hold.`,
+          // Not "your reduction varies": we failed to read it, and saying
+          // otherwise would state something about their account we have no
+          // evidence for.
+          : inference.reason === 'unreadable'
+            ? 'Your time reduction could not be read from this page, so no perk combination can be inferred. Enter what you hold.'
+            : inference.reason === 'unrecognised'
+              ? `Your ${inference.totalPercent}% reduction does not match any combination of the three known perks. Enter what you hold.`
+              : `Your ${inference.totalPercent}% reduction has ${inference.candidates} possible combinations, so it cannot be read. Enter what you hold.`,
     };
 
     return {
@@ -1092,21 +1115,42 @@
     return input;
   }
 
-  function checkField(doc, section, label, checked, onCommit) {
+  // Three states, not two. A perk is `true`, `false`, or `null` — and `null`
+  // ("has not said") is the state this whole feature turns on, because it is
+  // what stops an ambiguous reduction from being answered on the player's
+  // behalf. A checkbox has nowhere to put it: an unticked box for a question
+  // nobody asked reads as a stated "no", which is the panel inventing an
+  // answer — exactly what the inference itself refuses to do.
+  const TRI_STATE_OPTIONS = [
+    { value: '', label: 'Not set' },
+    { value: 'yes', label: 'Yes' },
+    { value: 'no', label: 'No' },
+  ];
+
+  function triStateField(doc, section, label, value, onCommit) {
     const row = doc.createElement('div');
     row.className = 'tes-row';
     const text = doc.createElement('span');
     text.textContent = label;
     row.appendChild(text);
-    const input = doc.createElement('input');
-    input.setAttribute('type', 'checkbox');
-    input.checked = checked === true;
-    if (input.addEventListener) {
-      input.addEventListener('change', function () { onCommit(input.checked === true); });
+    const select = doc.createElement('select');
+    const current = value === true ? 'yes' : value === false ? 'no' : '';
+    for (const option of TRI_STATE_OPTIONS) {
+      const opt = doc.createElement('option');
+      opt.value = option.value;
+      opt.textContent = option.label;
+      if (option.value === current) opt.selected = true;
+      select.appendChild(opt);
     }
-    row.appendChild(input);
+    select.value = current;
+    if (select.addEventListener) {
+      select.addEventListener('change', function () {
+        onCommit(select.value === 'yes' ? true : select.value === 'no' ? false : null);
+      });
+    }
+    row.appendChild(select);
     section.appendChild(row);
-    return input;
+    return select;
   }
 
   function renderSettingsView(doc, body, model, handlers) {
@@ -1137,8 +1181,8 @@
     note.textContent = model.perkInference.note;
     perks.appendChild(note);
     numberField(doc, perks, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
-    checkField(doc, perks, 'Principal rank (10%)', s.perks.principal === true, function (v) { set('perks.principal', v); });
-    checkField(doc, perks, 'WSU stock block (10%)', s.perks.wsuBlock === true, function (v) { set('perks.wsuBlock', v); });
+    triStateField(doc, perks, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
+    triStateField(doc, perks, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
 
     const planning = settingsSection(doc, body, 'Planning');
     const modeRow = doc.createElement('div');
@@ -1398,6 +1442,12 @@
     // which is distinct from zero, and overwriting an answer they typed would
     // be the panel arguing with them. An inferred value is never presented as
     // a reading: the note above the fields says where it came from.
+    //
+    // Intentional, so nobody "fixes" it: clearing a perk back to "Not set" and
+    // reloading refills it. null means "has not said", and on the next visit
+    // the player still has not said — the decomposition is provably unique, so
+    // the same value is offered again. Persisting a refusal would need a fourth
+    // state, and there is nothing here worth that.
     function prefillPerks(data) {
       if (!data) return;
       const inference = inferPerks(data.reduction);
