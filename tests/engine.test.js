@@ -58,12 +58,15 @@ test('the finish date is independent of queue order', () => {
 
 test('order-independence holds across many permutations', () => {
   const { exports, parsed } = setup();
-  const base = [38, 39, 40, 41];
+  // All four durations are distinct — 1088640, 725760, 1451520, 1814400 — so a
+  // position-dependent bug cannot hide behind two courses of equal length.
+  const base = [38, 39, 40, 42];
   const expected = exports.schedule({
     courses: parsed.courses, activeCourse: parsed.activeCourse, queue: base, now: NOW,
   }).finishesAt;
+  assert.strictEqual(expected, 1772305920);
   const permutations = [
-    [41, 40, 39, 38], [39, 41, 38, 40], [40, 38, 41, 39], [38, 41, 39, 40],
+    [42, 40, 39, 38], [39, 42, 38, 40], [40, 38, 42, 39], [38, 42, 39, 40],
   ];
   for (const queue of permutations) {
     const result = exports.schedule({
