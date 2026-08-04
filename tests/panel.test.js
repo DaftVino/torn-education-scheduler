@@ -223,8 +223,21 @@ test('renderPanel renders a visible message for an error model', () => {
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
   const body = panel.children[1];
   assert.ok(body, 'error body element missing');
-  assert.match(body.textContent, /503/);
+  const nodes = descendants(body);
+  const failure = nodes.find((c) => c.className === 'tes-error');
+  assert.ok(failure, 'the failure line is missing');
+  assert.match(failure.textContent, /503/);
   assert.ok(mount.children.includes(panel), 'panel must be mounted');
+  // The error state no longer swallows the rest of the panel. It used to
+  // return before the nav row, which put the settings view — and with it the
+  // debug report, the whole reason a player contacts anyone — out of reach in
+  // exactly the situation that produces it.
+  const nav = nodes.find((c) => c.className === 'tes-nav');
+  assert.ok(nav, 'the error state stranded the view controls');
+  assert.ok(
+    nav.children.some((c) => c.textContent === '⚙ settings'),
+    'settings is unreachable from the error state',
+  );
 });
 
 test('the add button does not queue a course when the picker has no real selection', () => {

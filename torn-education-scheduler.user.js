@@ -546,7 +546,13 @@
       // for the completed-course set this report deliberately withholds.
       `  Courses: ${Array.isArray(src.queueCodes) && src.queueCodes.length > 0 ? src.queueCodes.join(' ') : 'none'}`,
       '',
-      'Please paste this into the feedback area on the Greasy Fork page for this script.',
+      // GREASY_FORK_URL's one consumer. Named in prose either way, because
+      // the instruction is useful without the URL; the URL is appended only
+      // once it exists, so resolving it has a visible effect here and a test
+      // that fails if it is set without the report being re-checked.
+      GREASY_FORK_URL
+        ? `Please paste this into the feedback area on the Greasy Fork page for this script: ${GREASY_FORK_URL}`
+        : 'Please paste this into the feedback area on the Greasy Fork page for this script.',
     ];
     return lines.join('\n');
   }
@@ -907,8 +913,13 @@
       perkInference: NO_INFERENCE,
       // Task 10 replaces this with the real orderings.
       orderModes: [{ id: 'as-listed', label: 'As listed' }],
-      // Null until the player asks for it. The acquisition failure is exactly
-      // when the report is most wanted, so it is offered on this model too.
+      // Null until the player asks for it. An acquisition failure is exactly
+      // when the report is most wanted — and it is genuinely reachable from
+      // here: renderPanel no longer returns before the nav row on an error
+      // model, so the settings view (which owns the report) can be opened.
+      // This is the only path on which failureReason/failureDetail are
+      // populated at all, so if it stops being reachable the report's whole
+      // Failure block silently becomes "not recorded".
       debugReport: state.debugReport || null,
     };
 
@@ -1051,9 +1062,13 @@
       reductionConstant: data ? data.reduction.constant : null,
       hasActiveCourse: data ? data.activeCourse !== null : null,
       queueLength: queue.length,
+      // prefix is the one payload-derived string that reaches the report, and
+      // normaliseCourse copies it across without a type check. Requiring a
+      // real string here (rather than letting join() call toString on
+      // whatever Torn sent) is what makes the allowlist airtight end to end.
       queueCodes: data ? queue.map(function (id) {
         const c = data.courses.get(id);
-        return c ? c.prefix : String(id);
+        return (c && typeof c.prefix === 'string') ? c.prefix : String(id);
       }) : [],
       settings: state.settings || null,
     };
@@ -1101,6 +1116,7 @@
       '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: 8px; }',
       '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
       '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
+      '#tes-panel .tes-error { color: #ff8080; margin-bottom: 8px; }',
       '#tes-panel .tes-summary { white-space: pre-line; margin-bottom: 8px; }',
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
       '#tes-panel button, #tes-panel select { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
@@ -1153,11 +1169,19 @@
     if (!model.collapsed) {
       const body = doc.createElement('div');
 
+      // The failure is stated first and stays visible, but it no longer
+      // swallows the rest of the panel. This used to return here, before the
+      // nav row — which put the debug report (it lives in the settings view)
+      // out of reach in the one situation it exists for: a player whose panel
+      // says "Couldn't load your education data" is exactly the player who
+      // needs to send someone a report. It also stranded the settings form,
+      // every control of which is the player's own input and none of which
+      // needs the payload, along with NO_INFERENCE's "Enter what you hold".
       if (model.status === 'error') {
-        body.textContent = model.message;
-        panel.appendChild(body);
-        mount.appendChild(panel);
-        return panel;
+        const failure = doc.createElement('div');
+        failure.className = 'tes-error';
+        failure.textContent = model.message;
+        body.appendChild(failure);
       }
 
       // The view controls sit above the body so they keep their position as
@@ -1175,7 +1199,12 @@
       }
       body.appendChild(nav);
 
+      // Settings renders in full either way — it reads nothing from the
+      // payload. Schedule and Degrees have nothing to draw without data, and
+      // the failure line above is the whole of what they have to say, so they
+      // are skipped rather than rendered empty.
       if (view === 'settings') renderSettingsView(doc, body, model, handlers);
+      else if (model.status === 'error') { /* the failure line is the view */ }
       else if (view === 'grid') renderGridView(doc, body, model, handlers);
       else renderScheduleView(doc, body, model, handlers);
 
@@ -1725,9 +1754,16 @@
             if (!debugReport) return;
             // Clipboard access is not granted and may be refused; the report is
             // already on screen, so a failed copy costs the player nothing.
+            // writeText returns a promise and a refusal (NotAllowedError, the
+            // documented reason this guard exists) rejects asynchronously —
+            // try/catch alone would let it surface as an unhandledrejection on
+            // Torn's own page, so the rejection is swallowed explicitly too.
             try {
               if (typeof navigator !== 'undefined' && navigator && navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(debugReport);
+                const written = navigator.clipboard.writeText(debugReport);
+                if (written && typeof written.then === 'function') {
+                  written.then(null, function () { /* the report is visible; selecting it still works */ });
+                }
               }
             } catch (e) { /* the report is visible; selecting it still works */ }
           },
