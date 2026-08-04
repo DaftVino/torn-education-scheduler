@@ -4,6 +4,68 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-04
+
+### Added
+
+- React fiber fallback for data acquisition: if the `educationInitData` fetch
+  fails, the panel falls back to reading the same course data out of Torn's
+  own React component tree instead of going dark.
+- The panel now mounts and unmounts across Torn's single-page navigation, so
+  arriving at the education page from elsewhere in Torn shows it with no
+  reload, and leaving the page unmounts it cleanly.
+- A settings view behind a gear icon, holding every variable the arithmetic
+  depends on: max booster cooldown, Books of Carols owned, Book unit price,
+  job points available, and overrides for merits, Principal rank and the WSU
+  stock block.
+- Perk inference: the panel infers merits, Principal rank and the WSU stock
+  block from the observed reduction ratio wherever the split is unique, and
+  prefills the settings fields with it.
+- A debug report, built from an allowlist, that renders in the panel before
+  it can be copied and names where to send it.
+- A degree grid view: one box per degree plus one box for every course,
+  each computed independently from today.
+- The Book of Carols ceiling and floor date: the maximum number of Books a
+  cooldown budget supports, and the shortest possible finish date that
+  buying that many produces, printed with its cost.
+- Three queue ordering modes — as-listed, shortest-first, unlocks-first.
+- Plan export and import as a copyable string, validated against the
+  catalogue on the way back in.
+
+### Changed
+
+- The course picker now marks bachelor (tier-3) courses in their label and
+  gains an "all remaining courses" entry that queues everything not yet
+  completed, dependency-ordered — roughly 115 courses on a fresh account.
+- The finish date summary now also reports the floor date and its cost
+  alongside the planned finish, when Book of Carols settings are supplied.
+
+### Notes
+
+- Ordering does not change the finish date. Courses run one at a time, so
+  the total is a sum, and a sum is order-independent. Ordering changes how
+  soon each course's bonus starts paying off, not how long the whole queue
+  takes.
+- Each box in the degree grid starts from today, so their dates overlap and
+  cannot be read as a sequence — eleven degrees finishing in 2026 next to an
+  all-courses box finishing in 2029 is expected, not a bug. The boxes do
+  **not** fail to sum: measured against the real catalogue they come to 115
+  courses and the matching duration, both for the twelve degree boxes and
+  for the all-courses box. See the 2026-08-04 correction in
+  `docs/designs/v0.2.0-scope.md` § C3.
+- Perk inference only prefills a field where the observed reduction has
+  exactly one decomposition into merits, Principal rank and the WSU stock
+  block, and marks the value as inferred rather than known. Ambiguous
+  totals — most of them — are left for the player to enter.
+- The floor date is always printed together with its cost. When no Book
+  price is set, the cost is withheld rather than shown as `$0`, so an
+  unset price never reads as a free ceiling.
+- A fourth ordering mode, `days-per-bonus`, is not in this release. The
+  payload offers two incompatible definitions of "bonus" that sort the
+  catalogue differently, and the mode's name would lie about which one it
+  used. Recorded in `docs/designs/v0.2.0-scope.md` § H2, pending the
+  owner's definition.
+
 ## [0.1.0] - 2026-08-03
 
 ### Added
