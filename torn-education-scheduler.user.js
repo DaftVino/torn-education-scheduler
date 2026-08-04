@@ -118,6 +118,54 @@
     };
   }
 
+  // parentId is Torn's own prerequisite graph and chains arbitrarily deep —
+  // CMT1520 → CMT2570 → CMT2128 → CMT2129. A tier-based model would permit
+  // queues the player cannot actually follow.
+  //
+  // The one rule not in the payload: a tier-3 bachelor carries parentId null
+  // but requires every tier-2 course in its category.
+  function unmetPrerequisites(courseId, completedIds, courses) {
+    const course = courses.get(courseId);
+    if (!course) return [-1];
+
+    const missing = new Set();
+
+    if (course.tier === 3) {
+      for (const other of courses.values()) {
+        if (other.categoryId === course.categoryId && other.tier === 2 && !completedIds.has(other.id)) {
+          missing.add(other.id);
+        }
+      }
+    }
+
+    // Check only the immediate parent. validateQueue walks the queue and builds
+    // up the done set, so later courses see earlier ones as satisfied.
+    const parentId = course.parentId;
+    if (parentId !== null && parentId !== undefined) {
+      if (!completedIds.has(parentId)) {
+        const parent = courses.get(parentId);
+        if (!parent) {
+          missing.add(-1);
+        } else {
+          missing.add(parent.id);
+        }
+      }
+    }
+
+    return [...missing].sort((a, b) => a - b);
+  }
+
+  function validateQueue(queue, completedIds, courses) {
+    const done = new Set(completedIds);
+    const problems = [];
+    for (const courseId of queue) {
+      const missing = unmetPrerequisites(courseId, done, courses);
+      if (missing.length > 0) problems.push({ courseId: courseId, missing: missing });
+      done.add(courseId);
+    }
+    return problems;
+  }
+
   // ─── ENGINE END ─────────────────────────────────────────────────
 
   // ─── RUNTIME ────────────────────────────────────────────────────

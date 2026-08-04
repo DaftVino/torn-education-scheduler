@@ -28,6 +28,8 @@ const EXPORT_NAMES = [
   'isEducationPage',
   // payload
   'PayloadError', 'parsePayload',
+  // prerequisites
+  'unmetPrerequisites', 'validateQueue',
 ];
 
 function buildInstrumentedSource() {
