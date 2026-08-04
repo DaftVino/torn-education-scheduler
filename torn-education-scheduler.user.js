@@ -601,9 +601,12 @@
     };
   }
 
-  const SECONDS_PER_BOOK = 21600;          // a Book of Carols removes 6 hours of course time
-  const BOOK_COOLDOWN_SECONDS = 21600;     // and adds 6 hours of booster cooldown
-  const BOOK_FIXED_POINT_SECONDS = 43200;  // 6 + 6: the closed form's divisor
+  const SECONDS_PER_BOOK = 21600;       // a Book of Carols removes 6 hours of course time
+  const BOOK_COOLDOWN_SECONDS = 21600;  // and adds 6 hours of booster cooldown
+  // Derived, not asserted: the divisor in the closed form below IS the sum of
+  // the two, and writing 43200 with a "6 + 6" comment beside it would leave the
+  // relationship described rather than enforced.
+  const BOOK_FIXED_POINT_SECONDS = SECONDS_PER_BOOK + BOOK_COOLDOWN_SECONDS;
 
   // Cooldown decays in real time, so over a long path the ceiling is set by the
   // total cooldown budget rather than by a single sitting:
@@ -633,30 +636,51 @@
     const price = isInt(opts.bookPrice) && opts.bookPrice >= 0 ? opts.bookPrice : 0;
     const ceiling = booksCeiling({ baseSeconds: base, maxCooldownSeconds: opts.maxCooldownSeconds });
 
-    const plannedBooks = Math.min(owned, ceiling);
-    const plannedSaving = Math.min(plannedBooks * SECONDS_PER_BOOK, base);
+    const usable = Math.min(owned, ceiling);
+    const plannedSaving = Math.min(usable * SECONDS_PER_BOOK, base);
     const floorSaving = Math.min(ceiling * SECONDS_PER_BOOK, base);
+
+    // Count and price the Books that actually buy the saving, never the ones
+    // the cooldown budget would merely allow. The two diverge whenever the
+    // clamp bites — a one-course queue with a large maximum cooldown has a
+    // ceiling of hundreds of Books and room for seventeen — and quoting the
+    // ceiling there prints a correct floor date beside a price inflated 43x,
+    // on the one line whose whole purpose is that the two are trustworthy
+    // together. Math.ceil, not floor: a partial Book still has to be bought.
+    const plannedBooks = Math.ceil(plannedSaving / SECONDS_PER_BOOK);
+    const floorBooks = Math.ceil(floorSaving / SECONDS_PER_BOOK);
 
     return {
       ceiling: ceiling,
       plannedBooks: plannedBooks,
       plannedSaving: plannedSaving,
       plannedSeconds: base - plannedSaving,
-      floorBooks: ceiling,
+      floorBooks: floorBooks,
       floorSaving: floorSaving,
       floorSeconds: base - floorSaving,
-      floorCost: ceiling * price,
+      floorCost: floorBooks * price,
     };
   }
 
   // Torn players write money as 5.35b, not 5,346,000,000.
+  //
+  // The third element of each unit is whether a value below it may round UP
+  // into it. Two decimal places can carry a number across a unit boundary —
+  // 999,999,999 over a million is 1000.00 — and "$1000m" is a unit nobody
+  // writes. But that promotion must not reach the bottom: below a thousand the
+  // player is reading exact dollars, so 999 stays $999 rather than becoming
+  // $1k.
   function formatMoney(n) {
     if (!Number.isFinite(n)) return '$0';
     const abs = Math.abs(n);
     const trim = function (v) { return String(Number(v.toFixed(2))); };
-    if (abs >= 1e9) return `$${trim(n / 1e9)}b`;
-    if (abs >= 1e6) return `$${trim(n / 1e6)}m`;
-    if (abs >= 1e3 && abs % 1e3 === 0) return `$${trim(n / 1e3)}k`;
+    const units = [[1e9, 'b', true], [1e6, 'm', true], [1e3, 'k', false]];
+    for (const unit of units) {
+      const reached = unit[2]
+        ? Number((abs / unit[0]).toFixed(2)) >= 1
+        : abs >= unit[0];
+      if (reached) return `$${trim(n / unit[0])}${unit[1]}`;
+    }
     return `$${Math.round(n)}`;
   }
 

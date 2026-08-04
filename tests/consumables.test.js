@@ -61,6 +61,49 @@ test('the floor is computed from the ceiling, not from the planned date', () => 
   const b = x.planConsumables({ baseSeconds: 197 * DAY, maxCooldownSeconds: 24 * HOUR, booksOwned: 50, bookPrice: 1 });
   assert.strictEqual(a.floorSeconds, b.floorSeconds, 'the floor moved with the number of books owned');
   assert.notStrictEqual(a.plannedSeconds, b.plannedSeconds, 'the planned path did not move');
+
+  // The pair above does not actually discriminate: on an unclamped path
+  // `plannedSeconds − (ceiling − plannedBooks)·6h` equals `base − ceiling·6h`
+  // algebraically, so a planned-minus-leftovers implementation passes it. The
+  // two differ only where the clamp bites, so the clamped case is the one that
+  // bites back — subtracting 729 leftover Books from a one-hour path lands far
+  // below zero.
+  const shortA = x.planConsumables({ baseSeconds: HOUR, maxCooldownSeconds: 8760 * HOUR, booksOwned: 0, bookPrice: 1 });
+  const shortB = x.planConsumables({ baseSeconds: HOUR, maxCooldownSeconds: 8760 * HOUR, booksOwned: 3, bookPrice: 1 });
+  assert.strictEqual(shortA.ceiling, 730, 'the cooldown budget allows a different number of books than expected');
+  assert.strictEqual(shortA.floorSeconds, 0, 'a one-hour path with 730 books available does not reach zero');
+  assert.strictEqual(shortB.floorSeconds, 0, 'the clamped floor moved with the number of books owned');
+});
+
+// The bug this pins: `floorSaving` was clamped to the path length while
+// `floorBooks` and `floorCost` were still the raw cooldown ceiling, so the
+// floor date was right and the price beside it was inflated — on the one line
+// whose entire purpose is that the two can be trusted together.
+test('the floor is priced by the Books it takes, not the Books the cooldown allows', () => {
+  const { exports: x } = loadUserscript();
+  // One course of 100.8 hours, with the largest max cooldown the settings
+  // bounds allow (8760 hours). Reachable through the panel with nothing out of
+  // range: queue a single short course and mistype the cooldown.
+  const out = x.planConsumables({
+    baseSeconds: Math.round(100.8 * HOUR), maxCooldownSeconds: 8760 * HOUR,
+    booksOwned: 0, bookPrice: 13500000,
+  });
+  assert.strictEqual(out.ceiling, 738, 'the cooldown budget is not the number this test was written against');
+  // 100.8h needs ceil(100.8 / 6) = 17 Books, not 738.
+  assert.strictEqual(out.floorBooks, 17, 'the floor is counted in Books the path cannot absorb');
+  assert.strictEqual(out.floorSeconds, 0);
+  assert.strictEqual(out.floorCost, 17 * 13500000, 'the floor was priced at the cooldown ceiling');
+  assert.strictEqual(x.formatMoney(out.floorCost), '$229.5m');
+  // A partial Book still has to be bought: 100.8h is 16.8 Books.
+  assert.ok(out.floorBooks * 6 * HOUR >= Math.round(100.8 * HOUR), 'the counted Books do not cover the path');
+
+  // The same clamp on the planned side.
+  const owned = x.planConsumables({
+    baseSeconds: Math.round(100.8 * HOUR), maxCooldownSeconds: 8760 * HOUR,
+    booksOwned: 500, bookPrice: 13500000,
+  });
+  assert.strictEqual(owned.plannedBooks, 17, 'planned use was counted in Books the path cannot absorb');
+  assert.strictEqual(owned.plannedSeconds, 0);
 });
 
 test('a short path cannot be reduced below zero', () => {
@@ -76,6 +119,27 @@ test('formatMoney reads the way players write money', () => {
   assert.strictEqual(x.formatMoney(13500000), '$13.5m');
   assert.strictEqual(x.formatMoney(900), '$900');
   assert.strictEqual(x.formatMoney(0), '$0');
+});
+
+test('formatMoney does not invent a unit nobody writes', () => {
+  const { exports: x } = loadUserscript();
+  // Two decimal places can carry a value across a unit boundary. Both of these
+  // used to print the carried number in the smaller unit: $1000m and $999999.
+  assert.strictEqual(x.formatMoney(999999999), '$1b');
+  assert.strictEqual(x.formatMoney(999999), '$1m');
+  // But the promotion must not reach the bottom of the scale: below a thousand
+  // the player is reading exact dollars.
+  assert.strictEqual(x.formatMoney(999), '$999');
+  assert.strictEqual(x.formatMoney(1), '$1');
+  // The boundaries either side of each unit still read the way they should.
+  assert.strictEqual(x.formatMoney(1000), '$1k');
+  assert.strictEqual(x.formatMoney(1500), '$1.5k');
+  assert.strictEqual(x.formatMoney(994000), '$994k');
+  assert.strictEqual(x.formatMoney(1e6), '$1m');
+  assert.strictEqual(x.formatMoney(1e9), '$1b');
+  assert.strictEqual(x.formatMoney(5e9), '$5b');
+  assert.strictEqual(x.formatMoney(NaN), '$0');
+  assert.strictEqual(x.formatMoney(Infinity), '$0');
 });
 
 // ─── the model and the rendered view ────────────────────────────────
