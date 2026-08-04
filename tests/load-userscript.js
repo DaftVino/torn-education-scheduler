@@ -107,62 +107,92 @@ function makeSandbox(options = {}) {
   return { sandbox, gmStore, setNow: (ms) => { currentNow = ms; } };
 }
 
-function transformFromVM(value) {
-  // Recursively transform objects from the VM context to the main context
-  // to fix prototype chain issues with deepStrictEqual
-  if (value === null || typeof value !== 'object') return value;
-  if (value instanceof Date || value instanceof Error || value instanceof Function) return value;
-  if (value instanceof Map) {
-    const newMap = new Map();
-    for (const [k, v] of value) {
-      newMap.set(transformFromVM(k), transformFromVM(v));
-    }
-    return newMap;
-  }
-  if (value instanceof Set) {
-    const newSet = new Set();
-    for (const v of value) {
-      newSet.add(transformFromVM(v));
-    }
-    return newSet;
-  }
-  if (Array.isArray(value)) {
-    // Create a new array in the main context, not via map()
-    const arr = [];
-    for (const item of value) {
-      arr.push(transformFromVM(item));
-    }
-    return arr;
-  }
-  // Plain object - reconstruct in main context
-  const result = {};
-  for (const key of Object.keys(value)) {
-    result[key] = transformFromVM(value[key]);
-  }
-  return result;
-}
-
-function wrapExports(vmExports) {
-  const wrapped = {};
-  for (const [key, value] of Object.entries(vmExports)) {
-    if (typeof value === 'function') {
-      wrapped[key] = function(...args) {
-        const result = value.apply(this, args);
-        return transformFromVM(result);
-      };
-    } else {
-      wrapped[key] = value;
-    }
-  }
-  return wrapped;
-}
-
 function loadUserscript(options = {}) {
   const { sandbox, gmStore, setNow } = makeSandbox(options);
   const context = vm.createContext(sandbox);
   vm.runInContext(buildInstrumentedSource(), context, { filename: 'torn-education-scheduler.user.js' });
   if (sandbox.__TES_ERR__) throw sandbox.__TES_ERR__;
   if (!sandbox.__TES__) throw new Error('Export injection failed: __TES__ not set');
+
+  // Capture the VM realm's prototypes by creating sample objects in the VM
+  // and extracting their prototype. This ensures we detect objects actually
+  // created inside the VM, even though the Object constructor was injected from main context.
+  const vmProtos = vm.runInContext(`
+    (function() {
+      return {
+        objectProto: Object.getPrototypeOf({}),
+        arrayProto: Object.getPrototypeOf([])
+      };
+    })()
+  `, context);
+  const vmObjectProto = vmProtos.objectProto;
+  const vmArrayProto = vmProtos.arrayProto;
+
+  function transformFromVM(value) {
+    // Only transform objects whose prototypes are from the VM realm.
+    // Everything else (Promises, thenables, DOM-like objects, main-realm stubs)
+    // passes through untouched to preserve identity and awaitable behavior.
+    if (value === null || typeof value !== 'object') return value;
+
+    // Thenables (including Promises) must pass through untouched so they remain awaitable
+    if (typeof value.then === 'function') return value;
+
+    // Handle collections built from main-realm constructors (injected into VM sandbox)
+    if (value instanceof Map) {
+      const newMap = new Map();
+      for (const [k, v] of value) {
+        newMap.set(transformFromVM(k), transformFromVM(v));
+      }
+      return newMap;
+    }
+    if (value instanceof Set) {
+      const newSet = new Set();
+      for (const v of value) {
+        newSet.add(transformFromVM(v));
+      }
+      return newSet;
+    }
+
+    // Only reconstruct objects that actually have VM realm prototypes.
+    // If the prototype is from the main context, it's a stub or external object
+    // that we must not copy (to preserve identity for strictEqual assertions).
+    const proto = Object.getPrototypeOf(value);
+    if (proto === vmArrayProto) {
+      // Array created inside the VM - reconstruct in main context
+      const arr = [];
+      for (const item of value) {
+        arr.push(transformFromVM(item));
+      }
+      return arr;
+    }
+    if (proto === vmObjectProto) {
+      // Plain object created inside the VM - reconstruct in main context
+      const result = {};
+      for (const key of Object.keys(value)) {
+        result[key] = transformFromVM(value[key]);
+      }
+      return result;
+    }
+
+    // Otherwise, leave it alone (it's from the main context or is a built-in like Error/Date)
+    return value;
+  }
+
+  function wrapExports(vmExports) {
+    const wrapped = {};
+    for (const [key, value] of Object.entries(vmExports)) {
+      if (typeof value === 'function') {
+        wrapped[key] = function(...args) {
+          const result = value.apply(this, args);
+          return transformFromVM(result);
+        };
+      } else {
+        wrapped[key] = value;
+      }
+    }
+    return wrapped;
+  }
+
   return { exports: wrapExports(sandbox.__TES__), sandbox, gmStore, setNow };
 }
 
