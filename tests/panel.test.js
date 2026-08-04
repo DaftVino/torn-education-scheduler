@@ -345,6 +345,19 @@ test('adding a course already in the queue does not duplicate it or its prerequi
   assert.strictEqual(new Set(afterSecond).size, afterSecond.length);
 });
 
+// Every element under `el`, itself included. The settings view nests its rows
+// inside sections, so a one-level scan of body.children no longer sees them.
+function descendants(el) {
+  const out = [];
+  (function walk(node) {
+    out.push(node);
+    for (const child of (node.children || [])) walk(child);
+  })(el);
+  return out;
+}
+
+const hasText = (el, text) => descendants(el).some((c) => c.textContent === text);
+
 test('the shell renders the requested view and offers nav to the other two', () => {
   const { exports, state } = okState([]);
   const doc = makeFakeDocument();
@@ -357,24 +370,31 @@ test('the shell renders the requested view and offers nav to the other two', () 
     return { panel: panel, body: body, nav: body.children.find((c) => c.className === 'tes-nav') };
   }
 
+  // Each assertion names content only that view produces. "Something rendered"
+  // is not enough: transposing two branches of the view switch passes it, and
+  // a crossed wire in the dispatch must fail loudly rather than look fine.
+
   // Default: no view on the state at all still yields the schedule view.
   const fallback = draw(undefined);
   assert.match(fallback.panel.children[0].textContent, /^Education Scheduler/);
-  assert.ok(fallback.body.children.some((c) => c.tagName === 'select'), 'the schedule view did not render');
+  assert.ok(hasText(fallback.body, 'add'), 'the schedule view did not render its add control');
+  assert.ok(!hasText(fallback.body, 'Education perks'), 'the schedule view rendered settings content');
 
   const settings = draw('settings');
   assert.match(settings.panel.children[0].textContent, /^Settings/);
-  assert.ok(
-    settings.body.children.some((c) => c.className === 'tes-summary' && c.textContent.length > 0),
-    'the settings view rendered nothing — an empty view reads as a broken panel'
-  );
+  for (const label of ['Boosters', 'Education perks', 'Planning', 'Merits reduction (%)',
+    'Principal rank (10%)', 'WSU stock block (10%)', 'Queue order']) {
+    assert.ok(hasText(settings.body, label), `the settings view is missing "${label}"`);
+  }
+  assert.ok(!hasText(settings.body, 'add'), 'the settings view rendered schedule content');
 
   const grid = draw('grid');
   assert.match(grid.panel.children[0].textContent, /^Degrees/);
   assert.ok(
-    grid.body.children.some((c) => c.className === 'tes-summary' && c.textContent.length > 0),
+    grid.body.children.some((c) => c.className === 'tes-summary' && c.textContent === 'Degrees'),
     'the grid view rendered nothing'
   );
+  assert.ok(!hasText(grid.body, 'Education perks'), 'the grid view rendered settings content');
 
   // The nav always offers exactly the two views you are not looking at, so
   // there is no button that redraws the view already on screen.
@@ -382,6 +402,53 @@ test('the shell renders the requested view and offers nav to the other two', () 
     assert.strictEqual(nav.children.length, 2);
   }
   assert.ok(!fallback.nav.children.some((b) => b.textContent === 'schedule'), 'the current view is offered as a target');
+});
+
+test('the settings view shows the inference as an inference, not as a reading', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  // The fixture's reduction is a constant 40%, the one total above 30 that has
+  // a single decomposition.
+  const model = exports.buildPanelModel({ ...state, view: 'settings' });
+  assert.strictEqual(model.perkInference.determinate, true);
+
+  const panel = exports.renderPanel(doc, mount, model, noopHandlers);
+  const note = descendants(panel.children[1]).find((c) => c.className === 'tes-note');
+  assert.ok(note, 'the perks section has no note');
+  assert.match(note.textContent, /Inferred from your 40% reduction/);
+  assert.match(note.textContent, /Correct it if it is wrong/);
+});
+
+test('an ambiguous reduction prefills nothing and says why', () => {
+  const { exports } = loadUserscript();
+  const data = exports.parsePayload(loadFixture());
+  // 20% off: 20 merits alone, 10 merits plus either 10% perk, or both 10%
+  // perks with no merits — four ways in, and no way to tell them apart.
+  const model = exports.buildPanelModel({
+    fetchResult: { ok: true, data: { ...data, reduction: { ratio: 0.8, constant: true, ratios: [0.8] } } },
+    plan: { queue: [], collapsed: false },
+    now: NOW,
+    view: 'settings',
+  });
+  assert.strictEqual(model.perkInference.determinate, false);
+  assert.match(model.perkInference.note, /4 possible combinations/);
+  // Nothing was prefilled: the fields still read "has not said".
+  assert.strictEqual(model.settings.perks.meritsPercent, null);
+  assert.strictEqual(model.settings.perks.principal, null);
+});
+
+test('a reduction that varies by course refuses to name a combination', () => {
+  const { exports } = loadUserscript();
+  const data = exports.parsePayload(loadFixture());
+  const model = exports.buildPanelModel({
+    fetchResult: { ok: true, data: { ...data, reduction: { ratio: null, constant: false, ratios: [0.6, 0.7] } } },
+    plan: { queue: [], collapsed: false },
+    now: NOW,
+    view: 'settings',
+  });
+  assert.strictEqual(model.perkInference.determinate, false);
+  assert.match(model.perkInference.note, /varies by course/);
 });
 
 test('switching view redraws the panel without persisting the choice', async () => {
@@ -393,6 +460,10 @@ test('switching view redraws the panel without persisting the choice', async () 
     fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
   });
   await exports.init();
+  // init() prefills the perks from the fixture's unambiguous 40%, so the
+  // settings key is already written before the view switch. What matters here
+  // is that switching the view adds nothing to either key.
+  const settingsAfterInit = gmStore.get(exports.SETTINGS_KEY);
 
   const nav = doc.querySelector('#tes-panel').children[1].children.find((c) => c.className === 'tes-nav');
   const toSettings = nav.children.find((b) => /settings/.test(b.textContent));
@@ -402,7 +473,122 @@ test('switching view redraws the panel without persisting the choice', async () 
   // view lives in init()'s closure, never in storage: a player who opened
   // settings once does not want settings every visit.
   assert.strictEqual(gmStore.get(exports.STORAGE_KEY), undefined, 'switching view wrote to storage');
-  assert.strictEqual(gmStore.get(exports.SETTINGS_KEY), undefined);
+  assert.strictEqual(gmStore.get(exports.SETTINGS_KEY), settingsAfterInit, 'switching view rewrote the settings');
+});
+
+// Boots init() against the real fixture with a live-looking session cookie, so
+// acquisition path 1 succeeds and the perk inference has data to work from.
+async function initWithFixture(seedSettings) {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm';
+  const loaded = loadUserscript({
+    location: { search: '' }, // keeps the bootstrap from auto-running init()
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  if (seedSettings !== undefined) {
+    loaded.gmStore.set(loaded.exports.SETTINGS_KEY, JSON.stringify(seedSettings));
+  }
+  await loaded.exports.init();
+  return { ...loaded, doc: doc, stored: () => JSON.parse(loaded.gmStore.get(loaded.exports.SETTINGS_KEY)) };
+}
+
+// Switches the mounted panel to the settings view and returns its body.
+function openSettings(doc) {
+  const nav = doc.querySelector('#tes-panel').children[1].children.find((c) => c.className === 'tes-nav');
+  for (const fn of nav.children.find((b) => /settings/.test(b.textContent)).listeners.click) fn();
+  return doc.querySelector('#tes-panel').children[1];
+}
+
+// The row shape is [label span, control], so the control is the label's sibling.
+function fieldFor(body, label) {
+  const row = descendants(body).find((c) => c.className === 'tes-row' && c.children[0] && c.children[0].textContent === label);
+  assert.ok(row, `no settings row labelled "${label}"`);
+  return row.children[1];
+}
+
+const fire = (el, type) => { for (const fn of (el.listeners[type] || [])) fn(); };
+
+test('init prefills a unique decomposition into the perk fields the player has not answered', async () => {
+  const { stored } = await initWithFixture();
+  // The fixture is a constant 40%: 20 merits + Principal + WSU, the only
+  // combination that reaches it.
+  assert.deepStrictEqual(stored().perks, { meritsPercent: 20, principal: true, wsuBlock: true });
+});
+
+test('prefill never overwrites a perk the player has already answered', async () => {
+  // The player says 4% merits and no Principal rank. Both are answers, not
+  // absences — 0/false are values, and only null means "has not said".
+  const { stored } = await initWithFixture({
+    maxCooldownHours: 6, booksOwned: 3, bookPrice: 100, jobPoints: 5,
+    perks: { meritsPercent: 4, principal: false, wsuBlock: null },
+    orderMode: 'as-listed',
+  });
+  const after = stored();
+  assert.strictEqual(after.perks.meritsPercent, 4, 'prefill overwrote an entered merits value');
+  assert.strictEqual(after.perks.principal, false, 'prefill overwrote an entered false');
+  assert.strictEqual(after.perks.wsuBlock, true, 'the one unanswered field was not filled');
+  // The rest of the settings survived the prefill write untouched.
+  assert.strictEqual(after.bookPrice, 100);
+  assert.strictEqual(after.maxCooldownHours, 6);
+});
+
+test('prefill writes nothing when every perk is already answered', async () => {
+  const seeded = {
+    maxCooldownHours: 24, booksOwned: 0, bookPrice: 13500000, jobPoints: 0,
+    perks: { meritsPercent: 20, principal: true, wsuBlock: true },
+    orderMode: 'as-listed',
+  };
+  const { gmStore, exports } = await initWithFixture(seeded);
+  // Byte-identical to what was seeded: no write happened at all.
+  assert.strictEqual(gmStore.get(exports.SETTINGS_KEY), JSON.stringify(seeded));
+});
+
+test('editing a settings field stores it, and a rejected value falls back to its default', async () => {
+  const { doc, stored } = await initWithFixture();
+  const body = openSettings(doc);
+
+  const cooldown = fieldFor(body, 'Max booster cooldown (hours)');
+  cooldown.value = '12';
+  fire(cooldown, 'change');
+  assert.strictEqual(stored().maxCooldownHours, 12);
+
+  // normaliseSettings is the only writer of the canonical shape, so nonsense
+  // falls back to the default rather than reaching storage — and only that
+  // field is affected.
+  const price = fieldFor(doc.querySelector('#tes-panel').children[1], 'Book of Carols price');
+  price.value = '-5';
+  fire(price, 'change');
+  assert.strictEqual(stored().bookPrice, 13500000, 'a negative price was stored instead of rejected');
+  assert.strictEqual(stored().maxCooldownHours, 12, 'one bad field reset an unrelated good one');
+});
+
+test('clearing a perk field returns it to "has not said" rather than zero', async () => {
+  const { doc, stored } = await initWithFixture();
+  const merits = fieldFor(openSettings(doc), 'Merits reduction (%)');
+  merits.value = '';
+  fire(merits, 'change');
+  assert.strictEqual(stored().perks.meritsPercent, null);
+});
+
+test('unticking a perk stores false, which is an answer and not an absence', async () => {
+  const { doc, stored } = await initWithFixture();
+  const principal = fieldFor(openSettings(doc), 'Principal rank (10%)');
+  assert.strictEqual(principal.checked, true, 'the prefilled perk did not render as ticked');
+  principal.checked = false;
+  fire(principal, 'change');
+  assert.strictEqual(stored().perks.principal, false);
+});
+
+test('the queue order is stored as its id, not coerced into a number', async () => {
+  const { doc, stored } = await initWithFixture();
+  const select = fieldFor(openSettings(doc), 'Queue order');
+  // Task 10 adds the other modes to the dropdown; the handler must already
+  // carry a string through intact, or every choice arrives as NaN and
+  // normaliseSettings silently restores the default.
+  select.value = 'shortest-first';
+  fire(select, 'change');
+  assert.strictEqual(stored().orderMode, 'shortest-first');
 });
 
 test('findMountPoint uses prefix matching and tolerates absence', () => {

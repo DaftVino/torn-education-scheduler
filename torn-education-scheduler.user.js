@@ -430,6 +430,53 @@
     };
   }
 
+  // The three documented perks stack additively: merits 0-20 in 2% steps,
+  // Principal rank 0 or 10, the WSU stock block 0 or 10. Totals below 10 and
+  // above 30 have exactly one decomposition; the middle band has three or
+  // four, and most players sit in it. Prefill only where the answer is
+  // provably unique — a guess presented as a reading is worse than a blank.
+  //
+  // This enumerates rather than consulting a table, so the unique/ambiguous
+  // boundaries cannot drift away from the rule they came from.
+  function inferPerks(reduction) {
+    // deriveReduction reports a non-constant ratio rather than picking a
+    // value, because a per-course ratio would mean Torn changed the mechanic.
+    // Guessing a decomposition from it would hide exactly that.
+    const varies = { determinate: false, totalPercent: null, candidates: 0, reason: 'varies' };
+    if (!reduction || typeof reduction !== 'object') return varies;
+    if (reduction.constant !== true || typeof reduction.ratio !== 'number') return varies;
+
+    // The ratio is actualDuration/originDuration, so the reduction is its
+    // complement. Round to whole percent: the ratio is a division of two
+    // integers and carries float dust.
+    const totalPercent = Math.round((1 - reduction.ratio) * 100);
+
+    const matches = [];
+    for (let merits = 0; merits <= 20; merits += 2) {
+      for (const principal of [false, true]) {
+        for (const wsuBlock of [false, true]) {
+          const sum = merits + (principal ? 10 : 0) + (wsuBlock ? 10 : 0);
+          if (sum === totalPercent) matches.push({ meritsPercent: merits, principal: principal, wsuBlock: wsuBlock });
+        }
+      }
+    }
+
+    if (matches.length === 0) {
+      return { determinate: false, totalPercent: totalPercent, candidates: 0, reason: 'unrecognised' };
+    }
+    if (matches.length > 1) {
+      return { determinate: false, totalPercent: totalPercent, candidates: matches.length, reason: 'ambiguous' };
+    }
+    return {
+      determinate: true,
+      totalPercent: totalPercent,
+      meritsPercent: matches[0].meritsPercent,
+      principal: matches[0].principal,
+      wsuBlock: matches[0].wsuBlock,
+      candidates: 1,
+    };
+  }
+
   // ─── ENGINE END ─────────────────────────────────────────────────
 
   // ─── RUNTIME ────────────────────────────────────────────────────
@@ -749,6 +796,22 @@
     return `${Math.round((1 - reduction.ratio) * 100)}% off`;
   }
 
+  // The settings view reads every field off model.settings unconditionally, so
+  // the model owes it a complete shape rather than a null. normaliseSettings is
+  // the only writer of that shape, and it turns anything — including undefined —
+  // into the documented defaults, so it is also the right way to supply one.
+  function panelSettings(state) {
+    return normaliseSettings(state.settings);
+  }
+
+  // No data means nothing to infer from; the note still has to say something,
+  // because the field group is rendered either way.
+  const NO_INFERENCE = {
+    determinate: false,
+    totalPercent: null,
+    note: 'Your education data could not be read, so no perks can be inferred. Enter what you hold.',
+  };
+
   function buildPanelModel(state) {
     const empty = {
       status: 'error', message: null, reductionLabel: null,
@@ -757,6 +820,11 @@
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
+      settings: panelSettings(state),
+      settingsSaveError: state.settingsSaveFailed === true,
+      perkInference: NO_INFERENCE,
+      // Task 10 replaces this with the real orderings.
+      orderModes: [{ id: 'as-listed', label: 'As listed' }],
     };
 
     if (!state.fetchResult.ok) {
@@ -810,6 +878,23 @@
     }
     addable.sort(function (a, b) { return a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0; });
 
+    // Never present a guess as a reading. The note says in words which of the
+    // two situations the player is in, so a prefilled field is visibly an
+    // inference they are invited to correct rather than a value we read off
+    // their account.
+    const inference = inferPerks(data.reduction);
+    const perkInference = {
+      determinate: inference.determinate,
+      totalPercent: inference.totalPercent,
+      note: inference.determinate
+        ? `Inferred from your ${inference.totalPercent}% reduction: this total has only one possible combination. Correct it if it is wrong.`
+        : inference.reason === 'varies'
+          ? 'Your reduction varies by course, so no perk combination can be read from it. Enter what you hold.'
+          : inference.reason === 'unrecognised'
+            ? `Your ${inference.totalPercent}% reduction does not match any combination of the three known perks. Enter what you hold.`
+            : `Your ${inference.totalPercent}% reduction has ${inference.candidates} possible combinations, so it cannot be read. Enter what you hold.`,
+    };
+
     return {
       status: 'ok',
       message: null,
@@ -840,6 +925,11 @@
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
+      settings: panelSettings(state),
+      settingsSaveError: state.settingsSaveFailed === true,
+      perkInference: perkInference,
+      // Task 10 replaces this with the real orderings.
+      orderModes: [{ id: 'as-listed', label: 'As listed' }],
     };
   }
 
@@ -890,6 +980,11 @@
       '#tes-panel button, #tes-panel select { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
       '  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: inherit; }',
       '#tes-panel button:hover { border-color: #7ee081; }',
+      '#tes-panel .tes-section { margin-bottom: 10px; }',
+      '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: 4px; opacity: 0.85; }',
+      '#tes-panel .tes-note { opacity: 0.75; margin-bottom: 6px; }',
+      '#tes-panel input { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
+      '  border-radius: 4px; padding: 3px 6px; font-size: inherit; width: 10em; }',
     ].join('\n');
     // Reading head/body is a property access on a document we do not own; a
     // page that throws here must still get its panel.
@@ -958,15 +1053,116 @@
     return panel;
   }
 
-  // Placeholders until Tasks 5, 6 and 8 fill them in — a line of text rather
-  // than nothing, because an empty view reads as a broken panel.
-  function renderSettingsView(doc, body, model, handlers) {
-    const line = doc.createElement('div');
-    line.className = 'tes-summary';
-    line.textContent = 'Settings';
-    body.appendChild(line);
+  // Which settings paths carry a number, so onSettingChange knows what to
+  // coerce. orderMode is a string enum: running it through Number() would make
+  // every choice NaN, and normaliseSettings would quietly restore the default
+  // — a preference that silently refuses to change.
+  const NUMERIC_SETTING_FIELDS = [
+    'maxCooldownHours', 'booksOwned', 'bookPrice', 'jobPoints', 'perks.meritsPercent',
+  ];
+
+  // A labelled section per group, not a flat list: later releases add fields
+  // and the shell has to absorb them without restructuring.
+  function settingsSection(doc, body, title) {
+    const section = doc.createElement('div');
+    section.className = 'tes-section';
+    const heading = doc.createElement('div');
+    heading.className = 'tes-section-title';
+    heading.textContent = title;
+    section.appendChild(heading);
+    body.appendChild(section);
+    return section;
   }
 
+  function numberField(doc, section, label, value, onCommit) {
+    const row = doc.createElement('div');
+    row.className = 'tes-row';
+    const text = doc.createElement('span');
+    text.textContent = label;
+    row.appendChild(text);
+    const input = doc.createElement('input');
+    input.setAttribute('type', 'number');
+    input.setAttribute('min', '0');
+    input.value = String(value);
+    if (input.addEventListener) {
+      input.addEventListener('change', function () { onCommit(input.value); });
+    }
+    row.appendChild(input);
+    section.appendChild(row);
+    return input;
+  }
+
+  function checkField(doc, section, label, checked, onCommit) {
+    const row = doc.createElement('div');
+    row.className = 'tes-row';
+    const text = doc.createElement('span');
+    text.textContent = label;
+    row.appendChild(text);
+    const input = doc.createElement('input');
+    input.setAttribute('type', 'checkbox');
+    input.checked = checked === true;
+    if (input.addEventListener) {
+      input.addEventListener('change', function () { onCommit(input.checked === true); });
+    }
+    row.appendChild(input);
+    section.appendChild(row);
+    return input;
+  }
+
+  function renderSettingsView(doc, body, model, handlers) {
+    const s = model.settings;
+    const set = handlers.onSettingChange || function () {};
+
+    // Settings and the plan live under separate keys and fail separately, so a
+    // settings write that did not land is reported here rather than on the
+    // schedule view, where nothing the player just did would explain it.
+    if (model.settingsSaveError) {
+      const saveError = doc.createElement('div');
+      saveError.className = 'tes-save-error';
+      saveError.textContent = "Couldn't save your settings — your last change may not persist.";
+      body.appendChild(saveError);
+    }
+
+    const boosters = settingsSection(doc, body, 'Boosters');
+    numberField(doc, boosters, 'Max booster cooldown (hours)', s.maxCooldownHours, function (v) { set('maxCooldownHours', v); });
+    numberField(doc, boosters, 'Books of Carols owned', s.booksOwned, function (v) { set('booksOwned', v); });
+    numberField(doc, boosters, 'Book of Carols price', s.bookPrice, function (v) { set('bookPrice', v); });
+    numberField(doc, boosters, 'Job points available', s.jobPoints, function (v) { set('jobPoints', v); });
+
+    const perks = settingsSection(doc, body, 'Education perks');
+    // The note carries the honesty: it names the inference as an inference, so
+    // a prefilled field is never mistaken for something we read off the account.
+    const note = doc.createElement('div');
+    note.className = 'tes-note';
+    note.textContent = model.perkInference.note;
+    perks.appendChild(note);
+    numberField(doc, perks, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
+    checkField(doc, perks, 'Principal rank (10%)', s.perks.principal === true, function (v) { set('perks.principal', v); });
+    checkField(doc, perks, 'WSU stock block (10%)', s.perks.wsuBlock === true, function (v) { set('perks.wsuBlock', v); });
+
+    const planning = settingsSection(doc, body, 'Planning');
+    const modeRow = doc.createElement('div');
+    modeRow.className = 'tes-row';
+    const modeLabel = doc.createElement('span');
+    modeLabel.textContent = 'Queue order';
+    modeRow.appendChild(modeLabel);
+    const modeSelect = doc.createElement('select');
+    for (const mode of model.orderModes) {
+      const opt = doc.createElement('option');
+      opt.value = mode.id;
+      opt.textContent = mode.label;
+      if (mode.id === s.orderMode) opt.selected = true;
+      modeSelect.appendChild(opt);
+    }
+    if (modeSelect.addEventListener) {
+      modeSelect.addEventListener('change', function () { set('orderMode', modeSelect.value); });
+    }
+    modeRow.appendChild(modeSelect);
+    planning.appendChild(modeRow);
+  }
+
+  // Placeholder until Task 8 fills it in — a line of text rather than nothing,
+  // because an empty view reads as a broken panel.
   function renderGridView(doc, body, model, handlers) {
     const line = doc.createElement('div');
     line.className = 'tes-summary';
@@ -1140,16 +1336,24 @@
       status: 'error', message: message, reductionLabel: null,
       queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
       collapsed: false, saveError: false, selectedCourseId: null, view: 'schedule',
+      // The error model short-circuits before the view switch, so these are
+      // never read today. They are here so that stops being load-bearing: a
+      // renderer handed this model must not meet an undefined.
+      settings: normaliseSettings(null), settingsSaveError: false,
+      perkInference: NO_INFERENCE, orderModes: [],
     };
   }
 
   const noopHandlers = {
     onToggle: function () {}, onAdd: function () {}, onRemove: function () {},
     onPickerChange: function () {}, onViewChange: function () {},
+    onSettingChange: function () {},
   };
 
   async function init() {
     const plan = loadPlan();
+    let settings = loadSettings();
+    let settingsSaveFailed = false;
     // Two acquisition paths: the endpoint, then Torn's own React tree. The
     // panel keeps calling this value fetchResult because buildPanelModel's
     // contract has not changed — only where the data may have come from.
@@ -1189,6 +1393,27 @@
       }
     }
 
+    // Prefill only where the decomposition is provably unique, and only into
+    // fields the player has not already answered — null means "has not said",
+    // which is distinct from zero, and overwriting an answer they typed would
+    // be the panel arguing with them. An inferred value is never presented as
+    // a reading: the note above the fields says where it came from.
+    function prefillPerks(data) {
+      if (!data) return;
+      const inference = inferPerks(data.reduction);
+      if (!inference.determinate) return;
+      let changed = false;
+      const next = JSON.parse(JSON.stringify(settings));
+      if (next.perks.meritsPercent === null) { next.perks.meritsPercent = inference.meritsPercent; changed = true; }
+      if (next.perks.principal === null) { next.perks.principal = inference.principal; changed = true; }
+      if (next.perks.wsuBlock === null) { next.perks.wsuBlock = inference.wsuBlock; changed = true; }
+      if (!changed) return;
+      // normaliseSettings is the only writer of the canonical shape.
+      settings = normaliseSettings(next);
+      settingsSaveFailed = !saveSettings(settings);
+    }
+    prefillPerks(fetchResult.ok ? fetchResult.data : null);
+
     let selectedCourseId = null;
     // Held in this closure, not persisted: collapsed is a standing preference,
     // but which view you last opened is not. A player who hides the panel wants
@@ -1207,6 +1432,8 @@
           plan: currentPlan,
           now: Math.floor(Date.now() / 1000),
           saveFailed: saveFailed === true,
+          settings: settings,
+          settingsSaveFailed: settingsSaveFailed,
           selectedCourseId: selectedCourseId,
           view: view,
         });
@@ -1247,6 +1474,23 @@
           },
           onViewChange: function (next) {
             view = next;
+            draw(currentPlan, saveFailed === true);
+          },
+          // The view emits dotted `perks.*` paths for the nested group and a
+          // bare field name for the rest. An empty number input means "not
+          // said" (null), which for a perk is distinct from zero.
+          onSettingChange: function (field, rawValue) {
+            const next = JSON.parse(JSON.stringify(settings));
+            const value = typeof rawValue === 'boolean' ? rawValue
+              : NUMERIC_SETTING_FIELDS.indexOf(field) === -1 ? rawValue
+              : rawValue === '' ? null
+              : Number(rawValue);
+            if (field.indexOf('perks.') === 0) next.perks[field.slice(6)] = value;
+            else next[field] = value;
+            // normaliseSettings is the only writer of the canonical shape, so a
+            // rejected value falls back to its default rather than being stored.
+            settings = normaliseSettings(next);
+            settingsSaveFailed = !saveSettings(settings);
             draw(currentPlan, saveFailed === true);
           },
         });

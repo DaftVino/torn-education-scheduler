@@ -38,6 +38,8 @@ const EXPORT_NAMES = [
   'freshPlan', 'loadPlan', 'savePlan',
   // settings
   'SETTINGS_KEY', 'normaliseSettings', 'freshSettings', 'loadSettings', 'saveSettings',
+  // perks
+  'inferPerks',
   // adapter
   'fetchEducationData',
   // acquisition
