@@ -659,12 +659,20 @@
       floorSaving: floorSaving,
       floorSeconds: base - floorSaving,
       floorCost: floorBooks * price,
-      // A price of zero is not a price. SETTINGS_BOUNDS lets bookPrice reach 0
-      // and clearing the field gets there, since Number('') is 0 — so the
-      // arithmetic below is honest and the sentence it produces ("the floor
-      // costs $0") is the single most misleading thing this feature could say.
-      // The distinction is drawn here, in the engine, so every consumer
-      // inherits it rather than each one rediscovering that 0 means "unsaid".
+      // A price of zero is not a price. SETTINGS_BOUNDS.bookPrice.min is 0, so
+      // a player who TYPES 0 gets there and it survives normalisation — the
+      // arithmetic above is then honest and the sentence it produces ("the
+      // floor costs $0") is the single most misleading thing this feature
+      // could say.
+      //
+      // Clearing the field does NOT reach 0, and the guard would look like
+      // dead code to anyone who tested that path: onSettingChange maps '' to
+      // null, and boundedInt(null) returns the 13.5m default. An earlier
+      // version of this comment claimed otherwise and was wrong. The reachable
+      // path is a typed zero, and only that.
+      //
+      // Drawn here, in the engine, so every consumer inherits the distinction
+      // rather than each one rediscovering that 0 means "unsaid".
       priceKnown: price > 0,
     };
   }
@@ -1311,7 +1319,13 @@
       // this feature turns on is that the floor date never appears without its
       // cost — and "$0" satisfies the letter of that while defeating its whole
       // purpose, because it tells the player the floor is free.
-      floorCostKnown: consumables.priceKnown,
+      //
+      // One field, not a label plus a known-flag: formatMoney never returns a
+      // falsy string, so null IS the absence, and the view tests the label it
+      // is about to print. A separate flag is a second copy of one fact, and
+      // the failure it invites is an edit that sets the label without the flag
+      // and renders the string "null" into the panel. This is the shape
+      // finishLabel already uses, for the same reason.
       floorCostLabel: consumables.priceKnown ? formatMoney(consumables.floorCost) : null,
     } : null;
 
@@ -1878,9 +1892,9 @@
       // nobody can act on — and "$0", which is what an unset price would
       // arithmetically produce, is worse than no figure at all: it reads as
       // "the floor is free". Name the gap instead, and say how to close it.
-      const costText = c.floorCostKnown ? c.floorCostLabel : 'cost unknown, no Book price set';
+      const costText = c.floorCostLabel || 'cost unknown, no Book price set';
       lines.push(`Floor with maximum Books (${c.floorBooks} — ${costText}): ${c.floorFinishLabel} (${c.floorDurationLabel})`);
-      if (!c.floorCostKnown) {
+      if (!c.floorCostLabel) {
         lines.push('Set a Book price in settings to see what that floor would cost.');
       }
       lines.push('Books shorten queued course time. Time already running on your current course is not affected.');
