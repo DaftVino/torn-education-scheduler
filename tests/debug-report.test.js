@@ -92,13 +92,41 @@ test('the report carries what a maintainer needs to diagnose a failure', () => {
   assert.ok(report.includes('13500000') || report.includes('13,500,000'), 'no settings values');
 });
 
-test('the report excludes the rfcv token in any form', () => {
+// Named for what is actually guaranteed. The *word* "rfcv" can legitimately
+// reach a real report: parsePayload carries Torn's own `raw.error` into the
+// detail, and Torn's live string for a rejected request is "Wrong rfcv token"
+// — see the test below. What can never reach it is a token *value*, and it
+// cannot because no allowlisted field is ever fed one: the adapter is
+// contracted to keep the token out of every detail, and the report reads no
+// cookie at all.
+test('no rfcv token value reaches the report', () => {
   const { exports: x } = loadUserscript();
   const input = sampleInput(x);
   input.failureDetail = 'status 403';
+  input.rfcv = 'v1a2b3c4d5e6f7g8h9';
+  input.rfc_v = 'v1a2b3c4d5e6f7g8h9';
+  input.cookie = 'rfc_v=v1a2b3c4d5e6f7g8h9; rfc_id=i9h8g7f6e5d4c3b2a1';
   const report = x.buildDebugReport(input);
-  assert.ok(!/rfcv/i.test(report), 'the report mentions rfcv');
-  assert.ok(!/rfc_v/i.test(report), 'the report mentions rfc_v');
+  assert.ok(!report.includes('v1a2b3c4d5e6f7g8h9'), 'an rfc_v token value reached the report');
+  assert.ok(!report.includes('i9h8g7f6e5d4c3b2a1'), 'an rfc_id token value reached the report');
+  assert.ok(!/rfc_?v\s*=/i.test(report), 'a token assignment reached the report');
+  // With a detail that does not quote Torn, no token name appears either.
+  assert.ok(!/rfcv/i.test(report), 'the report mentions rfcv unprompted');
+});
+
+test("Torn's own \"Wrong rfcv token\" diagnosis reaches the report as words, not as a token", () => {
+  const { exports: x } = loadUserscript();
+  const input = sampleInput(x);
+  // parsePayload carries a string raw.error into the PayloadError detail, and
+  // this is the live string Torn returns. Carrying it is the point — it is
+  // Torn's own diagnosis and the fastest route to a fix. It names the token
+  // without being one.
+  input.failureReason = 'not-a-payload';
+  input.failureDetail = 'Wrong rfcv token';
+  const report = x.buildDebugReport(input);
+  assert.ok(report.includes('Wrong rfcv token'), "Torn's diagnosis was dropped from the report");
+  assert.ok(!/rfc_?v\s*=/i.test(report), 'a token assignment accompanied the diagnosis');
+  assert.ok(!/\brfcv\b\S/i.test(report.replace('Wrong rfcv token', '')), 'a second rfcv mention appeared');
 });
 
 test('the report excludes a raw payload even when one is smuggled in', () => {
@@ -307,4 +335,155 @@ test('the panel builds a real report on demand and it still carries no secret', 
   const after = flatten(doc.querySelector('#tes-panel'));
   assert.ok(!after.some((n) => n.className === 'tes-report'), 'the report stayed on screen');
   assert.ok(!after.some((n) => n.textContent === 'copy'), 'the copy button outlived its report');
+});
+
+// ─── reachability in the failure state ──────────────────────────────────
+//
+// The whole point of the feature. renderPanel used to return on
+// `model.status === 'error'` before the nav row, so the settings view — and
+// with it the only control that can build a report — was unreachable for a
+// player whose acquisition failed. That is the single most likely reason
+// anyone opens Greasy Fork feedback, and it also meant failureReason and
+// failureDetail were null on every path that could actually produce a report.
+
+async function failedAcquisition() {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm'; // so the adapter really fires the request
+  const { exports: x } = loadUserscript({
+    location: { search: '' },
+    document: doc,
+    // 403, and the fake document exposes no React internals, so both
+    // acquisition paths fail — the state the report exists for.
+    fetch: async () => ({ ok: false, status: 403, text: async () => 'Forbidden' }),
+  });
+  await x.init();
+  return { x, doc };
+}
+
+test('a failed acquisition still names the failure and still reaches the settings view', async () => {
+  const { doc } = await failedAcquisition();
+  const panel = doc.querySelector('#tes-panel');
+  assert.ok(panel, 'no panel was drawn for a failed acquisition');
+  const nodes = flatten(panel);
+  const text = nodes.map((n) => n.textContent).join(' ');
+  assert.match(text, /Couldn't load your education data/, 'the failure was not named');
+  assert.match(text, /403/, 'the underlying reason was not carried into the panel');
+  assert.ok(nodes.some((n) => n.textContent === '⚙ settings'), 'the settings view is unreachable in the error state');
+});
+
+test('a player whose acquisition failed can build a report, and it carries a real reason', async () => {
+  const { doc } = await failedAcquisition();
+  const click = (label) => {
+    const target = flatten(doc.querySelector('#tes-panel')).find((n) => n.textContent === label);
+    assert.ok(target, `no "${label}" control on screen`);
+    for (const fn of (target.listeners.click || [])) fn();
+  };
+  click('⚙ settings');
+  click('build debug report');
+
+  const pre = flatten(doc.querySelector('#tes-panel')).find((n) => n.className === 'tes-report');
+  assert.ok(pre, 'the debug report is unreachable in the state it exists for');
+  const text = pre.textContent;
+
+  // The Failure block is the reason this feature exists; "not recorded" here
+  // would mean the report is decorative.
+  assert.ok(!/Reason: not recorded/.test(text), 'the report recorded no failure reason');
+  assert.ok(!/Detail: not recorded/.test(text), 'the report recorded no failure detail');
+  assert.match(text, /Reason: \S/, 'no failure reason');
+  assert.match(text, /403/, 'the failing status did not reach the report');
+  // And it is still the same allowlist.
+  assert.ok(!text.includes('abcdefghijklm'), 'the session token reached the report');
+  assert.ok(!/https?:\/\//.test(text), 'a URL reached the report');
+});
+
+test('the perks note is reachable in the error state, so an unreadable page is still enterable', async () => {
+  const { doc } = await failedAcquisition();
+  const click = (label) => {
+    const target = flatten(doc.querySelector('#tes-panel')).find((n) => n.textContent === label);
+    assert.ok(target, `no "${label}" control on screen`);
+    for (const fn of (target.listeners.click || [])) fn();
+  };
+  click('⚙ settings');
+  const text = flatten(doc.querySelector('#tes-panel')).map((n) => n.textContent).join(' ');
+  // NO_INFERENCE's note used to be written for a state nobody could open.
+  assert.match(text, /could not be read/i, 'the inference note is still stranded');
+  assert.match(text, /Enter what you hold/, 'the invitation to enter perks is still stranded');
+});
+
+// ─── gatherDebugContext ─────────────────────────────────────────────────
+
+test('gatherDebugContext reports the failure branch, which is the only one that can', () => {
+  const { exports: x } = loadUserscript();
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: false, reason: 'fiber-budget-exhausted', detail: 'gave up after 20000 nodes', triedFiber: true },
+    plan: { queue: [1, 2], collapsed: false },
+    settings: x.freshSettings(),
+  });
+  assert.strictEqual(ctx.failureReason, 'fiber-budget-exhausted');
+  assert.strictEqual(ctx.failureDetail, 'gave up after 20000 nodes');
+  assert.strictEqual(ctx.source, null);
+  // No data means no shape to describe — and, critically, no course codes.
+  assert.strictEqual(ctx.courseCount, null);
+  assert.strictEqual(ctx.categoryCount, null);
+  assert.strictEqual(ctx.reductionConstant, null);
+  assert.strictEqual(ctx.hasActiveCourse, null);
+  assert.deepStrictEqual(ctx.queueCodes, []);
+  assert.strictEqual(ctx.queueLength, 2);
+  assert.strictEqual(ctx.scriptVersion, x.SCRIPT_VERSION);
+  const report = x.buildDebugReport(ctx);
+  assert.match(report, /fiber-budget-exhausted/, 'the budget/absence distinction was lost');
+});
+
+test('gatherDebugContext reports shape only on success, never the payload', () => {
+  const { exports: x } = loadUserscript();
+  const data = x.parsePayload(loadFixture());
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: true, data: data, source: 'fetch' },
+    plan: { queue: [], collapsed: false },
+    settings: x.freshSettings(),
+  });
+  assert.strictEqual(ctx.source, 'fetch');
+  assert.strictEqual(ctx.failureReason, null);
+  assert.strictEqual(ctx.failureDetail, null);
+  assert.ok(Number.isInteger(ctx.courseCount) && ctx.courseCount > 0, 'no course count');
+  assert.ok(Number.isInteger(ctx.categoryCount) && ctx.categoryCount > 0, 'no category count');
+  assert.strictEqual(typeof ctx.hasActiveCourse, 'boolean');
+  // The keys are the allowlist, and nothing payload-shaped is among them.
+  assert.deepStrictEqual(Object.keys(ctx).sort(), [
+    'categoryCount', 'courseCount', 'failureDetail', 'failureReason', 'hasActiveCourse',
+    'manager', 'queueCodes', 'queueLength', 'reductionConstant', 'scriptVersion',
+    'settings', 'source', 'userAgent',
+  ]);
+  const report = x.buildDebugReport(ctx);
+  assert.ok(!report.includes('Introduction to Biochemistry'), 'a course name reached the report');
+});
+
+test('gatherDebugContext refuses a non-string course prefix rather than stringifying it', () => {
+  const { exports: x } = loadUserscript();
+  // normaliseCourse copies raw.prefix across without a type check, so this is
+  // the one payload-derived value that could reach the report as an object.
+  const hostile = { toString() { return 'PREFIX_FROM_TOSTRING'; } };
+  const courses = new Map([[7, { id: 7, prefix: hostile, name: 'x', status: 'available', duration: 1 }]]);
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: true, source: 'fiber', data: { courses: courses, categories: [], reduction: { constant: true }, activeCourse: null } },
+    plan: { queue: [7], collapsed: false },
+    settings: x.freshSettings(),
+  });
+  assert.deepStrictEqual(ctx.queueCodes, ['7'], 'a non-string prefix was passed through');
+  assert.ok(!x.buildDebugReport(ctx).includes('PREFIX_FROM_TOSTRING'), 'toString was invoked on payload data');
+});
+
+test('gatherDebugContext says so when the manager and browser cannot be read', () => {
+  const { exports: x } = loadUserscript();
+  // Neither navigator nor GM_info exists in the sandbox — the same absence a
+  // manager that does not expose GM_info produces. Both are behind typeof
+  // guards, so this must be "not recorded", not a ReferenceError.
+  const ctx = x.gatherDebugContext({ fetchResult: null, plan: null, settings: null });
+  assert.strictEqual(ctx.manager, null);
+  assert.strictEqual(ctx.userAgent, null);
+  assert.strictEqual(ctx.settings, null);
+  const report = x.buildDebugReport(ctx);
+  assert.match(report, /Userscript manager: not recorded/);
+  assert.match(report, /Browser: not recorded/);
+  assert.ok(!report.includes('undefined'), 'an absent field rendered as undefined');
 });
