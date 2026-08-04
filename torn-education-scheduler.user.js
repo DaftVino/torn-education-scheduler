@@ -279,14 +279,18 @@
   // page, is nearly always — and the panel would answer "all remaining courses"
   // with a plan it then refuses to date.
   //
-  // Only the course `activeCourse` actually names is promoted, and only when
-  // Torn gave us its completion time. `status` and `activeCourse` come from
-  // independent parts of the payload: a course marked inProgress that
-  // activeCourse does not name has no completion time anywhere, so schedule()
-  // bills none of its remaining weeks. Promoting it would print a finish date
-  // short by up to a whole course. Refusing to promote it costs only the
-  // withheld date the panel would have shown before any of this existed, which
-  // is the trade this codebase makes every time: no date beats a wrong one.
+  // Only the course `activeCourse` actually names is promoted — gated on
+  // `activeCourse.id`, not on `status` alone, since the two come from
+  // independent parts of the payload. This function does not itself check
+  // `completedAt`; that a named `activeCourse` carries a valid one is a
+  // `parsePayload` invariant enforced before any caller reaches here, not
+  // re-verified by this one (call it directly with `{id: 34}` and it
+  // promotes). A course marked inProgress that activeCourse does not name has
+  // no completion time anywhere, so schedule() bills none of its remaining
+  // weeks. Promoting it would print a finish date short by up to a whole
+  // course. Refusing to promote it costs only the withheld date the panel
+  // would have shown before any of this existed, which is the trade this
+  // codebase makes every time: no date beats a wrong one.
   function plannedCompletions(completedIds, courses, activeCourse) {
     const done = new Set(completedIds);
     if (!activeCourse || !isInt(activeCourse.id)) return done;
@@ -512,8 +516,10 @@
   // activeCourse.completedAt.
   //
   // Order does not change finishesAt — a sum is order-independent. Ordering
-  // changes time-to-benefit, which is a different question and a later
-  // release. tests/engine.test.js asserts this property directly.
+  // changes time-to-benefit, which is a different question, answered by
+  // orderQueue (this release, not a later one). tests/engine.test.js asserts
+  // the order-independence directly; tests/ordering.test.js asserts every
+  // mode against the same finishesAt.
   function schedule(options) {
     const courses = options.courses;
     const activeCourse = options.activeCourse;
@@ -1289,7 +1295,10 @@
   // points is still pointless: cap the list.
   const FIBER_MAX_ROOTS = 8;
   // The nodes most likely to carry the education props, cheapest first. Falls
-  // back to a bounded sweep of the body's element children.
+  // back, when none match, to the first 200 `div`s document-wide
+  // (fiberRootsFrom's `doc.querySelectorAll('div')`) — document-wide and
+  // `div`-only, not a sweep of the body's element children, so a non-`div`
+  // body child is never sampled by the fallback.
   const FIBER_HOST_SELECTORS = [
     '[class*="educationPage___"]',
     '#react-root',
@@ -1635,7 +1644,7 @@
       determinate: inference.determinate,
       totalPercent: inference.totalPercent,
       note: inference.determinate
-        ? `Inferred from your ${inference.totalPercent}% reduction: this total has only one possible combination. Correct it if it is wrong.`
+        ? `Inferred from your ${inference.totalPercent}% reduction: this total has only one possible combination. Correct it if it is wrong. The reduction itself is read from Torn, not reconstructed from these fields — they only travel with a shared plan or a debug report.`
         : inference.reason === 'varies'
           ? 'Your reduction varies by course, so no perk combination can be read from it. Enter what you hold.'
           // Not "your reduction varies": we failed to read it, and saying
@@ -1685,11 +1694,12 @@
       orderModes: ORDER_MODE_LABELS,
       debugReport: state.debugReport || null,
       grid: grid,
-      // Built from the queue the panel is actually showing — pruned, ordered,
-      // the same array every other field here was derived from — so the string
-      // the player copies describes what they are looking at rather than what
-      // storage happens to hold.
-      shareText: encodePlan({ queue: queue }, settings),
+      // Built from the pruned queue, in storage order — never the ordered
+      // queue: ordering is a display preference, and storage keeps the raw
+      // order. Sharing the ordered queue would silently rewrite a hand-built
+      // order to whatever the current orderMode produces on the next import,
+      // with no bulk undo.
+      shareText: encodePlan({ queue: prunedQueue }, settings),
       importError: state.importError || null,
     };
   }
@@ -2017,6 +2027,14 @@
     numberField(doc, boosters, 'Books of Carols owned', s.booksOwned, function (v) { set('booksOwned', v); });
     numberField(doc, boosters, 'Book of Carols price', s.bookPrice, function (v) { set('bookPrice', v); });
     numberField(doc, boosters, 'Job points available', s.jobPoints, function (v) { set('jobPoints', v); });
+    // Torn already applies job points to the course in progress, so
+    // activeCourse.completedAt already reflects them — there is nothing here
+    // for this field to correct. It is recorded only so it travels with a
+    // shared plan string and a debug report.
+    const jobPointsNote = doc.createElement('div');
+    jobPointsNote.className = 'tes-note';
+    jobPointsNote.textContent = 'Job points need no entry for the dates shown here — Torn already applies them to the course in progress.';
+    boosters.appendChild(jobPointsNote);
 
     const perks = settingsSection(doc, body, 'Education perks');
     // The note carries the honesty: it names the inference as an inference, so
@@ -2055,7 +2073,7 @@
     // belief into a choice it just offered them.
     const orderNote = doc.createElement('div');
     orderNote.className = 'tes-note';
-    orderNote.textContent = 'Order does not change the finish date — courses run one at a time, so the total is the same either way. It changes how soon each course’s bonus starts paying off.';
+    orderNote.textContent = 'Order does not change the finish date — courses run one at a time, so the total is the same either way. It changes how soon each course’s bonus starts paying off. It can also turn a queue with no date into one with a date: a queue whose courses are all valid but listed out of sequence can fail as-listed and succeed under the other two modes, which reorder to something followable.';
     planning.appendChild(orderNote);
 
     const help = settingsSection(doc, body, 'Help');
@@ -2230,7 +2248,7 @@
       boost.className = 'tes-summary';
       const lines = [];
       if (c.plannedBooks > 0) {
-        lines.push(`With ${c.plannedBooks} Books of Carols: ${c.plannedFinishLabel} (${c.plannedDurationLabel})`);
+        lines.push(`With ${c.plannedBooks} Book${c.plannedBooks === 1 ? '' : 's'} of Carols: ${c.plannedFinishLabel} (${c.plannedDurationLabel})`);
       }
       // The cost is not decoration. A floor date without it is a number
       // nobody can act on — and "$0", which is what an unset price would
@@ -2473,8 +2491,14 @@
     onPickerChange: function () {}, onViewChange: function () {},
     onSettingChange: function () {},
     onToggleDebugReport: function () {}, onCopyDebugReport: function () {},
-    // The render path wires this unconditionally, so the inert panel needs it
-    // too, or the click it was built to ignore throws instead.
+    // renderSettingsView (the only renderer that calls onImportPlan) is
+    // unreachable through this handler set: both errorModel call sites pass
+    // noopHandlers, errorModel hardcodes view: 'schedule', and renderPanel
+    // suppresses the .tes-nav row on a noopHandlers identity match, so there
+    // is no route to the settings view and no import click to ignore. Kept
+    // anyway for shape completeness — any real handler set carries it, and a
+    // caller that starts building the settings view against this object
+    // (directly, bypassing renderPanel's routing) must not throw.
     onImportPlan: function () {},
   };
 
