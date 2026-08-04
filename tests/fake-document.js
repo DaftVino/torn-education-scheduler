@@ -20,6 +20,14 @@
  *     carried one would send tests through the fetch path they were written to
  *     avoid, and they would still pass, for the wrong reason.
  *
+ * Plus `doc.selectors`, a mutable map of exact selector string -> element,
+ * consulted before the id lookup. The registry only answers `#id`, so before
+ * this there was no way to stand an element behind one of Torn's own selectors
+ * (`[class*="educationPage___"]`), and every test that needed `findMountPoint`
+ * to succeed either hand-rolled a document or accepted the #tes-fallback-mount
+ * path instead — which is a different element, so a test that decorates "the
+ * mount" and then gets the fallback passes while testing nothing.
+ *
  * It is a stub, not a DOM: no layout, no event dispatch, no live collections.
  * Everything it does model, it models the way a browser does, because the value
  * of this harness is entirely in the divergences it refuses to have.
@@ -95,6 +103,13 @@ function makeFakeDocument(options) {
     documentElement: makeElement('html'),
     createElement: makeElement,
     querySelector(sel) {
+      // Exact-string overrides first: a test standing a real element behind a
+      // host-site selector. Keyed on the whole selector rather than matched,
+      // because a fake that half-implements CSS matching is the divergence
+      // this file exists to prevent.
+      if (typeof sel === 'string' && Object.prototype.hasOwnProperty.call(this.selectors, sel)) {
+        return this.selectors[sel];
+      }
       if (typeof sel === 'string' && sel.startsWith('#')) {
         const id = sel.slice(1);
         return registry.find((el) => el.id === id && !el.removed) || null;
@@ -105,6 +120,9 @@ function makeFakeDocument(options) {
     addEventListener() {},
     body: body,
     registry: registry,
+    // Always present and mutable, so a test can register an element it had to
+    // create from this document after the document existed.
+    selectors: Object.assign(Object.create(null), settings.selectors || null),
   };
   // Only when asked for. fetchEducationData reads the cookie jar to decide
   // whether to fire a request at all, so handing every document a session
