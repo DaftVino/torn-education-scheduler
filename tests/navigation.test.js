@@ -459,6 +459,34 @@ test('a mount that had nowhere to draw does not latch the session with no panel'
   assert.ok(doc.querySelector('#tes-panel'), 'a failed mount latched mounted = true and never retried');
 });
 
+test('leaving the page removes a fallback mount left behind by a mount that drew no panel', async () => {
+  // init() attaches the fallback container before it renders, so a render that
+  // fails afterwards resolves null with the container already on the page — and
+  // with mounted correctly cleared. The unmount on the way out must not be
+  // gated on that flag, or the empty div follows the player around the site.
+  const doc = makeFakeDocument();
+  const realCreate = doc.createElement;
+  let allowed = 1; // enough for the fallback mount, not for the panel
+  doc.createElement = function (tag) {
+    if (allowed <= 0) throw new Error('cannot create elements any more');
+    allowed -= 1;
+    return realCreate(tag);
+  };
+
+  const { win, runTimers } = loadUserscript({ document: doc, fetch: okFetch });
+  await flush();
+  assert.strictEqual(doc.querySelector('#tes-panel'), null, 'the mount was supposed to draw no panel');
+  const attached = () => doc.body.children.filter((c) => c.id === 'tes-fallback-mount' && !c.removed);
+  assert.strictEqual(attached().length, 1, 'no fallback mount was left to clean up');
+
+  win.location.search = '?sid=crimes';
+  win.fire('popstate');
+  runTimers();
+  await flush();
+
+  assert.strictEqual(attached().length, 0, 'a fallback mount was stranded on an unrelated page');
+});
+
 test('a sidebar click that only pushStates into education mounts the panel', async () => {
   // The signal that motivates the whole task: Torn navigates programmatically,
   // fires no popstate, and reloads nothing.
