@@ -138,18 +138,13 @@
       }
     }
 
-    // Check only the immediate parent. validateQueue walks the queue and builds
-    // up the done set, so later courses see earlier ones as satisfied.
-    const parentId = course.parentId;
-    if (parentId !== null && parentId !== undefined) {
-      if (!completedIds.has(parentId)) {
-        const parent = courses.get(parentId);
-        if (!parent) {
-          missing.add(-1);
-        } else {
-          missing.add(parent.id);
-        }
-      }
+    let parentId = course.parentId;
+    while (parentId !== null && parentId !== undefined) {
+      if (completedIds.has(parentId)) break;
+      const parent = courses.get(parentId);
+      if (!parent) { missing.add(-1); break; }
+      missing.add(parent.id);
+      parentId = parent.parentId;
     }
 
     return [...missing].sort((a, b) => a - b);
