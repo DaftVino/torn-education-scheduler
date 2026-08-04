@@ -23,7 +23,9 @@
 
   // ─── ENGINE START ───────────────────────────────────────────────
   // Pure functions only. No DOM, no network, no GM_*, no ambient clock.
-  // Enforced by tests/purity.test.js — read that before adding anything here.
+  // Enforced by tests/purity.test.js, which strips comments before scanning —
+  // prose here may use ordinary English words like window or location; code
+  // here may not touch them.
 
   const VALID_STATUSES = new Set(['completed', 'inProgress', 'available', 'notMeetRequirement']);
 

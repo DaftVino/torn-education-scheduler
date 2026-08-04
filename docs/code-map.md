@@ -24,9 +24,9 @@ none, because it is trusted.
 ### ENGINE START … ENGINE END (lines 24–300)
 
 Pure functions only — no DOM, no network, no `GM_*`, no ambient clock.
-Enforced by `tests/purity.test.js`, which scans this section by source text
-(including comments — words like "window" collide with `/\bwindow\b/` and
-must be avoided even in prose here).
+Enforced by `tests/purity.test.js`, which strips comments before scanning —
+prose here may use ordinary English words like "window" or "location";
+code here may not touch them.
 
 | Symbol | Line |
 | --- | --- |
