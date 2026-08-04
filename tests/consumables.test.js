@@ -235,7 +235,7 @@ test('the rendered floor date never appears without its cost', () => {
   const c = model.consumables;
   const line = text.split('\n').find((l) => l.includes(c.floorFinishLabel) && l.includes('Floor'));
   assert.ok(line, `the floor date is not on screen: ${text}`);
-  assert.strictEqual(c.floorCostKnown, true, 'the default settings do not carry a Book price');
+  assert.ok(c.floorCostLabel, 'the default settings do not carry a Book price');
   // The rule this feature turns on: the two arrive together, in one line, or
   // the panel is quoting a date nobody can act on.
   assert.ok(
@@ -265,14 +265,29 @@ test('owning Books adds a planned line without moving the floor', () => {
 });
 
 // "$0" satisfies the letter of "the floor ships with its cost" and defeats its
-// entire purpose: it tells the player the floor is free. bookPrice reaches 0
-// through the settings form — SETTINGS_BOUNDS.bookPrice.min is 0, and clearing
-// the field gets there because Number('') is 0 — so this is a state the panel
-// really renders, not a constructed one.
+// entire purpose: it tells the player the floor is free.
+//
+// The reachable path is a TYPED zero, not a cleared field. That distinction is
+// what makes this guard live code rather than dead, so the test below pins the
+// mechanism rather than trusting a comment about it: clearing restores the
+// 13.5m default (onSettingChange maps '' to null and boundedInt(null) returns
+// the default), while a typed 0 is stored and survives a round trip.
+test('a typed zero reaches bookPrice, where a cleared field does not', () => {
+  const { exports: x } = loadUserscript();
+  // What onSettingChange hands normaliseSettings for a cleared number input.
+  assert.strictEqual(x.normaliseSettings({ bookPrice: null }).bookPrice, 13500000,
+    'clearing the field no longer restores the default — the $0 guard may now be reachable another way');
+  const typed = x.normaliseSettings({ bookPrice: 0 });
+  assert.strictEqual(typed.bookPrice, 0, 'a typed zero is no longer storable, which would make the $0 guard dead code');
+  assert.strictEqual(x.normaliseSettings(JSON.parse(JSON.stringify(typed))).bookPrice, 0,
+    'a stored zero does not survive a round trip');
+});
+
 test('a floor date is never rendered beside $0', () => {
   const { model, text } = schedulePanel({ settings: { bookPrice: 0 } });
   const c = model.consumables;
-  assert.strictEqual(c.floorCostKnown, false);
+  // One field, not a flag beside it: formatMoney never returns a falsy string,
+  // so null is the absence, and the view tests the label it is about to print.
   assert.strictEqual(c.floorCostLabel, null, 'an unset price was formatted into a figure');
 
   const line = floorLine(text);
