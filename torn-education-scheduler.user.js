@@ -373,13 +373,26 @@
   }
 
   // "If I did only this degree, starting now, how long?" — so every box is
-  // computed independently from the same starting point, including the
-  // prerequisites it needs from other categories and skipping what is done.
+  // computed independently from the same starting point, pulling in whatever
+  // prerequisites it needs and skipping what is done.
   //
-  // The boxes therefore do NOT sum to the all-courses box: degrees share
-  // prerequisites, and a shared course is counted by every degree that needs
-  // it. sumsDiffer carries that fact to the UI, because a reader who adds the
-  // boxes up and gets a different number will assume the tool is broken.
+  // The design this was written from predicted the boxes would NOT sum to the
+  // all-courses box, on the theory that degrees share prerequisite courses.
+  // Torn's catalogue says otherwise, and it is worth stating here rather than
+  // leaving the next reader to rediscover it: no course has a parentId outside
+  // its own category, and a tier-3 bachelor gates only on tier-2 courses in
+  // its own category, so the twelve categories partition the catalogue exactly
+  // and the boxes sum — in course count and in seconds. tests/grid.test.js
+  // asserts the partition itself, so the day Torn breaks it the test names the
+  // course that did.
+  //
+  // sumsDiffer is kept anyway, and is false today. Its reachability is a
+  // property of a third-party catalogue that can change without a commit here,
+  // which is exactly the branch worth keeping: if a prerequisite ever does
+  // cross a category, a reader who adds the boxes up and gets a bigger number
+  // than the all-courses box needs the UI to say why before concluding the
+  // tool is broken. The test drives it by giving a real fixture a real
+  // cross-category parent, not by flipping the flag.
   //
   // Declared below allRemainingCourses and schedule, both of which it calls.
   // Function declarations hoist, so this is not a requirement — it is the
@@ -409,21 +422,34 @@
     const boxes = [];
     let summedCount = 0;
 
+    // plannedCompletions, not completedIds. By the time any queued course runs,
+    // the course now in progress has finished, because schedule() starts its
+    // cursor at max(activeCourse.completedAt, now). Gating on today's
+    // completions instead reports a phantom missing prerequisite for every
+    // bachelor in the active course's category.
+    //
+    // Loop-invariant, so it is computed once rather than per category.
+    const done = plannedCompletions(completedIds, courses, activeCourse);
+
     for (const category of categories) {
-      // plannedCompletions, not completedIds. By the time any queued course
-      // runs, the course now in progress has finished, because schedule()
-      // starts its cursor at max(activeCourse.completedAt, now). Gating on
-      // today's completions instead reports a phantom missing prerequisite
-      // for every bachelor in the active course's category.
-      const done = plannedCompletions(completedIds, courses, activeCourse);
       const queued = new Set();
       const queue = [];
+      // Torn ships exactly one tier-3 course per category, and the box title
+      // names it — "Biology (BIO3420)" — as *the* degree. If a category ever
+      // carries two, that claim is no longer true of either, so the label is
+      // withheld and the box falls back to the bare category name rather than
+      // naming whichever came last in the payload. Same trade the panel makes
+      // with a finish date it cannot stand behind: no label beats a wrong one.
       let bachelorPrefix = null;
+      let bachelorCount = 0;
 
       for (const courseId of category.courseIds) {
         const course = courses.get(courseId);
         if (!course) continue;
-        if (course.tier === 3) bachelorPrefix = course.prefix;
+        if (course.tier === 3) {
+          bachelorCount += 1;
+          bachelorPrefix = bachelorCount === 1 ? course.prefix : null;
+        }
         if (course.status === 'completed' || course.status === 'inProgress') continue;
         for (const id of requiredCoursesFor(courseId, done, courses)) {
           if (queued.has(id)) continue;
@@ -1651,11 +1677,20 @@
     // The number on this screen that looks wrong, and it looks wrong every
     // time: eleven degrees dated 2026 above an all-courses box dated 2029.
     // Every box starts from today by design — that is the question the view
-    // answers — so the dates overlap and the durations cannot be laid end to
-    // end. Unconditional, because it is unconditionally true.
+    // answers — so the *dates* overlap and cannot be read in sequence.
+    //
+    // The *durations* are a different matter, and the second sentence used to
+    // get it wrong. It claimed doing everything takes "not the sum of the
+    // others", which is true only in a catalogue where degrees share courses.
+    // Today they do not: the twelve box durations add to the all-courses
+    // duration to the second (tests/grid.test.js pins the equality). A player
+    // who added them up and read that sentence would have caught the panel
+    // contradicting itself — the exact reaction this note exists to prevent.
+    // So it now says the durations do add up, and uses that to explain the
+    // date rather than to deny it.
     const overlap = doc.createElement('div');
     overlap.className = 'tes-note';
-    overlap.textContent = 'The dates overlap: each starts from today, as if you did that degree and nothing else, so they cannot be read as a sequence. Doing all of them takes the all-courses box’s time, not the sum of the others.';
+    overlap.textContent = 'The dates overlap: each starts from today, as if you did that degree and nothing else, so they cannot be read as a sequence. The durations do add up — that is why doing all of them lands on the all-courses box’s date, years past any single degree.';
     body.appendChild(overlap);
 
     // A separate fact, and currently a quiet one: Torn keeps a course's

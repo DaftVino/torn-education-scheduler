@@ -81,6 +81,14 @@ test('no prerequisite in the fixture crosses a category, so the boxes do sum', (
   const all = out.boxes.find((b) => b.key === 'all');
   assert.strictEqual(summed, all.courseCount, 'the categories no longer partition the catalogue');
   assert.strictEqual(out.sumsDiffer, false, 'the caveat flag claims a sharing the data does not have');
+
+  // The seconds partition too, and the view says so in as many words: the
+  // note it renders unconditionally tells the player the durations add up.
+  // If that ever stops being true the sentence becomes a false claim, so the
+  // equality is pinned here rather than left to the count above to imply.
+  const summedSeconds = degrees.reduce((n, b) => n + b.totalSeconds, 0);
+  assert.strictEqual(summedSeconds, all.totalSeconds, 'the durations no longer add up, but the view still says they do');
+  assert.strictEqual(summedSeconds, 113944320, 'the fixture total moved — check the note still reads true');
 });
 
 // The catalogue that makes sumsDiffer meaningful: one course given a parent in
@@ -127,6 +135,28 @@ test('a completed degree yields a zero box rather than being omitted', () => {
     assert.strictEqual(box.finishesAt, NOW);
   }
   assert.strictEqual(out.sumsDiffer, false);
+});
+
+// The box title names its bachelor as *the* degree. Torn ships one tier-3 per
+// category, so a second one makes that claim false of both — and picking
+// whichever came last in the payload would relabel the box silently, which is
+// the failure mode this repo refuses everywhere else it prints a fact.
+test('a category with two bachelors is left unlabelled rather than labelled wrongly', () => {
+  const { exports: x } = loadUserscript();
+  const raw = loadFixture();
+  const biology = raw.categories.find((c) => c.name === 'Biology');
+  const second = biology.courses.find((c) => c.prefix === 'BIO2370');
+  second.tier = 3;
+  const data = x.parsePayload(raw);
+  const out = x.buildDegreeGrid({
+    courses: data.courses, categories: data.categories, completedIds: data.completedIds,
+    activeCourse: data.activeCourse, now: NOW,
+  });
+  const box = out.boxes.find((b) => b.name === 'Biology');
+  assert.strictEqual(box.bachelorPrefix, null, 'one of two bachelors was named as though it were the degree');
+  // Every other category is untouched, so the fallback is scoped to the
+  // category that lost the guarantee rather than blanking the whole grid.
+  assert.strictEqual(out.boxes.find((b) => b.name === 'Law').bachelorPrefix, 'LAW3102');
 });
 
 // ─── the rendered view ──────────────────────────────────────────────
@@ -201,6 +231,23 @@ test('the grid view renders a box per degree, naming the bachelor', () => {
   assert.ok(titles.includes('All courses'), 'no all-courses box title');
   const details = nodes.filter((n) => n.className === 'tes-cell-detail').map((n) => n.textContent);
   assert.ok(details.some((t) => /115 courses/.test(t)), 'the all-courses box does not print its count');
+
+  // The date is what this view is for, so it is asserted where the player
+  // reads it rather than only on the model. Biology's box carries its own
+  // count, its own duration and its own finish date, all three in one cell.
+  const biology = model.grid.boxes.find((b) => b.name === 'Biology');
+  const biologyDetail = details.find((t) => t.indexOf(biology.finishLabel) !== -1);
+  assert.ok(biologyDetail, `no cell carries Biology's finish date (${biology.finishLabel})`);
+  assert.match(biologyDetail, /^6 courses — 84 days\n/, 'the cell does not lead with its count and duration');
+  assert.match(biologyDetail, /Thu, 26 Mar 2026 00:00:00 UTC$/, 'the cell does not end with the finish date');
+
+  // A finished degree is a box that says so, not a box reading "0 courses —
+  // 0 hours" beside today's date, which reads as an estimate rather than a
+  // completion. Sports Science is complete in the fixture.
+  const sports = model.grid.boxes.find((b) => b.name === 'Sports Science');
+  assert.strictEqual(sports.courseCount, 0, 'the fixture no longer has a completed degree to check');
+  assert.ok(details.includes('Already complete'), 'a completed degree does not say so on screen');
+  assert.ok(!details.some((t) => /0 courses/.test(t)), 'a completed degree renders as an empty estimate');
 });
 
 // The dates are what a reader will try to add up: twelve boxes finishing in
@@ -211,6 +258,11 @@ test('the grid view says the dates overlap, because every box starts from today'
   const text = gridPanel(exports, model).map((n) => n.textContent || '').join('\n');
   assert.match(text, /each starts from today/i, 'nothing explains why the dates overlap');
   assert.match(text, /cannot be read as a sequence/i, 'the note does not say what not to conclude');
+  // The note must not deny that the durations add up — against this catalogue
+  // they do, to the second, and a player who checked would catch the panel
+  // contradicting itself. The equality is pinned above.
+  assert.match(text, /durations do add up/i, 'the note does not say the durations add up');
+  assert.doesNotMatch(text, /not the sum of the others/i, 'the note denies an equality the data has');
   // The dates that make the note necessary are really on screen and really
   // that far apart, so this is not a note about a problem the view does not
   // have: eleven degrees land in 2026, the all-courses box in 2029.
