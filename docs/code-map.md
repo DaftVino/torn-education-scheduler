@@ -1,6 +1,6 @@
 # Code Map
 
-Symbol index with line anchors for `torn-education-scheduler.user.js` (1238 lines)
+Symbol index with line anchors for `torn-education-scheduler.user.js` (1241 lines)
 and a file-level index of `tests/*.js`. Grep this file for a symbol, then `Read`
 with `offset`/`limit` around the anchor — never open the userscript whole
 (`CLAUDE.md` repo-specific constraint 1).
@@ -48,7 +48,7 @@ code here may not touch them.
 | `searchForPayload(root, limits, state)` — bounded breadth-first walk of a plain object graph returning the first `looksLikePayload` hit or `null`; `limits` is `{maxNodes, maxDepth}` (both required integers), cycle-guarded by a `Set`. Both the `looksLikePayload` probe and every property read are try/guarded, so one throwing getter cannot abandon the remaining nodes or roots. `state` is optional (a private budget when omitted); on budget exhaustion it returns `null` **and** sets `state.exhausted`, which is how the caller tells "not there" from "gave up" | 335 |
 | `─── ENGINE END ───` marker | 382 |
 
-### RUNTIME (lines 384–1238)
+### RUNTIME (lines 384–1241)
 
 GM storage, the fetch adapter, the panel, and the bootstrap.
 
@@ -83,10 +83,10 @@ GM storage, the fetch adapter, the panel, and the bootstrap.
 | `MAX_MOUNT_ATTEMPTS` — 20. The ceiling on mounts per visit to education; a page we can never draw into must fail quietly rather than re-acquire every debounce tick forever. Carries a FOR QA note: the counter never decays, so the realistic exhaustion path is a long dwell rather than a re-render burst, and a rate-windowed budget is the right shape once the real reconciliation rate is measured | 1148–1158 |
 | `panelPresent()` — guarded `#tes-panel` lookup; the check that turns a dropped panel into a remount | 1160 |
 | `startMount()` — captures `generation`, calls `init()`, and on resolution discards the render (unmount + resync) if the generation moved. A render landing on a page the player has left would otherwise orphan the panel and its fixed-position fallback mount with `mounted` already `false`, so nothing would ever remove it | 1164 |
-| `syncToRoute()` — off education: reset the budget and unmount **unconditionally**, not gated on `mounted` — a mount that resolved with no panel has already cleared the flag and may still have attached a fallback container. On education: skip while a mount is in flight (a second one is the request storm), skip while the panel is present, otherwise unmount any stranded fallback mount and mount again under the attempt cap. This is what recovers from a React re-render that drops the panel without changing the route. Data is deliberately re-acquired per mount, never cached: the old mount node does not survive Torn's SPA navigation and the active course's remaining time keeps moving | 1194 |
-| `scheduleSync()` — 150 ms debounce; one navigation fires the observer many times | 1229 |
-| Bootstrap: `observeNavigation(document, window, { onRouteChange: scheduleSync }); syncToRoute();` | 1236–1237 |
-| IIFE close `})();` | 1238 |
+| `syncToRoute()` — off education: reset the budget and unmount **unconditionally**, not gated on `mounted` — a mount that resolved with no panel has already cleared the flag and may still have attached a fallback container. On education: skip while a mount is in flight (a second one is the request storm), skip while the panel is present, otherwise unmount any stranded fallback mount and mount again under the attempt cap. This is what recovers from a React re-render that drops the panel without changing the route. Data is deliberately re-acquired per mount, never cached: the old mount node does not survive Torn's SPA navigation and the active course's remaining time keeps moving | 1197 |
+| `scheduleSync()` — 150 ms debounce; one navigation fires the observer many times | 1232 |
+| Bootstrap: `observeNavigation(document, window, { onRouteChange: scheduleSync }); syncToRoute();` | 1239–1240 |
+| IIFE close `})();` | 1241 |
 
 ## `tests/*.js`
 

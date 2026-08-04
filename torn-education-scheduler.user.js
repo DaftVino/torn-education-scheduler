@@ -1181,9 +1181,12 @@
         return;
       }
       // init() resolves null only when there was nowhere to draw at all.
-      // Keeping mounted = true there would claim a panel that does not exist,
-      // and the remount rule in syncToRoute recovers from it either way — but
-      // the flag must still be honest, because the unmount below reads it.
+      // Keeping mounted = true there would claim a panel that does not exist.
+      // Nothing currently depends on this: syncToRoute's remount rule recovers
+      // either way, and its off-education cleanup is unconditional, so no test
+      // isolates this line — deleting it leaves the suite green. It is here so
+      // the flag means what it says, and so the next thing to read `mounted`
+      // reads the truth.
       if (!panel) mounted = false;
     }, function () {
       inFlight -= 1;
