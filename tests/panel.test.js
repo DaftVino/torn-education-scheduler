@@ -260,6 +260,91 @@ test('init falls back to a fixed-position container when no mount point is found
   assert.ok(fallback.children.some((c) => c.id === 'tes-panel'), 'panel was not drawn into the fallback mount');
 });
 
+test('a queue with unmet prerequisites withholds the finish date rather than stating it confidently', () => {
+  // Regression guard for the exact QA failure: PSY3690 (69) needs six
+  // Psychology tier-2 courses that were never queued (here we exercise the
+  // simpler MTH2320-alone case that prereq.test.js already characterizes:
+  // missing 22 and 26). A wrong date stated confidently is worse than no
+  // date, so both labels must go to null, not just get computed anyway.
+  const { exports, state } = okState([32]);
+  const model = exports.buildPanelModel(state);
+  assert.strictEqual(model.problems.length, 1);
+  assert.strictEqual(model.finishLabel, null);
+  assert.strictEqual(model.totalLabel, null);
+});
+
+test('renderPanel surfaces a visible message naming what is missing when the plan cannot be followed', () => {
+  const { exports, state } = okState([32]);
+  const model = exports.buildPanelModel(state);
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const panel = exports.renderPanel(doc, mount, model, noopHandlers);
+  const body = panel.children[1];
+  const summary = body.children.find((c) => c.className === 'tes-summary');
+  assert.match(summary.textContent, /cannot be followed/i);
+  assert.match(summary.textContent, /MTH1220/);
+  assert.match(summary.textContent, /MTH2260/);
+  // No "Queue finishes" line and no "Total queued time" line — a stale
+  // problems-free wording would misleadingly imply a real date exists.
+  assert.doesNotMatch(summary.textContent, /Total queued time/);
+});
+
+test('adding a tier-3 course to an empty queue auto-queues its whole prerequisite chain and validates clean', async () => {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm'; // fetchEducationData needs a session token to attempt the fetch
+  const { exports, gmStore } = loadUserscript({
+    location: { search: '' }, // keeps the bootstrap from auto-running init()
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  await exports.init();
+
+  const fallback = doc.body.children.find((c) => c.id === 'tes-fallback-mount');
+  const panel = doc.querySelector('#tes-panel');
+  assert.ok(panel && fallback.children.includes(panel), 'panel was not drawn');
+  const body = panel.children[1];
+  const picker = body.children.find((c) => c.tagName === 'select');
+  const addButton = body.children.find((c) => c.textContent === 'add');
+  picker.value = '69'; // PSY3690, a tier-3 bachelor
+  for (const fn of addButton.listeners.click) fn();
+
+  const stored = JSON.parse(gmStore.get(exports.STORAGE_KEY));
+  // Every Psychology tier-2 course plus their shared tier-1 parent, 69 last —
+  // matches requiredCoursesFor(69, ...) directly (see prereq.test.js).
+  assert.deepStrictEqual(stored.queue, [63, 64, 65, 66, 67, 68, 132, 69]);
+
+  const data = exports.parsePayload(loadFixture());
+  assert.deepStrictEqual(exports.validateQueue(stored.queue, data.completedIds, data.courses), []);
+});
+
+test('adding a course already in the queue does not duplicate it or its prerequisites', async () => {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm';
+  const { exports, gmStore } = loadUserscript({
+    location: { search: '' },
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  await exports.init();
+
+  function clickAdd(courseId) {
+    const panel = doc.querySelector('#tes-panel');
+    const body = panel.children[1];
+    const picker = body.children.find((c) => c.tagName === 'select');
+    const addButton = body.children.find((c) => c.textContent === 'add');
+    picker.value = String(courseId);
+    for (const fn of addButton.listeners.click) fn();
+  }
+
+  clickAdd(69); // queues [63, 64, 65, 66, 67, 68, 132, 69]
+  const afterFirst = JSON.parse(gmStore.get(exports.STORAGE_KEY)).queue;
+  clickAdd(69); // already queued — must be a no-op, not a second copy
+  const afterSecond = JSON.parse(gmStore.get(exports.STORAGE_KEY)).queue;
+
+  assert.deepStrictEqual(afterSecond, afterFirst);
+  assert.strictEqual(new Set(afterSecond).size, afterSecond.length);
+});
+
 test('findMountPoint uses prefix matching and tolerates absence', () => {
   const { exports } = loadUserscript();
   assert.strictEqual(exports.findMountPoint({ querySelector: () => null }), null);
