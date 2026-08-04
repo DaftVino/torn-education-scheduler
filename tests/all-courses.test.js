@@ -6,7 +6,7 @@ const { loadUserscript, loadFixture } = require('./load-userscript');
 test('allRemainingCourses returns every unfinished course, dependency-ordered', () => {
   const { exports: x } = loadUserscript();
   const data = x.parsePayload(loadFixture());
-  const queue = x.allRemainingCourses(data.completedIds, data.courses);
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
 
   assert.strictEqual(queue.length, 115, 'wrong number of remaining courses');
   assert.strictEqual(new Set(queue).size, queue.length, 'the queue contains duplicates');
@@ -20,7 +20,7 @@ test('allRemainingCourses returns every unfinished course, dependency-ordered', 
   // the same assumption schedule() makes when it starts the queue at
   // activeCourse.completedAt. buildPanelModel judges the queue the same way.
   assert.deepStrictEqual(
-    x.validateQueue(queue, x.plannedCompletions(data.completedIds, data.courses), data.courses),
+    x.validateQueue(queue, x.plannedCompletions(data.completedIds, data.courses, data.activeCourse), data.courses),
     [],
     'the all-courses queue is not a followable order'
   );
@@ -34,7 +34,7 @@ test('allRemainingCourses returns every unfinished course, dependency-ordered', 
 test('the only course the all-courses queue defers to the active course is the one gated on it', () => {
   const { exports: x } = loadUserscript();
   const data = x.parsePayload(loadFixture());
-  const queue = x.allRemainingCourses(data.completedIds, data.courses);
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
 
   const today = x.validateQueue(queue, data.completedIds, data.courses);
   assert.deepStrictEqual(today.map((p) => p.courseId), [42]);
@@ -49,7 +49,7 @@ test('the only course the all-courses queue defers to the active course is the o
 test('the in-progress course counts as done for planning but not for starting today', () => {
   const { exports: x } = loadUserscript();
   const data = x.parsePayload(loadFixture());
-  const planned = x.plannedCompletions(data.completedIds, data.courses);
+  const planned = x.plannedCompletions(data.completedIds, data.courses, data.activeCourse);
 
   assert.ok(planned.has(37), 'the active course must count as done for a plan');
   assert.ok(!data.completedIds.has(37), 'parsePayload must not report it completed');
@@ -62,7 +62,7 @@ test('allRemainingCourses is empty when everything is done', () => {
   const { exports: x } = loadUserscript();
   const data = x.parsePayload(loadFixture());
   const allIds = new Set([...data.courses.keys()]);
-  assert.deepStrictEqual(x.allRemainingCourses(allIds, data.courses), []);
+  assert.deepStrictEqual(x.allRemainingCourses(allIds, data.courses, data.activeCourse), []);
 });
 
 test('bachelor courses are marked in the addable list', () => {
@@ -89,6 +89,46 @@ test('bachelor courses are marked in the addable list', () => {
   const ordinary = model.addable.find((a) => a.prefix === 'BIO2380');
   assert.strictEqual(ordinary.isBachelor, false);
   assert.ok(ordinary.label.indexOf('[bachelor]') === -1);
+});
+
+// `status` and `activeCourse` come from independent parts of the payload, so a
+// course can in principle read inProgress with no completion time anywhere.
+// schedule() bills none of its remaining weeks, so promoting it would print a
+// finish date short by a whole course — here 16.8 days. Withholding the date is
+// the state the panel was in before any of this existed, and the trade this
+// codebase makes every time: no date beats a wrong one.
+test('an in-progress course Torn does not name as active is never promoted', () => {
+  const { exports: x } = loadUserscript();
+  const raw = loadFixture();
+  raw.activeCourse = null;
+  const data = x.parsePayload(raw);
+  assert.strictEqual(data.activeCourse, null);
+  assert.strictEqual(data.courses.get(37).status, 'inProgress');
+
+  const planned = x.plannedCompletions(data.completedIds, data.courses, data.activeCourse);
+  assert.ok(!planned.has(37), 'a course with no completion time was counted as done');
+
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  assert.ok(queue.indexOf(37) === -1, 'the in-progress course reached the queue');
+  const model = x.buildPanelModel({
+    fetchResult: { ok: true, data },
+    plan: { queue: queue, collapsed: false },
+    settings: x.freshSettings(),
+    now: 1767225600,
+  });
+  assert.ok(model.problems.some((p) => p.prefix === 'BIO3420'), 'the gated degree was passed as followable');
+  assert.strictEqual(model.finishLabel, null, 'a finish date was printed short by the unbilled course');
+  assert.strictEqual(model.totalLabel, null);
+});
+
+test('a course in progress that is not the active one is left alone', () => {
+  const { exports: x } = loadUserscript();
+  const data = x.parsePayload(loadFixture());
+  // The real active course still promotes; a second inProgress course Torn
+  // never named would not, because only activeCourse carries a completedAt.
+  const planned = x.plannedCompletions(data.completedIds, data.courses, { id: 999999 });
+  assert.ok(!planned.has(37), 'promotion must match on activeCourse.id, not on status alone');
+  assert.strictEqual(planned.size, data.completedIds.size);
 });
 
 test('the all-courses sentinel is a string that cannot collide with a course id', () => {

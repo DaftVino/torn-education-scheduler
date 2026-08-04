@@ -181,6 +181,27 @@ function makeFakeDocument() {
       addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
       remove() { this.removed = true; },
     };
+    // A <select> is not a blank slate: a browser selects its first option the
+    // moment one is appended, so `picker.value` is never '' while options
+    // exist unless an inert option sits at the top. A stub that hard-coded
+    // value: '' hid exactly that — every test set picker.value by hand first,
+    // so no test could ever see what an untouched picker submits. Reading it
+    // resolves the way a browser does: the option marked selected, else the
+    // first one. Writing it still works, because a test choosing a course is
+    // simulating the player choosing one.
+    if (tag === 'select') {
+      let chosenByHand = null;
+      Object.defineProperty(el, 'value', {
+        configurable: true,
+        enumerable: true,
+        get() {
+          if (chosenByHand !== null) return chosenByHand;
+          const option = this.children.find((c) => c.selected) || this.children[0];
+          return option ? option.value : '';
+        },
+        set(v) { chosenByHand = v; },
+      });
+    }
     registry.push(el);
     return el;
   }
@@ -358,7 +379,7 @@ test('adding a course already in the queue does not duplicate it or its prerequi
   assert.strictEqual(new Set(afterSecond).size, afterSecond.length);
 });
 
-test('the picker leads with an all-remaining entry and marks the bachelors', () => {
+test('the picker offers the all-remaining entry second and marks the bachelors', () => {
   const { exports, state } = okState([]);
   const doc = makeFakeDocument();
   const mount = doc.createElement('div');
@@ -366,16 +387,53 @@ test('the picker leads with an all-remaining entry and marks the bachelors', () 
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
   const picker = panel.children[1].children.find((c) => c.tagName === 'select');
 
-  const first = picker.children[0];
-  assert.strictEqual(first.value, exports.ALL_COURSES_OPTION, 'the all-remaining entry is not first');
-  assert.match(first.textContent, /all remaining courses \(115\)/);
-  assert.strictEqual(picker.children.length, model.addable.length + 1);
+  // First is the inert placeholder — see the untouched-picker test above for
+  // what sitting at the top of a <select> actually means.
+  assert.strictEqual(picker.children[0].value, '');
+  const all = picker.children[1];
+  assert.strictEqual(all.value, exports.ALL_COURSES_OPTION, 'the all-remaining entry is buried');
+  assert.match(all.textContent, /all remaining courses \(115\)/);
+  assert.strictEqual(picker.children.length, model.addable.length + 2);
   // The marker has to survive into the option the player actually reads, not
   // just the model: an <option> cannot be styled portably, so the text is it.
   const bachelor = picker.children.find((c) => /BIO3420/.test(c.textContent));
   assert.ok(bachelor.textContent.startsWith('[bachelor] '), 'the bachelor is unmarked in the picker');
   const plain = picker.children.find((c) => /BIO2380/.test(c.textContent));
   assert.ok(plain.textContent.indexOf('[bachelor]') === -1);
+});
+
+// The failure this guards is not hypothetical: a browser selects the first
+// option, so before the placeholder existed an untouched picker submitted the
+// all-remaining sentinel, and a stray click on `add` queued the whole
+// catalogue. Removal is one course at a time and nothing clears a queue, so
+// the walk back was 115 clicks.
+test('an untouched picker submits nothing, not every remaining course', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const model = exports.buildPanelModel(state);
+  assert.strictEqual(model.selectedCourseId, null, 'a fresh panel has no selection');
+
+  let added = null;
+  let addedAll = false;
+  const handlers = {
+    onToggle() {}, onRemove() {}, onPickerChange() {},
+    onAdd: (id) => { added = id; },
+    onAddAll: () => { addedAll = true; },
+  };
+  const body = exports.renderPanel(doc, mount, model, handlers).children[1];
+  const picker = body.children.find((c) => c.tagName === 'select');
+
+  assert.strictEqual(picker.children[0].value, '', 'the first option is not inert');
+  assert.strictEqual(picker.value, '', 'an untouched picker is already on a real option');
+  assert.notStrictEqual(picker.value, exports.ALL_COURSES_OPTION);
+  // Still near the top, so it stays discoverable without scrolling 115 entries.
+  assert.strictEqual(picker.children[1].value, exports.ALL_COURSES_OPTION);
+
+  const addButton = body.children.find((c) => c.textContent === 'add');
+  for (const fn of addButton.listeners.click) fn();
+  assert.strictEqual(added, null, 'a stray click queued a course');
+  assert.strictEqual(addedAll, false, 'a stray click queued the entire catalogue');
 });
 
 test('an empty addable list offers no all-remaining entry to click', () => {
@@ -396,7 +454,7 @@ test('an empty addable list offers no all-remaining entry to click', () => {
   const panel = exports.renderPanel(doc, mount, model, handlers);
   const body = panel.children[1];
   const picker = body.children.find((c) => c.tagName === 'select');
-  assert.strictEqual(picker.children.length, 0, 'nothing is addable, so nothing may be offered');
+  assert.deepStrictEqual(picker.children.map((c) => c.value), [''], 'nothing is addable, so nothing may be offered');
   const addButton = body.children.find((c) => c.textContent === 'add');
   for (const fn of (addButton.listeners.click || [])) fn();
   assert.strictEqual(addedAll, false, 'onAddAll fired with nothing to add');
@@ -424,7 +482,7 @@ test('the all-remaining entry queues every remaining course, in a followable ord
 
   const stored = JSON.parse(gmStore.get(exports.STORAGE_KEY)).queue;
   const data = exports.parsePayload(loadFixture());
-  assert.deepStrictEqual(stored, exports.allRemainingCourses(data.completedIds, data.courses));
+  assert.deepStrictEqual(stored, exports.allRemainingCourses(data.completedIds, data.courses, data.activeCourse));
   assert.strictEqual(stored.length, 115);
   assert.strictEqual(new Set(stored).size, stored.length, 'the stored queue has duplicates');
 
