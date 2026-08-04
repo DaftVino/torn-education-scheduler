@@ -39,7 +39,7 @@ const EXPORT_NAMES = [
   // adapter
   'fetchEducationData',
   // acquisition
-  'looksLikePayload', 'searchForPayload', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
+  'looksLikePayload', 'searchForPayload', 'newWalkState', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
   'formatTimestamp', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
 ];

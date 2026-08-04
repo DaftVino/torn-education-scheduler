@@ -311,18 +311,36 @@
     return !!first && isInt(first.id) && Array.isArray(first.courses);
   }
 
+  // One walk's budget, shared across every root the caller hands to
+  // searchForPayload. The bound has to span the whole search, not each root
+  // separately: several roots normally point into the same graph, so a
+  // per-root budget silently multiplies the real ceiling by the root count
+  // and the walk stops being bounded in any useful sense.
+  //
+  // `exhausted` distinguishes "walked the whole graph and it was not there"
+  // from "ran out of budget before reaching the end". Reporting the second as
+  // the first hands a later debug report the wrong diagnosis.
+  function newWalkState() {
+    return { seen: new Set(), visited: 0, exhausted: false };
+  }
+
   // Breadth-first, so a payload sitting shallow is found before the walk
   // spends its budget deep in an unrelated subtree. Bounded on both axes and
   // cycle-guarded: an unbounded walk over a React tree does not terminate.
-  function searchForPayload(root, limits) {
+  //
+  // `state` is optional; omitted, the walk gets a private budget. Callers with
+  // more than one root must create one state with newWalkState() and pass the
+  // same object to every call, so the node budget and the cycle guard are
+  // shared rather than reset per root.
+  function searchForPayload(root, limits, state) {
     const maxNodes = limits && isInt(limits.maxNodes) ? limits.maxNodes : 0;
     const maxDepth = limits && isInt(limits.maxDepth) ? limits.maxDepth : 0;
     if (maxNodes <= 0 || maxDepth <= 0) return null;
 
-    const seen = new Set();
+    const walk = state || newWalkState();
+    const seen = walk.seen;
     let frontier = [root];
     let depth = 0;
-    let visited = 0;
 
     while (frontier.length > 0 && depth < maxDepth) {
       const nextFrontier = [];
@@ -330,10 +348,20 @@
         if (node === null || typeof node !== 'object') continue;
         if (seen.has(node)) continue;
         seen.add(node);
-        visited += 1;
-        if (visited > maxNodes) return null;
+        walk.visited += 1;
+        if (walk.visited > maxNodes) {
+          walk.exhausted = true;
+          return null;
+        }
 
-        if (looksLikePayload(node)) return node;
+        // The probe reads properties off a host object, so it can trip a
+        // throwing getter exactly as the key enumeration below can. A throw
+        // here would abandon every remaining node and every remaining root,
+        // so it is caught and the node is simply treated as not-a-payload —
+        // its children are still worth walking.
+        let matched = false;
+        try { matched = looksLikePayload(node); } catch (e) { matched = false; }
+        if (matched) return node;
 
         // Only own enumerable keys, and only object values. Getters on a host
         // object can throw or have side effects, so every read is guarded.
@@ -487,7 +515,18 @@
   // per-build random number — match the stable prefix only, exactly as every
   // class selector in this file does.
   const FIBER_KEY_PREFIXES = ['__reactFiber$', '__reactProps$', '__reactInternalInstance$'];
+  // maxNodes is the binding limit; maxDepth is close to decorative. A FiberNode
+  // carries roughly 15-20 object-valued own properties, so a breadth-first walk
+  // spends 20,000 nodes somewhere around depth 3-4 and never approaches 14. The
+  // real reach of path 2 is about four hops from a fiber root. If the manual-QA
+  // pass finds the payload sitting further out than that, raise maxNodes —
+  // raising maxDepth on its own will do nothing.
   const FIBER_LIMITS = { maxNodes: 20000, maxDepth: 14 };
+  // React 18 hangs both __reactFiber$ and __reactProps$ on every host node, so
+  // a swept page yields roots in pairs. They point into one graph, and the
+  // shared walk state dedupes the overlap, but collecting hundreds of entry
+  // points is still pointless: cap the list.
+  const FIBER_MAX_ROOTS = 8;
   // The nodes most likely to carry the education props, cheapest first. Falls
   // back to a bounded sweep of the body's element children.
   const FIBER_HOST_SELECTORS = [
@@ -515,7 +554,12 @@
       for (let i = 0; i < all.length && i < 200; i += 1) nodes.push(all[i]);
     }
 
+    // Identity-deduped and capped. The sweep above can offer up to 200 nodes,
+    // each carrying two or more React keys; without this the walk would be
+    // handed hundreds of entry points into the same graph.
+    const seenRoots = new Set();
     for (const node of nodes) {
+      if (roots.length >= FIBER_MAX_ROOTS) break;
       let keys;
       try { keys = Object.keys(node); } catch (e) { continue; }
       for (const key of keys) {
@@ -523,7 +567,11 @@
           if (key.indexOf(prefix) === 0) {
             let value;
             try { value = node[key]; } catch (e) { value = null; }
-            if (value && typeof value === 'object') roots.push(value);
+            if (value && typeof value === 'object' && !seenRoots.has(value)) {
+              seenRoots.add(value);
+              roots.push(value);
+              if (roots.length >= FIBER_MAX_ROOTS) return roots;
+            }
           }
         }
       }
@@ -537,8 +585,10 @@
     try {
       const roots = fiberRootsFrom(doc);
       if (roots.length === 0) return { ok: false, reason: 'no-fiber', detail: 'no React internals found on the page' };
+      // One budget for the whole search, not one per root — see newWalkState.
+      const walk = newWalkState();
       for (const root of roots) {
-        const raw = searchForPayload(root, FIBER_LIMITS);
+        const raw = searchForPayload(root, FIBER_LIMITS, walk);
         if (raw) {
           try {
             return { ok: true, data: parsePayload(raw), source: 'fiber' };
@@ -546,6 +596,16 @@
             return { ok: false, reason: (e && e.reason) || 'bad-fiber-payload', detail: (e && e.message) || 'unparseable' };
           }
         }
+        if (walk.exhausted) break;
+      }
+      // "Ran out of budget" is not "was not there", and saying the second when
+      // the first happened would misdirect anyone reading a debug report.
+      if (walk.exhausted) {
+        return {
+          ok: false,
+          reason: 'fiber-budget-exhausted',
+          detail: `gave up after ${walk.visited} nodes without finding the education payload`,
+        };
       }
       return { ok: false, reason: 'no-fiber-payload', detail: 'React internals held no education payload' };
     } catch (e) {
@@ -556,19 +616,35 @@
   // A chain, not a race: the endpoint is the source of truth and the fiber is
   // only consulted when it fails, so a stale React tree can never quietly win
   // against a good response.
+  //
+  // The outer try is defensive rather than expected to fire: both callees are
+  // themselves contracted never to reject. But this is the function init()
+  // awaits with no catch of its own, so a rejection escaping here blanks the
+  // panel — the one failure mode the whole error path exists to prevent. It
+  // also covers the string interpolation below, which reads fields off values
+  // this function did not construct.
   async function acquireEducationData(doc) {
-    const fetched = await fetchEducationData(null);
-    if (fetched.ok) return { ok: true, data: fetched.data, source: 'fetch' };
+    try {
+      const fetched = await fetchEducationData(null);
+      if (fetched && fetched.ok) return { ok: true, data: fetched.data, source: 'fetch' };
 
-    const fiber = await readFiberEducationData(doc);
-    if (fiber.ok) return { ok: true, data: fiber.data, source: 'fiber' };
+      const fiber = await readFiberEducationData(doc);
+      if (fiber && fiber.ok) return { ok: true, data: fiber.data, source: 'fiber' };
 
-    return {
-      ok: false,
-      reason: fetched.reason,
-      detail: `${fetched.detail} (page fallback also failed: ${fiber.reason})`,
-      triedFiber: true,
-    };
+      return {
+        ok: false,
+        reason: (fetched && fetched.reason) || 'acquire-failed',
+        detail: `${(fetched && fetched.detail) || 'the endpoint failed'} (page fallback also failed: ${(fiber && fiber.reason) || 'unknown'})`,
+        triedFiber: true,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        reason: 'acquire-threw',
+        detail: (e && e.message) || String(e),
+        triedFiber: true,
+      };
+    }
   }
 
   function isEducationPage() {
