@@ -127,6 +127,17 @@ test('formatMoney does not invent a unit nobody writes', () => {
   // used to print the carried number in the smaller unit: $1000m and $999999.
   assert.strictEqual(x.formatMoney(999999999), '$1b');
   assert.strictEqual(x.formatMoney(999999), '$1m');
+  // But it must not promote EAGERLY. The promotion fires when the smaller unit
+  // overflows, not when this one rounds to 1 — the latter triggers from ~0.995
+  // and overstates: 74 Books at 13.5m is $999,000,000, and printing $1b there
+  // is a 0.1% overstatement of the one figure this feature exists to make
+  // trustworthy, where $999m was both available and exact.
+  assert.strictEqual(x.formatMoney(74 * 13500000), '$999m');
+  assert.strictEqual(x.formatMoney(73 * 13500000), '$985.5m');
+  assert.strictEqual(x.formatMoney(995000001), '$995m');
+  assert.strictEqual(x.formatMoney(995001), '$995k');
+  assert.strictEqual(x.formatMoney(999000000), '$999m');
+  assert.strictEqual(x.formatMoney(999000), '$999k');
   // But the promotion must not reach the bottom of the scale: below a thousand
   // the player is reading exact dollars.
   assert.strictEqual(x.formatMoney(999), '$999');
@@ -176,12 +187,12 @@ function schedulePanel(options) {
   const opts = options || {};
   const { exports } = loadUserscript();
   const data = exports.parsePayload(loadFixture());
-  const queue = exports.allRemainingCourses(
-    data.completedIds, data.courses, data.activeCourse,
-  );
+  const queue = opts.pickQueue
+    ? opts.pickQueue(data, exports)
+    : exports.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
   const model = exports.buildPanelModel({
     fetchResult: { ok: true, data: data },
-    plan: { queue: opts.queue || queue, collapsed: false },
+    plan: { queue: queue, collapsed: false },
     settings: opts.settings || {},
     view: 'schedule',
     now: NOW,
@@ -191,7 +202,19 @@ function schedulePanel(options) {
   const panel = exports.renderPanel(doc, mount, model, handlers);
   const nodes = descendants(panel);
   const text = nodes.map((n) => n.textContent || '').join('\n');
-  return { exports: exports, model: model, nodes: nodes, text: text };
+  return { exports: exports, data: data, model: model, nodes: nodes, text: text };
+}
+
+// The one short course the clamped-render tests below queue: 100.8 hours, so a
+// large maximum cooldown offers hundreds of Books where the path absorbs 17.
+function shortCourse(data) {
+  return [Array.from(data.courses.values()).find((c) => c.prefix === 'BUS1100').id];
+}
+
+// The line the whole feature turns on, pulled out of the rendered text so
+// every test below reads the same string the player does.
+function floorLine(text) {
+  return text.split('\n').find((l) => l.includes('Floor with maximum Books'));
 }
 
 test('the schedule model carries the consumables block with both dates', () => {
@@ -212,6 +235,7 @@ test('the rendered floor date never appears without its cost', () => {
   const c = model.consumables;
   const line = text.split('\n').find((l) => l.includes(c.floorFinishLabel) && l.includes('Floor'));
   assert.ok(line, `the floor date is not on screen: ${text}`);
+  assert.strictEqual(c.floorCostKnown, true, 'the default settings do not carry a Book price');
   // The rule this feature turns on: the two arrive together, in one line, or
   // the panel is quoting a date nobody can act on.
   assert.ok(
@@ -238,6 +262,69 @@ test('owning Books adds a planned line without moving the floor', () => {
   );
   assert.ok(!/With 0 Books of Carols/.test(none.text), 'a zero-Book plan rendered a planned line');
   assert.match(some.text, /With 20 Books of Carols: /);
+});
+
+// "$0" satisfies the letter of "the floor ships with its cost" and defeats its
+// entire purpose: it tells the player the floor is free. bookPrice reaches 0
+// through the settings form — SETTINGS_BOUNDS.bookPrice.min is 0, and clearing
+// the field gets there because Number('') is 0 — so this is a state the panel
+// really renders, not a constructed one.
+test('a floor date is never rendered beside $0', () => {
+  const { model, text } = schedulePanel({ settings: { bookPrice: 0 } });
+  const c = model.consumables;
+  assert.strictEqual(c.floorCostKnown, false);
+  assert.strictEqual(c.floorCostLabel, null, 'an unset price was formatted into a figure');
+
+  const line = floorLine(text);
+  assert.ok(line, 'the floor line vanished — the fix was to name the gap, not to hide the date');
+  assert.ok(!/\$0\b/.test(line), `the floor date rendered beside $0: ${line}`);
+  assert.ok(!/\$/.test(line), `an unset price still produced a money figure: ${line}`);
+  assert.match(line, /cost unknown, no Book price set/);
+  // The date itself must survive: the rule is that the cost accompanies it,
+  // not that the line disappears when the cost cannot be stated.
+  assert.ok(line.includes(c.floorFinishLabel), `the floor date is gone: ${line}`);
+  assert.ok(line.includes(String(c.floorBooks)), `the Book count is gone: ${line}`);
+  // And it must say how to close the gap, or it is a dead end.
+  assert.match(text, /Set a Book price in settings to see what that floor would cost\./);
+});
+
+test('a real price puts no "cost unknown" wording anywhere near the floor line', () => {
+  const { text } = schedulePanel({ settings: { bookPrice: 13500000 } });
+  const line = floorLine(text);
+  assert.ok(!/cost unknown/.test(line), line);
+  assert.ok(!/Set a Book price in settings/.test(text), 'the prompt renders when a price is set');
+  assert.match(line, /\$[0-9]/, `the floor line carries no money figure: ${line}`);
+});
+
+// Every other render test walks the unclamped 115-course path. The clamped
+// path is where both review findings lived, so it gets its own render test
+// rather than being asserted only at the pure-function level.
+test('the clamped floor renders the Books it takes, not the Books the cooldown allows', () => {
+  const { exports, data, model, text } = schedulePanel({
+    pickQueue: shortCourse,
+    settings: { maxCooldownHours: 8760, booksOwned: 500, bookPrice: 13500000 },
+  });
+  const c = model.consumables;
+  assert.strictEqual(c.ceiling, 738, 'the cooldown budget is not what this test was written against');
+  assert.strictEqual(c.floorBooks, 17);
+  assert.strictEqual(c.floorDurationLabel, '0 hours');
+
+  const line = floorLine(text);
+  assert.ok(line.includes('(17 — $229.5m)'), `the floor line prices the ceiling rather than the path: ${line}`);
+  assert.ok(!line.includes('738'), `the raw cooldown ceiling reached the screen: ${line}`);
+
+  // A floor of zero remaining queued time finishes the instant the queue
+  // starts — when the active course ends, which is the only anchor either
+  // date is measured from.
+  const startsAt = exports.schedule({
+    courses: data.courses, activeCourse: data.activeCourse, queue: [], now: NOW,
+  }).startsAt;
+  assert.strictEqual(c.floorFinishLabel, exports.formatTimestamp(startsAt));
+  assert.ok(line.includes(c.floorFinishLabel), line);
+
+  // Owning 500 Books cannot spend more than the path can absorb either.
+  assert.strictEqual(c.plannedBooks, 17);
+  assert.match(text, /With 17 Books of Carols: .* \(0 hours\)/);
 });
 
 test('a queue that cannot be followed gets no consumables block at all', () => {
