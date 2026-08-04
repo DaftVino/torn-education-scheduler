@@ -278,11 +278,20 @@
   // Biology tier-2 course is running — which, for a player on the education
   // page, is nearly always — and the panel would answer "all remaining courses"
   // with a plan it then refuses to date.
-  function plannedCompletions(completedIds, courses) {
+  //
+  // Only the course `activeCourse` actually names is promoted, and only when
+  // Torn gave us its completion time. `status` and `activeCourse` come from
+  // independent parts of the payload: a course marked inProgress that
+  // activeCourse does not name has no completion time anywhere, so schedule()
+  // bills none of its remaining weeks. Promoting it would print a finish date
+  // short by up to a whole course. Refusing to promote it costs only the
+  // withheld date the panel would have shown before any of this existed, which
+  // is the trade this codebase makes every time: no date beats a wrong one.
+  function plannedCompletions(completedIds, courses, activeCourse) {
     const done = new Set(completedIds);
-    for (const course of courses.values()) {
-      if (course.status === 'inProgress') done.add(course.id);
-    }
+    if (!activeCourse || !isInt(activeCourse.id)) return done;
+    const course = courses.get(activeCourse.id);
+    if (course && course.status === 'inProgress') done.add(course.id);
     return done;
   }
 
@@ -290,12 +299,12 @@
   // the old PHP tool both centred on. Folding requiredCoursesFor over the
   // catalogue rather than sorting the courses directly means the result is a
   // queue validateQueue accepts, by construction rather than by argument.
-  function allRemainingCourses(completedIds, courses) {
-    // The in-progress course is treated as done, so requiredCoursesFor never
-    // emits it and a course gated on it is still reachable. Completed and
-    // in-progress courses are skipped as roots for the same reason
-    // buildPanelModel drops them from a stored queue: neither is work remaining.
-    const done = plannedCompletions(completedIds, courses);
+  function allRemainingCourses(completedIds, courses, activeCourse) {
+    // The active course is treated as done, so requiredCoursesFor never emits
+    // it and a course gated on it is still reachable. Completed and in-progress
+    // courses are skipped as roots for the same reason buildPanelModel drops
+    // them from a stored queue: neither is work remaining.
+    const done = plannedCompletions(completedIds, courses, activeCourse);
     const queued = new Set();
     const out = [];
     for (const course of courses.values()) {
@@ -303,6 +312,13 @@
       if (queued.has(course.id)) continue;
       for (const id of requiredCoursesFor(course.id, done, courses)) {
         if (queued.has(id)) continue;
+        // A belt to plannedCompletions' braces, and the only thing standing
+        // between a caller that forgot activeCourse and an in-progress course
+        // in the queue. Such a caller gets a queue the panel refuses to date
+        // (the gated course reports as unmet) rather than one that quietly
+        // counts weeks the player is already serving.
+        const required = courses.get(id);
+        if (required && required.status === 'inProgress') continue;
         queued.add(id);
         out.push(id);
       }
@@ -1005,7 +1021,7 @@
     // followable and must not be reported as a missing prerequisite. Reporting
     // it would withhold the finish date — the number this tool exists for —
     // from a plan the player can actually follow.
-    const plannedDone = plannedCompletions(data.completedIds, data.courses);
+    const plannedDone = plannedCompletions(data.completedIds, data.courses, data.activeCourse);
     const problems = validateQueue(queue, plannedDone, data.courses).map(function (problem) {
       return {
         courseId: problem.courseId,
@@ -1554,9 +1570,21 @@
     }
 
     const picker = doc.createElement('select');
-    // First, so it is reachable without scrolling a ~115-entry list. Only when
-    // there is something left to add: an entry reading "all remaining (0)"
-    // invites a click that can do nothing.
+    // A real <select> selects its first option, so whatever sits at the top is
+    // what an unopened picker submits. That must not be "all 115 courses":
+    // there is no bulk undo in this panel — removal is one course at a time —
+    // so a stray click on `add` before touching the dropdown would cost the
+    // player 115 clicks to walk back. An inert first entry is what the add
+    // button's `picker.value === ''` guard was always written against; without
+    // it that guard is unreachable in a browser whenever any option exists.
+    const placeholder = doc.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— choose a course —';
+    if (model.selectedCourseId == null) placeholder.selected = true;
+    picker.appendChild(placeholder);
+    // Second, so it is reachable without scrolling a ~115-entry list, but never
+    // the default. Only when there is something left to add: an entry reading
+    // "all remaining (0)" invites a click that can do nothing.
     if (model.addable.length > 0) {
       const allOpt = doc.createElement('option');
       allOpt.value = ALL_COURSES_OPTION;
@@ -1836,7 +1864,7 @@
             // the queue as stale, leaving whatever depended on it stranded.
             const data = fetchResult.ok ? fetchResult.data : null;
             const required = data
-              ? requiredCoursesFor(courseId, plannedCompletions(data.completedIds, data.courses), data.courses)
+              ? requiredCoursesFor(courseId, plannedCompletions(data.completedIds, data.courses, data.activeCourse), data.courses)
               : [courseId];
             const toAdd = required.filter(function (id) { return currentPlan.queue.indexOf(id) === -1; });
             if (toAdd.length === 0) return;
@@ -1848,7 +1876,7 @@
           onAddAll: function () {
             const data = fetchResult.ok ? fetchResult.data : null;
             if (!data) return;
-            const everything = allRemainingCourses(data.completedIds, data.courses);
+            const everything = allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
             const toAdd = everything.filter(function (id) { return currentPlan.queue.indexOf(id) === -1; });
             if (toAdd.length === 0) return;
             commit({ queue: currentPlan.queue.concat(toAdd), collapsed: currentPlan.collapsed });
