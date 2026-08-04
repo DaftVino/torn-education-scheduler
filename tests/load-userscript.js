@@ -37,6 +37,8 @@ const EXPORT_NAMES = [
   'ALL_COURSES_OPTION',
   // schedule
   'schedule', 'buildDegreeGrid',
+  // queue ordering
+  'ORDER_MODE_LABELS', 'orderQueue', 'dependentCount',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
   // settings

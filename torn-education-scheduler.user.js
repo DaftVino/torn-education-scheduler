@@ -337,6 +337,137 @@
     return problems;
   }
 
+  // Ordering does NOT change the finish date. Courses run one at a time, so
+  // the total is a sum, and a sum is order-independent — tests/engine.test.js
+  // asserts that property directly and tests/ordering.test.js re-asserts it for
+  // every mode. What ordering changes is time-to-benefit: how early each perk
+  // starts paying off. Several community guides blur the two. This must not.
+  //
+  // Three modes, not four: days-per-bonus is parked (docs/designs/
+  // v0.2.0-scope.md § H2) because the payload offers two candidate meanings of
+  // "bonus" that sort the catalogue differently, and a mode that means one of
+  // two things is worse than no mode. It must stay out of this list — an
+  // unknown id falls back to as-listed, which is the behaviour it gets today.
+  //
+  // This list is the single source of truth for the mode vocabulary:
+  // ORDER_MODES (which normaliseSettings validates against) is derived from it
+  // below, so a mode cannot exist in the dropdown and be rejected by storage.
+  const ORDER_MODE_LABELS = [
+    { id: 'as-listed', label: 'As listed' },
+    { id: 'shortest-first', label: 'Shortest first' },
+    { id: 'unlocks-first', label: 'Unlocks the most first' },
+  ];
+
+  // How many courses sit downstream of this one. Walks each course's ancestor
+  // chain rather than building a child index, reusing the same parentId /
+  // tier-3 rules unmetPrerequisites uses, and guards cycles the same way.
+  function dependentCount(courseId, courses) {
+    let count = 0;
+    for (const candidate of courses.values()) {
+      if (candidate.id === courseId) continue;
+      const seen = new Set();
+      let cursor = candidate.parentId;
+      let found = false;
+      while (cursor !== null && cursor !== undefined && !seen.has(cursor)) {
+        seen.add(cursor);
+        if (cursor === courseId) { found = true; break; }
+        const parent = courses.get(cursor);
+        cursor = parent ? parent.parentId : null;
+      }
+      // A tier-3 bachelor requires every tier-2 course in its category, so
+      // those courses are upstream of it even though parentId says nothing.
+      if (!found && candidate.tier === 3) {
+        const target = courses.get(courseId);
+        if (target && target.tier === 2 && target.categoryId === candidate.categoryId) found = true;
+      }
+      if (found) count += 1;
+    }
+    return count;
+  }
+
+  // A topological sort over the same graph validateQueue checks, with a
+  // per-mode tiebreak among the courses that are ready at each step. Kahn's
+  // algorithm rather than a sort-then-repair, so the result is followable by
+  // construction and an unsatisfiable queue degrades to appending the
+  // remainder rather than looping.
+  //
+  // The tiebreak is never the only key: the player's own ordering breaks a tie
+  // on rank, so a queue where every course scores the same comes back exactly
+  // as it went in. Without that second key the result is whatever order the
+  // filter happened to produce — stable today, and not a property this file
+  // should be relying on an engine to keep.
+  function orderQueue(queue, mode, courses) {
+    const chosen = ORDER_MODE_LABELS.some(function (m) { return m.id === mode; }) ? mode : 'as-listed';
+    if (chosen === 'as-listed') return queue.slice();
+
+    const inQueue = new Set(queue);
+    const position = new Map();
+    queue.forEach(function (id, i) { position.set(id, i); });
+
+    // Precomputed once: dependentCount is O(catalogue) per call and the
+    // tiebreak runs once per remaining course per step.
+    const rank = new Map();
+    for (const id of queue) {
+      const course = courses.get(id);
+      rank.set(id, chosen === 'shortest-first'
+        ? (course ? course.duration : 0)
+        : -dependentCount(id, courses));
+    }
+
+    // A course is ready when every prerequisite of it that is also in this
+    // queue has already been placed.
+    const prerequisitesIn = new Map();
+    for (const id of queue) {
+      const needed = [];
+      const course = courses.get(id);
+      if (course) {
+        let cursor = course.parentId;
+        const seen = new Set();
+        while (cursor !== null && cursor !== undefined && !seen.has(cursor)) {
+          seen.add(cursor);
+          if (inQueue.has(cursor)) needed.push(cursor);
+          const parent = courses.get(cursor);
+          cursor = parent ? parent.parentId : null;
+        }
+        if (course.tier === 3) {
+          for (const other of courses.values()) {
+            if (other.tier === 2 && other.categoryId === course.categoryId && inQueue.has(other.id)) {
+              needed.push(other.id);
+            }
+          }
+        }
+      }
+      prerequisitesIn.set(id, needed);
+    }
+
+    const placed = new Set();
+    const out = [];
+    let remaining = queue.slice();
+
+    while (remaining.length > 0) {
+      const ready = remaining.filter(function (id) {
+        return prerequisitesIn.get(id).every(function (p) { return placed.has(p); });
+      });
+      // Nothing ready means the queue itself is unsatisfiable — a cycle, or a
+      // prerequisite outside the queue. Append the remainder in the order
+      // given rather than spinning; validateQueue will report the real problem.
+      if (ready.length === 0) { out.push.apply(out, remaining); break; }
+
+      ready.sort(function (a, b) {
+        const byRank = rank.get(a) - rank.get(b);
+        if (byRank !== 0) return byRank;
+        return position.get(a) - position.get(b);
+      });
+
+      const next = ready[0];
+      out.push(next);
+      placed.add(next);
+      remaining = remaining.filter(function (id) { return id !== next; });
+    }
+
+    return out;
+  }
+
   // actualDuration already carries the player's perk reduction, so the base
   // case is a sum. Timestamps are Unix seconds throughout, matching
   // activeCourse.completedAt.
@@ -551,7 +682,11 @@
     return null;
   }
 
-  const ORDER_MODES = ['as-listed', 'shortest-first', 'unlocks-first'];
+  // Derived, never a second list: what storage accepts and what the dropdown
+  // offers are the same vocabulary, and two hand-maintained copies of it drift
+  // into a mode the player can pick and normaliseSettings then silently
+  // refuses. ORDER_MODE_LABELS is the source.
+  const ORDER_MODES = ORDER_MODE_LABELS.map(function (m) { return m.id; });
   const SETTINGS_DEFAULTS = {
     maxCooldownHours: 24,
     booksOwned: 0,
@@ -1185,8 +1320,7 @@
       // No payload means no total to reduce, so there is no floor date to
       // quote — and a floor date is the one thing that must never be guessed.
       consumables: null,
-      // Task 10 replaces this with the real orderings.
-      orderModes: [{ id: 'as-listed', label: 'As listed' }],
+      orderModes: ORDER_MODE_LABELS,
       // Null until the player asks for it. An acquisition failure is exactly
       // when the report is most wanted — and it is genuinely reachable from
       // here: renderPanel no longer returns before the nav row on an error
@@ -1213,13 +1347,19 @@
     // the player has already served. Drop both, and say so rather than
     // silently editing the player's plan.
     const stale = [];
-    const queue = state.plan.queue.filter(function (id) {
+    const prunedQueue = state.plan.queue.filter(function (id) {
       const course = data.courses.get(id);
       if (!course) { stale.push({ courseId: id, why: 'no longer in the catalogue' }); return false; }
       if (course.status === 'completed') { stale.push({ courseId: id, prefix: course.prefix, why: 'already completed' }); return false; }
       if (course.status === 'inProgress') { stale.push({ courseId: id, prefix: course.prefix, why: 'currently in progress' }); return false; }
       return true;
     });
+    // The player's chosen ordering is applied once, here, and everything
+    // downstream — schedule, validateQueue, finishById, the rendered rows —
+    // reads the ordered queue. It cannot move the finish date (a sum does not
+    // care about order); it moves which course finishes when, which is the
+    // whole point of offering the choice.
+    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses);
     const result = schedule({
       courses: data.courses, activeCourse: data.activeCourse, queue: queue, now: state.now,
     });
@@ -1381,8 +1521,7 @@
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: perkInference,
       consumables: consumablesModel,
-      // Task 10 replaces this with the real orderings.
-      orderModes: [{ id: 'as-listed', label: 'As listed' }],
+      orderModes: ORDER_MODE_LABELS,
       debugReport: state.debugReport || null,
       grid: grid,
     };
@@ -1740,6 +1879,15 @@
     }
     modeRow.appendChild(modeSelect);
     planning.appendChild(modeRow);
+
+    // The one thing this control must not be allowed to imply. Several
+    // community guides present an ordering as a way to finish sooner; it is
+    // not, and a panel that stays silent here lets the player carry that
+    // belief into a choice it just offered them.
+    const orderNote = doc.createElement('div');
+    orderNote.className = 'tes-note';
+    orderNote.textContent = 'Order does not change the finish date — courses run one at a time, so the total is the same either way. It changes how soon each course’s bonus starts paying off.';
+    planning.appendChild(orderNote);
 
     const help = settingsSection(doc, body, 'Help');
 
@@ -2106,7 +2254,12 @@
       // here so the fact stays incidental rather than load-bearing: a renderer
       // handed this model must not meet an undefined.
       settings: normaliseSettings(null), settingsSaveError: false,
-      perkInference: NO_INFERENCE, orderModes: [], debugReport: null, grid: null,
+      // The real list, not an empty one: the settings view IS reachable from a
+      // rendered error model (renderPanel keeps the nav row for any real
+      // handler set), and an empty array draws a Queue order dropdown with no
+      // options in it — a control that looks broken in the state that is
+      // hardest to explain.
+      perkInference: NO_INFERENCE, orderModes: ORDER_MODE_LABELS, debugReport: null, grid: null,
       consumables: null,
     };
   }
