@@ -998,6 +998,97 @@
     return lines.join('\n');
   }
 
+  const SHARE_PREFIX = 'TES1';
+
+  // A flat, version-prefixed, pipe-delimited string rather than base64 JSON.
+  // Two reasons: base64 would mean btoa, a host global the engine may not
+  // touch; and a format with no encoder and no escape sequences cannot be
+  // evaluated as code by any reader, which is the security property this needs
+  // — achieved structurally rather than by discipline.
+  function encodePlan(plan, settings) {
+    const queue = (plan && Array.isArray(plan.queue)) ? plan.queue.filter(isInt) : [];
+    const s = normaliseSettings(settings);
+    const parts = [
+      SHARE_PREFIX,
+      `q=${queue.join(',')}`,
+      `c=${s.maxCooldownHours}`,
+      `b=${s.booksOwned}`,
+      `p=${s.bookPrice}`,
+      `j=${s.jobPoints}`,
+      `o=${s.orderMode}`,
+    ];
+    if (s.perks.meritsPercent !== null) parts.push(`m=${s.perks.meritsPercent}`);
+    if (s.perks.principal !== null) parts.push(`pr=${s.perks.principal ? 1 : 0}`);
+    if (s.perks.wsuBlock !== null) parts.push(`w=${s.perks.wsuBlock ? 1 : 0}`);
+    return parts.join('|');
+  }
+
+  // Untrusted input, treated as such: every id is checked against the live
+  // catalogue and an unknown one is rejected by name, unrecognised keys are
+  // ignored, and the field bag is a null-prototype object so a key like
+  // __proto__ in the string is data rather than an assignment.
+  //
+  // This is the only thing in the script that parses text from outside the
+  // player's own browser, so the one contract it must not break is that it
+  // never throws: a throw here reaches init()'s catch and blanks the panel,
+  // which is a worse outcome than any rejection it could return instead.
+  function decodePlan(text, courses) {
+    if (typeof text !== 'string') return { ok: false, reason: 'bad-prefix', detail: 'not a string' };
+    const trimmed = text.trim();
+    const parts = trimmed.split('|');
+    if (parts[0] !== SHARE_PREFIX) {
+      return { ok: false, reason: 'bad-prefix', detail: `expected a string starting ${SHARE_PREFIX}|` };
+    }
+
+    const fields = Object.create(null);
+    for (let i = 1; i < parts.length; i += 1) {
+      const eq = parts[i].indexOf('=');
+      if (eq <= 0) continue;
+      fields[parts[i].slice(0, eq)] = parts[i].slice(eq + 1);
+    }
+
+    // A catalogue that is absent, or is not one, must reject rather than
+    // throw: `courses.has` on a plain object is a TypeError, and the
+    // never-throws contract above is not conditional on the caller.
+    const catalogue = (courses && typeof courses.has === 'function') ? courses : null;
+    const queue = [];
+    const seen = new Set();
+    const rawQueue = typeof fields.q === 'string' ? fields.q : '';
+    if (rawQueue.length > 0) {
+      for (const token of rawQueue.split(',')) {
+        if (!/^\d+$/.test(token)) {
+          return { ok: false, reason: 'bad-course-id', detail: `"${token}" is not a course id` };
+        }
+        const id = Number(token);
+        if (!catalogue || !catalogue.has(id)) {
+          return { ok: false, reason: 'unknown-course', detail: `course ${id} is not in the catalogue` };
+        }
+        if (seen.has(id)) continue;
+        seen.add(id);
+        queue.push(id);
+      }
+    }
+
+    // normaliseSettings is the only writer of the canonical shape, so every
+    // hostile or nonsensical value below falls back to its default.
+    const toInt = function (v) { return /^-?\d+$/.test(v || '') ? Number(v) : undefined; };
+    const toBool = function (v) { return v === '1' ? true : v === '0' ? false : undefined; };
+    const settings = normaliseSettings({
+      maxCooldownHours: toInt(fields.c),
+      booksOwned: toInt(fields.b),
+      bookPrice: toInt(fields.p),
+      jobPoints: toInt(fields.j),
+      orderMode: fields.o,
+      perks: {
+        meritsPercent: toInt(fields.m),
+        principal: toBool(fields.pr),
+        wsuBlock: toBool(fields.w),
+      },
+    });
+
+    return { ok: true, queue: queue, settings: settings };
+  }
+
   // ─── ENGINE END ─────────────────────────────────────────────────
 
   // ─── RUNTIME ────────────────────────────────────────────────────
@@ -1371,6 +1462,12 @@
       // There is no payload to derive degrees from, so the grid view says so
       // rather than drawing thirteen empty boxes.
       grid: null,
+      // Nothing to share: without a catalogue there is no queue this model can
+      // vouch for, and a share string is a claim about a plan. Empty rather
+      // than null, because the box renders either way and `null` in a textarea
+      // is the string "null".
+      shareText: '',
+      importError: state.importError || null,
     };
 
     if (!state.fetchResult.ok) {
@@ -1563,6 +1660,12 @@
       orderModes: ORDER_MODE_LABELS,
       debugReport: state.debugReport || null,
       grid: grid,
+      // Built from the queue the panel is actually showing — pruned, ordered,
+      // the same array every other field here was derived from — so the string
+      // the player copies describes what they are looking at rather than what
+      // storage happens to hold.
+      shareText: encodePlan({ queue: queue }, settings),
+      importError: state.importError || null,
     };
   }
 
@@ -1689,6 +1792,8 @@
       // pre-line, because the detail carries a newline between the duration
       // and the finish date rather than two elements.
       '#tes-panel .tes-cell-detail { white-space: pre-line; opacity: 0.85; }',
+      '#tes-panel .tes-share { width: 100%; box-sizing: border-box; color: #e6e6e6; background: #2e2e2e;',
+      '  border: 1px solid #4a4a4a; border-radius: 4px; padding: 6px; font-family: monospace; font-size: 0.95em; }',
       '#tes-panel .tes-foot { margin-top: 8px; opacity: 0.7; font-size: 0.95em; }',
       '#tes-panel a { color: #7ee081; }',
     ].join('\n');
@@ -1967,6 +2072,33 @@
         copy.addEventListener('click', handlers.onCopyDebugReport);
       }
       help.appendChild(copy);
+    }
+
+    // The one place in this script that takes text from outside the player's
+    // own browser. Everything it can produce is data: the box is a textarea
+    // written through `.value`, the error below it goes in through
+    // textContent, and decodePlan validates every id against the live
+    // catalogue before any of it reaches a plan.
+    const share = settingsSection(doc, body, 'Share this plan');
+    const shareBox = doc.createElement('textarea');
+    shareBox.className = 'tes-share';
+    shareBox.value = model.shareText || '';
+    shareBox.setAttribute('rows', '3');
+    shareBox.setAttribute('spellcheck', 'false');
+    share.appendChild(shareBox);
+
+    const importBtn = doc.createElement('button');
+    importBtn.textContent = 'import from this box';
+    if (importBtn.addEventListener && handlers.onImportPlan) {
+      importBtn.addEventListener('click', function () { handlers.onImportPlan(shareBox.value); });
+    }
+    share.appendChild(importBtn);
+
+    if (model.importError) {
+      const err = doc.createElement('div');
+      err.className = 'tes-save-error';
+      err.textContent = model.importError;
+      share.appendChild(err);
     }
   }
 
@@ -2304,6 +2436,9 @@
       // this whole field group is here to prevent.
       perkInference: NO_INFERENCE, orderModes: ORDER_MODE_LABELS, debugReport: null, grid: null,
       consumables: null,
+      // Same pair buildPanelModel carries, for the reason the comment above
+      // gives: a renderer handed this model must not meet an undefined.
+      shareText: '', importError: null,
     };
   }
 
@@ -2313,6 +2448,9 @@
     onPickerChange: function () {}, onViewChange: function () {},
     onSettingChange: function () {},
     onToggleDebugReport: function () {}, onCopyDebugReport: function () {},
+    // The render path wires this unconditionally, so the inert panel needs it
+    // too, or the click it was built to ignore throws instead.
+    onImportPlan: function () {},
   };
 
   async function init() {
@@ -2395,6 +2533,9 @@
     // it hidden next visit; a player who opened settings once does not want
     // settings every visit.
     let view = 'schedule';
+    // Cleared by the next successful import, never persisted: it describes one
+    // paste, and a stale reason beside a plan that imported fine is a lie.
+    let importError = null;
 
     // draw/buildPanelModel/renderPanel are unguarded and schedule() throws
     // plain Errors on unexpected input; without this the throw becomes an
@@ -2412,6 +2553,7 @@
           selectedCourseId: selectedCourseId,
           view: view,
           debugReport: debugReport,
+          importError: importError,
         });
 
         function commit(next) {
@@ -2515,6 +2657,25 @@
                 }
               }
             } catch (e) { /* the report is visible; selecting it still works */ }
+          },
+          // Text from outside this browser, so nothing here trusts it: the
+          // ids are checked against the live catalogue, the settings are
+          // rebuilt by normaliseSettings, and a refusal is reported rather
+          // than swallowed. Both writes are checked — an import that lost the
+          // plan it just accepted must say so, not report success.
+          onImportPlan: function (text) {
+            const data = fetchResult.ok ? fetchResult.data : null;
+            if (!data) { importError = 'No course data loaded, so a plan cannot be checked.'; draw(currentPlan, saveFailed === true); return; }
+            const decoded = decodePlan(text, data.courses);
+            if (!decoded.ok) {
+              importError = `Couldn’t import that plan (${decoded.reason}: ${decoded.detail}).`;
+              draw(currentPlan, saveFailed === true);
+              return;
+            }
+            importError = null;
+            settings = decoded.settings;
+            settingsSaveFailed = !saveSettings(settings);
+            commit({ queue: decoded.queue, collapsed: currentPlan.collapsed });
           },
         });
       } catch (e) {
