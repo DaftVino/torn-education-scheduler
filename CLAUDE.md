@@ -10,7 +10,9 @@ A Tampermonkey userscript that turns Torn's education page into a live planner: 
 - Conventions: `engineering-standards/repo-standards.md` in the `daftplate` repo — canonical, never copied here (its ADR 0001). Your local checkout path is recorded in `~/.claude/CLAUDE.md`.
 - Workflow quick reference: `docs/quick-ref-workflow.md`
 - Decisions: `docs/adr/` — read before proposing architectural changes
-- Active plans: `docs/designs/`
+- Active plans: `docs/designs/` — start with `docs/designs/v0.2.0-scope.md`, the
+  single home for all unshipped work. It takes precedence over the design spec
+  where they disagree.
 
 ## Commands
 

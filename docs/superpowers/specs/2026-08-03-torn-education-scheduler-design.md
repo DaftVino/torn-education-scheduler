@@ -77,7 +77,8 @@ selector the script does keep must match on the stable prefix
 (`[class*="courseWrapper___"]`), never the full hashed name. This is a rule,
 not a preference.
 
-Acquisition order, most to least preferred:
+Acquisition order, most to least preferred. **As of v0.1.0 only path 1 is
+implemented** — see D1 in `docs/designs/v0.2.0-scope.md`:
 
 1. `fetch('/page.php?sid=educationInitData')` — the primary path.
 2. The React fiber props, where the same `sections` array is reachable — a
@@ -411,8 +412,10 @@ out deliberately.
 - `@connect` is **not** required. The only request is same-origin to
   `torn.com`, which the page already makes itself.
 - No API key, so no secret reaches the script. Repo rule 5 holds trivially.
-- Torn navigates without a full page load, so the script observes for
-  navigation and mounts and unmounts accordingly rather than assuming one load.
+- Torn navigates without a full page load. The script is *intended* to observe
+  for navigation and mount and unmount accordingly — **not implemented as of
+  v0.1.0**, which relies on `@run-at document-idle`. Tracked as D2 in
+  `docs/designs/v0.2.0-scope.md`.
 
 ## Testing
 
@@ -464,16 +467,24 @@ to go public never has to re-litigate it.
 
 | Version | Contents |
 | --- | --- |
-| v0.1.0 | Payload fetch, engine, panel, hand-built queue, finish date, local persistence |
-| v0.2.0 | Row markers, prerequisite validation surfaced in the UI, drift and failure states |
+| v0.1.0 | **Shipped.** Payload fetch, engine, panel, prerequisite-aware queue, finish date, failure states, local persistence |
+| v0.2.0 | Row markers, SPA navigation, acquisition fallbacks, drift notice — scoped in `docs/designs/v0.2.0-scope.md` |
 | v0.3.0 | Consumable budget, fixed point, and the earliest-possible floor date |
 | v0.4.0 | Ordering modes |
 | v0.5.0 | Guide presets, export/import string |
+
+Prerequisite surfacing and failure states moved forward into v0.1.0. Adding a
+course also queues its whole prerequisite chain, which this document originally
+specified as validation only — the finish date must cover the real path, not
+one course of it.
 
 Each version moves `@version`, the `CHANGELOG.md` heading, and the git tag
 together in one commit, per repo rule 3.
 
 ## Open items
+
+**Moved to `docs/designs/v0.2.0-scope.md`**, which is the current home for all
+unshipped work. Retained here for context:
 
 1. **Book of Carols reduction.** 2h vs 6h, absent from the payload. Verify
    in-game before v0.3.0.
