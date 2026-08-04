@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { loadUserscript, loadFixture } = require('./load-userscript');
+const { makeFakeDocument: sharedFakeDocument } = require('./fake-document');
 
 function fakeDoc() {
   const removed = [];
@@ -47,44 +48,11 @@ function fakeWin() {
 
 // A document rich enough for init() to draw into: id-aware querySelector over a
 // registry of created elements, plus the session cookie the fetch path needs.
+// The cookie is passed rather than assumed, because the shared document has
+// none by default — a token every document carried would reroute tests written
+// for the tokenless path without failing any of them.
 function makeFakeDocument() {
-  const registry = [];
-  function makeElement(tag) {
-    const el = {
-      tagName: tag,
-      id: '',
-      className: '',
-      textContent: '',
-      value: '',
-      style: {},
-      dataset: {},
-      children: [],
-      listeners: {},
-      appendChild(child) { this.children.push(child); return child; },
-      setAttribute(name, val) { this[name] = val; },
-      addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
-      remove() { this.removed = true; },
-    };
-    registry.push(el);
-    return el;
-  }
-  const body = makeElement('body');
-  return {
-    cookie: 'rfc_v=abcdefghijklm',
-    readyState: 'complete',
-    documentElement: makeElement('html'),
-    createElement: makeElement,
-    querySelector(sel) {
-      if (typeof sel === 'string' && sel.startsWith('#')) {
-        const id = sel.slice(1);
-        return registry.find((el) => el.id === id && !el.removed) || null;
-      }
-      return null;
-    },
-    querySelectorAll() { return []; },
-    addEventListener() {},
-    body: body,
-  };
+  return sharedFakeDocument({ cookie: 'rfc_v=abcdefghijklm' });
 }
 
 // A document that throws on every query but can still build and hold elements:

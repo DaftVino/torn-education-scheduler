@@ -1892,6 +1892,12 @@
             // is NaN, so the integer guard below would reset the picker to the
             // top of the list on the next redraw.
             if (value === ALL_COURSES_OPTION) { selectedCourseId = ALL_COURSES_OPTION; return; }
+            // The placeholder, back to "nothing chosen". Number('') is 0 and
+            // passes Number.isInteger, so without this the panel remembers a
+            // selection of course 0 — harmless only because no course has that
+            // id, and because the placeholder ends up selected by being first
+            // either way. State the intent rather than lean on both accidents.
+            if (value === '') { selectedCourseId = null; return; }
             const parsed = Number(value);
             selectedCourseId = Number.isInteger(parsed) ? parsed : null;
           },
