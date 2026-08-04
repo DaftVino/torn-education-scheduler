@@ -299,6 +299,58 @@
     return { startsAt: startsAt, items: items, finishesAt: cursor, totalSeconds: totalSeconds };
   }
 
+  // Torn's own React tree carries the same education payload the endpoint
+  // returns. Path 2 walks that tree when path 1 fails. The walk is the part
+  // that can hang a tab, so it lives here as a pure function over a plain
+  // object graph and gets tested against cyclic and adversarial input.
+  function looksLikePayload(v) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+    if (v.success !== true) return false;
+    if (!Array.isArray(v.categories) || v.categories.length === 0) return false;
+    const first = v.categories[0];
+    return !!first && isInt(first.id) && Array.isArray(first.courses);
+  }
+
+  // Breadth-first, so a payload sitting shallow is found before the walk
+  // spends its budget deep in an unrelated subtree. Bounded on both axes and
+  // cycle-guarded: an unbounded walk over a React tree does not terminate.
+  function searchForPayload(root, limits) {
+    const maxNodes = limits && isInt(limits.maxNodes) ? limits.maxNodes : 0;
+    const maxDepth = limits && isInt(limits.maxDepth) ? limits.maxDepth : 0;
+    if (maxNodes <= 0 || maxDepth <= 0) return null;
+
+    const seen = new Set();
+    let frontier = [root];
+    let depth = 0;
+    let visited = 0;
+
+    while (frontier.length > 0 && depth < maxDepth) {
+      const nextFrontier = [];
+      for (const node of frontier) {
+        if (node === null || typeof node !== 'object') continue;
+        if (seen.has(node)) continue;
+        seen.add(node);
+        visited += 1;
+        if (visited > maxNodes) return null;
+
+        if (looksLikePayload(node)) return node;
+
+        // Only own enumerable keys, and only object values. Getters on a host
+        // object can throw or have side effects, so every read is guarded.
+        let keys;
+        try { keys = Object.keys(node); } catch (e) { continue; }
+        for (const key of keys) {
+          let value;
+          try { value = node[key]; } catch (e) { continue; }
+          if (value !== null && typeof value === 'object') nextFrontier.push(value);
+        }
+      }
+      frontier = nextFrontier;
+      depth += 1;
+    }
+    return null;
+  }
+
   // ─── ENGINE END ─────────────────────────────────────────────────
 
   // ─── RUNTIME ────────────────────────────────────────────────────
@@ -429,6 +481,94 @@
     } catch (e) {
       return { ok: false, reason: (e && e.reason) || 'not-a-payload', detail: (e && e.message) || 'unknown parser failure' };
     }
+  }
+
+  // React attaches its internals to DOM nodes under a key whose suffix is a
+  // per-build random number — match the stable prefix only, exactly as every
+  // class selector in this file does.
+  const FIBER_KEY_PREFIXES = ['__reactFiber$', '__reactProps$', '__reactInternalInstance$'];
+  const FIBER_LIMITS = { maxNodes: 20000, maxDepth: 14 };
+  // The nodes most likely to carry the education props, cheapest first. Falls
+  // back to a bounded sweep of the body's element children.
+  const FIBER_HOST_SELECTORS = [
+    '[class*="educationPage___"]',
+    '#react-root',
+    '[class*="content-wrapper"]',
+    '#mainContainer',
+  ];
+
+  function fiberRootsFrom(doc) {
+    const roots = [];
+    if (!doc || typeof doc.querySelector !== 'function') return roots;
+
+    const nodes = [];
+    for (const selector of FIBER_HOST_SELECTORS) {
+      let el = null;
+      try { el = doc.querySelector(selector); } catch (e) { el = null; }
+      if (el) nodes.push(el);
+    }
+    if (nodes.length === 0 && typeof doc.querySelectorAll === 'function') {
+      let all = [];
+      try { all = doc.querySelectorAll('div'); } catch (e) { all = []; }
+      // A page can hold thousands of divs; sample the first 200 rather than
+      // scraping keys off every one of them.
+      for (let i = 0; i < all.length && i < 200; i += 1) nodes.push(all[i]);
+    }
+
+    for (const node of nodes) {
+      let keys;
+      try { keys = Object.keys(node); } catch (e) { continue; }
+      for (const key of keys) {
+        for (const prefix of FIBER_KEY_PREFIXES) {
+          if (key.indexOf(prefix) === 0) {
+            let value;
+            try { value = node[key]; } catch (e) { value = null; }
+            if (value && typeof value === 'object') roots.push(value);
+          }
+        }
+      }
+    }
+    return roots;
+  }
+
+  // Contracted never to reject, exactly as fetchEducationData is: init() has
+  // no catch around acquisition and a rejection here blanks the panel.
+  async function readFiberEducationData(doc) {
+    try {
+      const roots = fiberRootsFrom(doc);
+      if (roots.length === 0) return { ok: false, reason: 'no-fiber', detail: 'no React internals found on the page' };
+      for (const root of roots) {
+        const raw = searchForPayload(root, FIBER_LIMITS);
+        if (raw) {
+          try {
+            return { ok: true, data: parsePayload(raw), source: 'fiber' };
+          } catch (e) {
+            return { ok: false, reason: (e && e.reason) || 'bad-fiber-payload', detail: (e && e.message) || 'unparseable' };
+          }
+        }
+      }
+      return { ok: false, reason: 'no-fiber-payload', detail: 'React internals held no education payload' };
+    } catch (e) {
+      return { ok: false, reason: 'fiber-threw', detail: (e && e.message) || String(e) };
+    }
+  }
+
+  // A chain, not a race: the endpoint is the source of truth and the fiber is
+  // only consulted when it fails, so a stale React tree can never quietly win
+  // against a good response.
+  async function acquireEducationData(doc) {
+    const fetched = await fetchEducationData(null);
+    if (fetched.ok) return { ok: true, data: fetched.data, source: 'fetch' };
+
+    const fiber = await readFiberEducationData(doc);
+    if (fiber.ok) return { ok: true, data: fiber.data, source: 'fiber' };
+
+    return {
+      ok: false,
+      reason: fetched.reason,
+      detail: `${fetched.detail} (page fallback also failed: ${fiber.reason})`,
+      triedFiber: true,
+    };
   }
 
   function isEducationPage() {
@@ -724,9 +864,10 @@
 
   async function init() {
     const plan = loadPlan();
-    // fetchImpl null selects the ambient fetch; cookieString omitted so
-    // fetchEducationData reads the ambient cookie jar itself.
-    const fetchResult = await fetchEducationData(null);
+    // Two acquisition paths: the endpoint, then Torn's own React tree. The
+    // panel keeps calling this value fetchResult because buildPanelModel's
+    // contract has not changed — only where the data may have come from.
+    const fetchResult = await acquireEducationData(document);
 
     // The design requires the panel to be visible even when Torn's markup
     // does not match any known mount selector, rather than rendering

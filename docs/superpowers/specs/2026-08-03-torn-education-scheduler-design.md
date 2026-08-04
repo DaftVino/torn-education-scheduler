@@ -77,12 +77,19 @@ selector the script does keep must match on the stable prefix
 (`[class*="courseWrapper___"]`), never the full hashed name. This is a rule,
 not a preference.
 
-Acquisition order, most to least preferred. **As of v0.1.0 only path 1 is
-implemented**; path 2 is scoped in `docs/designs/v0.2.0-scope.md` § A1:
+Two acquisition paths, most to least preferred. **Both are implemented as of
+v0.2.0** (§ A1 of `docs/designs/v0.2.0-scope.md`):
 
-1. `fetch('/page.php?sid=educationInitData')` — the primary path.
-2. The React fiber props, where the same `sections` array is reachable — a
+1. `fetch('/page.php?sid=educationInitData')` — the primary path and the
+   source of truth.
+2. Torn's React fiber tree, where the same payload is reachable off the
+   `__reactFiber$`/`__reactProps$` keys React hangs on its host DOM nodes — a
    fallback if the endpoint changes shape or name.
+
+The two form a chain, not a race: path 2 is consulted only after path 1 has
+failed, so a stale React tree can never quietly outrank a good response. The
+walk itself is bounded on node count and depth and is cycle-guarded, because an
+unbounded walk over a React tree does not terminate.
 
 A third path, a bundled catalogue snapshot, was specified here and **dropped on
 2026-08-04**. A snapshot can only carry fields identical for every player, and
@@ -216,7 +223,7 @@ Three layers with a hard boundary between them.
 
 | Layer | Contents | Fragility |
 | --- | --- | --- |
-| `catalogue` | Bundled snapshot: offline fallback and preset course lists | Can go stale; cannot break |
+| `catalogue` | Preset course lists — course codes only, no course data (the bundled snapshot that once also served as an offline fallback was dropped on 2026-08-04) | Can go stale; cannot break |
 | `engine` | Pure functions. No DOM, no network, no ambient clock | None — testable in Node |
 | `adapter` | Fetch, panel render, row markers, storage | All of it |
 
@@ -379,8 +386,9 @@ breaking.
 
 Failure states:
 
-- Fetch failed or returned non-JSON → panel reports it, offers retry, falls
-  back to React props, then to the bundled snapshot in read-only mode.
+- Fetch failed or returned non-JSON → panel reports it, offers retry, and falls
+  back to React props. When that also fails the panel names both failures: the
+  endpoint's reason, and the page fallback's, in one line.
 - Payload shape unrecognised — missing `actualDuration`, missing `parentId`,
   `success` not true → refuse to compute and say why. A schedule from a
   half-understood payload is worse than no schedule.
