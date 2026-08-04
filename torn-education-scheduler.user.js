@@ -1163,8 +1163,19 @@
   // panel is not ambiguous about what it is showing.
   const VIEW_TITLES = { schedule: 'Education Scheduler', settings: 'Settings', grid: 'Degrees' };
 
-  // The shell only: chrome, the error short-circuit, and the view switch. Each
-  // view owns its own body content, so adding a view never grows this function.
+  // The shell only: chrome, the failure line, the nav row, and the view
+  // switch. Each view owns its own body content, so adding a view never grows
+  // this function.
+  //
+  // This summary said "the error short-circuit" for a release after the
+  // short-circuit was deleted, while the block below it described the removal
+  // in full — the fourth comment in this file to outlive the thing it
+  // described. They share a shape: each stated a *mechanism* ("it returns
+  // here", "it is shared with X") rather than an *invariant* ("the failure is
+  // always visible", "renderPanel is always handed a complete model"). A
+  // mechanism is true until someone changes it and silently false afterwards;
+  // an invariant is what the next reader actually needs, and a false one is
+  // usually caught because the code visibly contradicts it. Prefer invariants.
   function renderPanel(doc, mount, model, handlers) {
     injectStyleOnce(doc);
 
