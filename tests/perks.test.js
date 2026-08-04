@@ -64,6 +64,44 @@ test('inferPerks handles a missing or malformed reduction without throwing', () 
   assert.strictEqual(x.inferPerks({}).determinate, false);
 });
 
+test('inferPerks does not call a reduction it could not read one that varies', () => {
+  const { exports: x } = loadUserscript();
+  // "varies" is a claim about the player's account. Only evidence of two or
+  // more real ratios earns it; everything else is our failure to read, and
+  // saying otherwise states something we have no evidence for.
+  for (const unreadable of [
+    null,
+    undefined,
+    {},
+    'nonsense',
+    { ratio: null, constant: false, ratios: [] },        // every baseDuration <= 0
+    { ratio: null, constant: false, ratios: [0.6] },     // one ratio, so nothing varies
+    { ratio: 0.6, constant: false, ratios: [0.6] },      // constant not asserted
+  ]) {
+    const out = x.inferPerks(unreadable);
+    assert.strictEqual(out.determinate, false);
+    assert.strictEqual(out.reason, 'unreadable', `${JSON.stringify(unreadable)} was reported as varying`);
+  }
+
+  // Two genuine ratios is the one case that is really a per-course reduction.
+  assert.strictEqual(x.inferPerks({ ratio: null, constant: false, ratios: [0.6, 0.7] }).reason, 'varies');
+});
+
+test('inferPerks never lets a NaN ratio become a percentage', () => {
+  const { exports: x } = loadUserscript();
+  // typeof NaN === 'number', so a typeof guard passes it straight through and
+  // the panel ends up printing "Your NaN% reduction".
+  const out = x.inferPerks({ ratio: NaN, constant: true, ratios: [NaN] });
+  assert.strictEqual(out.determinate, false);
+  assert.strictEqual(out.reason, 'unreadable');
+  assert.strictEqual(out.totalPercent, null);
+  assert.ok(!Number.isNaN(out.totalPercent), 'a NaN total reached the model');
+
+  for (const infinite of [Infinity, -Infinity]) {
+    assert.strictEqual(x.inferPerks({ ratio: infinite, constant: true, ratios: [infinite] }).reason, 'unreadable');
+  }
+});
+
 test('the real fixture infers all three perks', () => {
   const { exports: x } = loadUserscript();
   const data = x.parsePayload(loadFixture());
