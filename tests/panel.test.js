@@ -345,6 +345,66 @@ test('adding a course already in the queue does not duplicate it or its prerequi
   assert.strictEqual(new Set(afterSecond).size, afterSecond.length);
 });
 
+test('the shell renders the requested view and offers nav to the other two', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+
+  function draw(view) {
+    const mount = doc.createElement('div');
+    const model = exports.buildPanelModel({ ...state, view: view });
+    const panel = exports.renderPanel(doc, mount, model, noopHandlers);
+    const body = panel.children[1];
+    return { panel: panel, body: body, nav: body.children.find((c) => c.className === 'tes-nav') };
+  }
+
+  // Default: no view on the state at all still yields the schedule view.
+  const fallback = draw(undefined);
+  assert.match(fallback.panel.children[0].textContent, /^Education Scheduler/);
+  assert.ok(fallback.body.children.some((c) => c.tagName === 'select'), 'the schedule view did not render');
+
+  const settings = draw('settings');
+  assert.match(settings.panel.children[0].textContent, /^Settings/);
+  assert.ok(
+    settings.body.children.some((c) => c.className === 'tes-summary' && c.textContent.length > 0),
+    'the settings view rendered nothing — an empty view reads as a broken panel'
+  );
+
+  const grid = draw('grid');
+  assert.match(grid.panel.children[0].textContent, /^Degrees/);
+  assert.ok(
+    grid.body.children.some((c) => c.className === 'tes-summary' && c.textContent.length > 0),
+    'the grid view rendered nothing'
+  );
+
+  // The nav always offers exactly the two views you are not looking at, so
+  // there is no button that redraws the view already on screen.
+  for (const { nav } of [fallback, settings, grid]) {
+    assert.strictEqual(nav.children.length, 2);
+  }
+  assert.ok(!fallback.nav.children.some((b) => b.textContent === 'schedule'), 'the current view is offered as a target');
+});
+
+test('switching view redraws the panel without persisting the choice', async () => {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm';
+  const { exports, gmStore } = loadUserscript({
+    location: { search: '' },
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  await exports.init();
+
+  const nav = doc.querySelector('#tes-panel').children[1].children.find((c) => c.className === 'tes-nav');
+  const toSettings = nav.children.find((b) => /settings/.test(b.textContent));
+  for (const fn of toSettings.listeners.click) fn();
+
+  assert.match(doc.querySelector('#tes-panel').children[0].textContent, /^Settings/);
+  // view lives in init()'s closure, never in storage: a player who opened
+  // settings once does not want settings every visit.
+  assert.strictEqual(gmStore.get(exports.STORAGE_KEY), undefined, 'switching view wrote to storage');
+  assert.strictEqual(gmStore.get(exports.SETTINGS_KEY), undefined);
+});
+
 test('findMountPoint uses prefix matching and tolerates absence', () => {
   const { exports } = loadUserscript();
   assert.strictEqual(exports.findMountPoint({ querySelector: () => null }), null);

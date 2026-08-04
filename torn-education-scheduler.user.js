@@ -20,6 +20,7 @@
   const SCRIPT_VERSION = '0.1.0';
   const EDU_ENDPOINT = '/page.php?sid=educationInitData';
   const STORAGE_KEY = 'tes:plan';
+  const SETTINGS_KEY = 'tes:settings';
 
   // ─── ENGINE START ───────────────────────────────────────────────
   // Pure functions only. No DOM, no network, no GM_*, no ambient clock.
@@ -379,6 +380,56 @@
     return null;
   }
 
+  const ORDER_MODES = ['as-listed', 'shortest-first', 'unlocks-first'];
+  const SETTINGS_DEFAULTS = {
+    maxCooldownHours: 24,
+    booksOwned: 0,
+    bookPrice: 13500000,
+    jobPoints: 0,
+    orderMode: 'as-listed',
+  };
+  // Generous ceilings, present only to reject nonsense — a negative price or a
+  // cooldown of a million hours is a typo, not a preference.
+  const SETTINGS_BOUNDS = {
+    maxCooldownHours: { min: 0, max: 8760 },
+    booksOwned: { min: 0, max: 100000 },
+    bookPrice: { min: 0, max: 1000000000000 },
+    jobPoints: { min: 0, max: 1000000 },
+  };
+
+  function boundedInt(value, field) {
+    const bounds = SETTINGS_BOUNDS[field];
+    if (!isInt(value)) return SETTINGS_DEFAULTS[field];
+    if (value < bounds.min || value > bounds.max) return SETTINGS_DEFAULTS[field];
+    return value;
+  }
+
+  // Validated per field, never per object. A player who spent time entering
+  // four numbers should not lose all four because one of them rotted.
+  function normaliseSettings(raw) {
+    const source = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const rawPerks = (source.perks && typeof source.perks === 'object' && !Array.isArray(source.perks))
+      ? source.perks : {};
+
+    // Merits run 0-20 in steps of 2; anything else is not a reading the game
+    // can produce, so it is discarded rather than clamped.
+    const merits = rawPerks.meritsPercent;
+    const meritsOk = isInt(merits) && merits >= 0 && merits <= 20 && merits % 2 === 0;
+
+    return {
+      maxCooldownHours: boundedInt(source.maxCooldownHours, 'maxCooldownHours'),
+      booksOwned: boundedInt(source.booksOwned, 'booksOwned'),
+      bookPrice: boundedInt(source.bookPrice, 'bookPrice'),
+      jobPoints: boundedInt(source.jobPoints, 'jobPoints'),
+      perks: {
+        meritsPercent: meritsOk ? merits : null,
+        principal: typeof rawPerks.principal === 'boolean' ? rawPerks.principal : null,
+        wsuBlock: typeof rawPerks.wsuBlock === 'boolean' ? rawPerks.wsuBlock : null,
+      },
+      orderMode: ORDER_MODES.indexOf(source.orderMode) !== -1 ? source.orderMode : SETTINGS_DEFAULTS.orderMode,
+    };
+  }
+
   // ─── ENGINE END ─────────────────────────────────────────────────
 
   // ─── RUNTIME ────────────────────────────────────────────────────
@@ -434,6 +485,32 @@
       return true;
     } catch (e) {
       // Storage failure must not take the panel down with it.
+      return false;
+    }
+  }
+
+  function freshSettings() { return normaliseSettings(null); }
+
+  // Deliberately a second key. A corrupt settings blob must not be able to
+  // cost the player their queue, and the two have unrelated lifetimes.
+  function loadSettings() {
+    let stored;
+    try { stored = GM_getValue(SETTINGS_KEY, null); } catch (e) { return freshSettings(); }
+    if (stored === null || stored === undefined) return freshSettings();
+    let parsed = stored;
+    if (typeof stored === 'string') {
+      try { parsed = JSON.parse(stored); } catch (e) { return freshSettings(); }
+    }
+    return normaliseSettings(parsed);
+  }
+
+  // Returns true/false exactly as savePlan does, so the caller can report a
+  // write that did not land instead of losing the edit silently.
+  function saveSettings(settings) {
+    try {
+      GM_setValue(SETTINGS_KEY, JSON.stringify(normaliseSettings(settings)));
+      return true;
+    } catch (e) {
       return false;
     }
   }
@@ -679,6 +756,7 @@
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
+      view: state.view || 'schedule',
     };
 
     if (!state.fetchResult.ok) {
@@ -761,6 +839,7 @@
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
+      view: state.view || 'schedule',
     };
   }
 
@@ -803,6 +882,7 @@
       '#tes-panel { border: 1px solid #4a4a4a; background: #1c1c1c; color: #e6e6e6;',
       '  padding: 12px 14px; margin: 12px 0; border-radius: 6px; font-size: 13px; line-height: 1.5; }',
       '#tes-panel .tes-header { font-weight: bold; cursor: pointer; margin-bottom: 8px; }',
+      '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: 8px; }',
       '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
       '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
       '#tes-panel .tes-summary { white-space: pre-line; margin-bottom: 8px; }',
@@ -818,6 +898,12 @@
     if (parent && parent.appendChild) parent.appendChild(style);
   }
 
+  // The header names the view you are looking at, so a collapsed-then-reopened
+  // panel is not ambiguous about what it is showing.
+  const VIEW_TITLES = { schedule: 'Education Scheduler', settings: 'Settings', grid: 'Degrees' };
+
+  // The shell only: chrome, the error short-circuit, and the view switch. Each
+  // view owns its own body content, so adding a view never grows this function.
   function renderPanel(doc, mount, model, handlers) {
     injectStyleOnce(doc);
 
@@ -828,9 +914,11 @@
     panel.id = 'tes-panel';
     panel.setAttribute('data-tes-version', SCRIPT_VERSION);
 
+    const view = model.view || 'schedule';
+
     const header = doc.createElement('div');
     header.className = 'tes-header';
-    header.textContent = `Education Scheduler — ${model.collapsed ? 'show' : 'hide'}`;
+    header.textContent = `${VIEW_TITLES[view] || VIEW_TITLES.schedule} — ${model.collapsed ? 'show' : 'hide'}`;
     if (header.addEventListener) header.addEventListener('click', handlers.onToggle);
     panel.appendChild(header);
 
@@ -844,99 +932,137 @@
         return panel;
       }
 
-      if (model.saveError) {
-        const saveError = doc.createElement('div');
-        saveError.className = 'tes-save-error';
-        saveError.textContent = "Couldn't save your plan — your last change may not persist.";
-        body.appendChild(saveError);
-      }
-
-      // The finish date is the number this whole tool exists to produce, so
-      // it gets its own prominent line rather than sitting mid-paragraph in
-      // the summary below.
-      if (model.finishLabel) {
-        const finish = doc.createElement('div');
-        finish.className = 'tes-finish';
-        finish.textContent = `Queue finishes: ${model.finishLabel}`;
-        body.appendChild(finish);
-      }
-
-      const summary = doc.createElement('div');
-      summary.className = 'tes-summary';
-      const lines = [`Perk reduction: ${model.reductionLabel}`];
-      if (model.finishLabel) {
-        lines.push(`Total queued time: ${model.totalLabel}`);
-      } else if (model.queue.length === 0) {
-        lines.push('Queue is empty. Add a course below.');
-      } else {
-        // finishLabel is withheld (buildPanelModel) whenever problems is
-        // non-empty — a queue with unmet prerequisites is not a plan the
-        // player can actually follow, so no total is safe to print. The
-        // per-course detail lands below via the problems loop.
-        lines.push('This queue cannot be followed as ordered — missing prerequisites below.');
-      }
-      for (const entry of model.stale) {
-        lines.push(`Removed ${entry.prefix || entry.courseId} from your queue — ${entry.why}.`);
-      }
-      for (const problem of model.problems) {
-        lines.push(`${problem.prefix} needs ${problem.missing.map(function (m) { return m.prefix; }).join(', ')}`);
-      }
-      // textContent throughout, never innerHTML: course names come from Torn
-      // and are not ours to trust into markup.
-      summary.textContent = lines.join('\n');
-      body.appendChild(summary);
-
-      for (const item of model.queue) {
-        const row = doc.createElement('div');
-        row.className = 'tes-row';
-        const label = doc.createElement('span');
-        label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — finishes ${item.finishLabel}`;
-        row.appendChild(label);
-        const remove = doc.createElement('button');
-        remove.textContent = 'remove';
-        remove.dataset.courseId = String(item.courseId);
-        if (remove.addEventListener) {
-          remove.addEventListener('click', function () { handlers.onRemove(item.courseId); });
+      // The view controls sit above the body so they keep their position as
+      // the body's height changes between views.
+      const nav = doc.createElement('div');
+      nav.className = 'tes-nav';
+      for (const target of ['schedule', 'grid', 'settings']) {
+        if (target === view) continue;
+        const btn = doc.createElement('button');
+        btn.textContent = target === 'settings' ? '⚙ settings' : target === 'grid' ? 'degrees' : 'schedule';
+        if (btn.addEventListener && handlers.onViewChange) {
+          btn.addEventListener('click', function () { handlers.onViewChange(target); });
         }
-        row.appendChild(remove);
-        body.appendChild(row);
+        nav.appendChild(btn);
       }
+      body.appendChild(nav);
 
-      const picker = doc.createElement('select');
-      for (const option of model.addable) {
-        const opt = doc.createElement('option');
-        opt.value = String(option.courseId);
-        opt.textContent = `${option.prefix} ${option.name} (${option.durationLabel})`;
-        // Rebuilding the list on every draw would otherwise reset the
-        // scroll position back to the top of a ~130-entry list on every add.
-        if (model.selectedCourseId != null && option.courseId === model.selectedCourseId) {
-          opt.selected = true;
-        }
-        picker.appendChild(opt);
-      }
-      if (picker.addEventListener && handlers.onPickerChange) {
-        picker.addEventListener('change', function () { handlers.onPickerChange(picker.value); });
-      }
-      const add = doc.createElement('button');
-      add.textContent = 'add';
-      if (add.addEventListener) {
-        add.addEventListener('click', function () {
-          // An empty addable list leaves picker.value === '', and
-          // Number('') is 0 — a valid-looking integer that is not a real
-          // selection. Guard on the selection itself, not just its shape.
-          if (picker.value === '') return;
-          const chosen = Number(picker.value);
-          if (Number.isInteger(chosen)) handlers.onAdd(chosen);
-        });
-      }
-      body.appendChild(picker);
-      body.appendChild(add);
+      if (view === 'settings') renderSettingsView(doc, body, model, handlers);
+      else if (view === 'grid') renderGridView(doc, body, model, handlers);
+      else renderScheduleView(doc, body, model, handlers);
 
       panel.appendChild(body);
     }
 
     mount.appendChild(panel);
     return panel;
+  }
+
+  // Placeholders until Tasks 5, 6 and 8 fill them in — a line of text rather
+  // than nothing, because an empty view reads as a broken panel.
+  function renderSettingsView(doc, body, model, handlers) {
+    const line = doc.createElement('div');
+    line.className = 'tes-summary';
+    line.textContent = 'Settings';
+    body.appendChild(line);
+  }
+
+  function renderGridView(doc, body, model, handlers) {
+    const line = doc.createElement('div');
+    line.className = 'tes-summary';
+    line.textContent = 'Degrees';
+    body.appendChild(line);
+  }
+
+  // The default view: the queue, its finish date, and the add/remove controls.
+  function renderScheduleView(doc, body, model, handlers) {
+    if (model.saveError) {
+      const saveError = doc.createElement('div');
+      saveError.className = 'tes-save-error';
+      saveError.textContent = "Couldn't save your plan — your last change may not persist.";
+      body.appendChild(saveError);
+    }
+
+    // The finish date is the number this whole tool exists to produce, so
+    // it gets its own prominent line rather than sitting mid-paragraph in
+    // the summary below.
+    if (model.finishLabel) {
+      const finish = doc.createElement('div');
+      finish.className = 'tes-finish';
+      finish.textContent = `Queue finishes: ${model.finishLabel}`;
+      body.appendChild(finish);
+    }
+
+    const summary = doc.createElement('div');
+    summary.className = 'tes-summary';
+    const lines = [`Perk reduction: ${model.reductionLabel}`];
+    if (model.finishLabel) {
+      lines.push(`Total queued time: ${model.totalLabel}`);
+    } else if (model.queue.length === 0) {
+      lines.push('Queue is empty. Add a course below.');
+    } else {
+      // finishLabel is withheld (buildPanelModel) whenever problems is
+      // non-empty — a queue with unmet prerequisites is not a plan the
+      // player can actually follow, so no total is safe to print. The
+      // per-course detail lands below via the problems loop.
+      lines.push('This queue cannot be followed as ordered — missing prerequisites below.');
+    }
+    for (const entry of model.stale) {
+      lines.push(`Removed ${entry.prefix || entry.courseId} from your queue — ${entry.why}.`);
+    }
+    for (const problem of model.problems) {
+      lines.push(`${problem.prefix} needs ${problem.missing.map(function (m) { return m.prefix; }).join(', ')}`);
+    }
+    // textContent throughout, never innerHTML: course names come from Torn
+    // and are not ours to trust into markup.
+    summary.textContent = lines.join('\n');
+    body.appendChild(summary);
+
+    for (const item of model.queue) {
+      const row = doc.createElement('div');
+      row.className = 'tes-row';
+      const label = doc.createElement('span');
+      label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — finishes ${item.finishLabel}`;
+      row.appendChild(label);
+      const remove = doc.createElement('button');
+      remove.textContent = 'remove';
+      remove.dataset.courseId = String(item.courseId);
+      if (remove.addEventListener) {
+        remove.addEventListener('click', function () { handlers.onRemove(item.courseId); });
+      }
+      row.appendChild(remove);
+      body.appendChild(row);
+    }
+
+    const picker = doc.createElement('select');
+    for (const option of model.addable) {
+      const opt = doc.createElement('option');
+      opt.value = String(option.courseId);
+      opt.textContent = `${option.prefix} ${option.name} (${option.durationLabel})`;
+      // Rebuilding the list on every draw would otherwise reset the
+      // scroll position back to the top of a ~130-entry list on every add.
+      if (model.selectedCourseId != null && option.courseId === model.selectedCourseId) {
+        opt.selected = true;
+      }
+      picker.appendChild(opt);
+    }
+    if (picker.addEventListener && handlers.onPickerChange) {
+      picker.addEventListener('change', function () { handlers.onPickerChange(picker.value); });
+    }
+    const add = doc.createElement('button');
+    add.textContent = 'add';
+    if (add.addEventListener) {
+      add.addEventListener('click', function () {
+        // An empty addable list leaves picker.value === '', and
+        // Number('') is 0 — a valid-looking integer that is not a real
+        // selection. Guard on the selection itself, not just its shape.
+        if (picker.value === '') return;
+        const chosen = Number(picker.value);
+        if (Number.isInteger(chosen)) handlers.onAdd(chosen);
+      });
+    }
+    body.appendChild(picker);
+    body.appendChild(add);
   }
 
   // Leaving the education page has to take the panel with it: Torn's SPA
@@ -1013,11 +1139,14 @@
     return {
       status: 'error', message: message, reductionLabel: null,
       queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
-      collapsed: false, saveError: false, selectedCourseId: null,
+      collapsed: false, saveError: false, selectedCourseId: null, view: 'schedule',
     };
   }
 
-  const noopHandlers = { onToggle: function () {}, onAdd: function () {}, onRemove: function () {}, onPickerChange: function () {} };
+  const noopHandlers = {
+    onToggle: function () {}, onAdd: function () {}, onRemove: function () {},
+    onPickerChange: function () {}, onViewChange: function () {},
+  };
 
   async function init() {
     const plan = loadPlan();
@@ -1061,6 +1190,11 @@
     }
 
     let selectedCourseId = null;
+    // Held in this closure, not persisted: collapsed is a standing preference,
+    // but which view you last opened is not. A player who hides the panel wants
+    // it hidden next visit; a player who opened settings once does not want
+    // settings every visit.
+    let view = 'schedule';
 
     // draw/buildPanelModel/renderPanel are unguarded and schedule() throws
     // plain Errors on unexpected input; without this the throw becomes an
@@ -1074,6 +1208,7 @@
           now: Math.floor(Date.now() / 1000),
           saveFailed: saveFailed === true,
           selectedCourseId: selectedCourseId,
+          view: view,
         });
 
         function commit(next) {
@@ -1109,6 +1244,10 @@
           onPickerChange: function (value) {
             const parsed = Number(value);
             selectedCourseId = Number.isInteger(parsed) ? parsed : null;
+          },
+          onViewChange: function (next) {
+            view = next;
+            draw(currentPlan, saveFailed === true);
           },
         });
       } catch (e) {
