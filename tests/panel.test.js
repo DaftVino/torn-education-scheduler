@@ -158,6 +158,108 @@ test('an error model still has an addable array', () => {
   assert.deepStrictEqual(model.addable, []);
 });
 
+// A minimal fake DOM for exercising renderPanel/init directly. Unlike the
+// harness's default document stub (querySelector always null, appendChild a
+// no-op), this one tracks created elements well enough to answer '#id'
+// lookups and record what got appended where — just enough to assert on
+// renderPanel's actual output rather than only on buildPanelModel's data.
+function makeFakeDocument() {
+  const registry = [];
+  function makeElement(tag) {
+    const el = {
+      tagName: tag,
+      id: '',
+      className: '',
+      textContent: '',
+      value: '',
+      style: {},
+      dataset: {},
+      children: [],
+      listeners: {},
+      appendChild(child) { this.children.push(child); return child; },
+      setAttribute(name, val) { this[name] = val; },
+      addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
+      remove() { this.removed = true; },
+    };
+    registry.push(el);
+    return el;
+  }
+  const body = makeElement('body');
+  return {
+    createElement: makeElement,
+    querySelector(sel) {
+      if (typeof sel === 'string' && sel.startsWith('#')) {
+        const id = sel.slice(1);
+        return registry.find((el) => el.id === id && !el.removed) || null;
+      }
+      return null;
+    },
+    body: body,
+  };
+}
+
+const noopHandlers = { onToggle() {}, onAdd() {}, onRemove() {}, onPickerChange() {} };
+
+test('renderPanel injects the style element once and does not duplicate it across draws', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const model = exports.buildPanelModel(state);
+  exports.renderPanel(doc, mount, model, noopHandlers);
+  exports.renderPanel(doc, mount, model, noopHandlers);
+  const styleElements = doc.body.children.filter((c) => c.id === 'tes-style');
+  assert.strictEqual(styleElements.length, 1, 'style element must be injected exactly once');
+});
+
+test('renderPanel renders a visible message for an error model', () => {
+  const { exports } = loadUserscript();
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const model = exports.buildPanelModel({
+    fetchResult: { ok: false, reason: 'http', detail: 'status 503' },
+    plan: { queue: [], collapsed: false },
+    now: NOW,
+  });
+  const panel = exports.renderPanel(doc, mount, model, noopHandlers);
+  const body = panel.children[1];
+  assert.ok(body, 'error body element missing');
+  assert.match(body.textContent, /503/);
+  assert.ok(mount.children.includes(panel), 'panel must be mounted');
+});
+
+test('the add button does not queue a course when the picker has no real selection', () => {
+  const { exports } = loadUserscript();
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const model = {
+    status: 'ok', message: null, reductionLabel: '40% off',
+    queue: [], addable: [], stale: [], problems: [],
+    finishLabel: null, totalLabel: null, collapsed: false,
+    saveError: false, selectedCourseId: null,
+  };
+  let added = null;
+  const handlers = { onToggle() {}, onAdd: (id) => { added = id; }, onRemove() {}, onPickerChange() {} };
+  const panel = exports.renderPanel(doc, mount, model, handlers);
+  const body = panel.children[1];
+  const addButton = body.children.find((c) => c.textContent === 'add');
+  assert.ok(addButton, 'add button missing');
+  for (const fn of (addButton.listeners.click || [])) fn();
+  assert.strictEqual(added, null, 'onAdd must not fire when nothing is selected');
+});
+
+test('init falls back to a fixed-position container when no mount point is found', async () => {
+  const doc = makeFakeDocument();
+  const { exports } = loadUserscript({
+    location: { search: '' }, // keeps the bootstrap from auto-running init()
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  await exports.init();
+  const fallback = doc.body.children.find((c) => c.id === 'tes-fallback-mount');
+  assert.ok(fallback, 'no fallback mount was appended to document.body');
+  assert.ok(fallback.children.some((c) => c.id === 'tes-panel'), 'panel was not drawn into the fallback mount');
+});
+
 test('findMountPoint uses prefix matching and tolerates absence', () => {
   const { exports } = loadUserscript();
   assert.strictEqual(exports.findMountPoint({ querySelector: () => null }), null);

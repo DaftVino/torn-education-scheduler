@@ -33,7 +33,7 @@ const EXPORT_NAMES = [
   // schedule
   'schedule',
   // storage
-  'DEFAULT_PLAN', 'loadPlan', 'savePlan',
+  'freshPlan', 'loadPlan', 'savePlan',
   // adapter
   'fetchEducationData',
   // panel

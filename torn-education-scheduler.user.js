@@ -105,9 +105,13 @@
     }
 
     const active = raw.activeCourse;
-    const activeCourse = active && isInt(active.id)
-      ? { id: active.id, categoryId: active.category, name: active.name, completedAt: active.completedAt }
-      : null;
+    let activeCourse = null;
+    if (active !== null && active !== undefined) {
+      if (!isInt(active.id) || !isInt(active.completedAt)) {
+        throw PayloadError('bad-active-course', 'id and completedAt must both be integers');
+      }
+      activeCourse = { id: active.id, categoryId: active.category, name: active.name, completedAt: active.completedAt };
+    }
 
     return {
       courses: courses,
@@ -203,7 +207,11 @@
 
   // ─── RUNTIME ────────────────────────────────────────────────────
 
-  const DEFAULT_PLAN = { queue: [], collapsed: false };
+  // Returns a fresh object each call — a shared mutable default would let one
+  // caller's edits leak into another's "empty" plan.
+  function freshPlan() {
+    return { queue: [], collapsed: false };
+  }
 
   // GM storage rather than localStorage: a plan can represent months of intent,
   // so it should survive a site-data clear and stay unreadable by torn.com's
@@ -213,32 +221,44 @@
     try {
       stored = GM_getValue(STORAGE_KEY, null);
     } catch (e) {
-      return { queue: [], collapsed: false };
+      return freshPlan();
     }
-    if (typeof stored !== 'string') return { queue: [], collapsed: false };
+    if (typeof stored !== 'string') return freshPlan();
 
     let parsed;
     try {
       parsed = JSON.parse(stored);
     } catch (e) {
-      return { queue: [], collapsed: false };
+      return freshPlan();
     }
-    if (!parsed || !Array.isArray(parsed.queue)) return { queue: [], collapsed: false };
+    if (!parsed || !Array.isArray(parsed.queue)) return freshPlan();
+
+    const seen = new Set();
+    const queue = [];
+    for (const id of parsed.queue) {
+      if (!Number.isInteger(id) || seen.has(id)) continue;
+      seen.add(id);
+      queue.push(id);
+    }
 
     return {
-      queue: parsed.queue.filter(function (id) { return Number.isInteger(id); }),
+      queue: queue,
       collapsed: parsed.collapsed === true,
     };
   }
 
+  // Returns true on success, false on failure, so the caller can tell the
+  // player their edit did not persist instead of losing it silently.
   function savePlan(plan) {
     try {
       GM_setValue(STORAGE_KEY, JSON.stringify({
         queue: (plan.queue || []).filter(function (id) { return Number.isInteger(id); }),
         collapsed: plan.collapsed === true,
       }));
+      return true;
     } catch (e) {
       // Storage failure must not take the panel down with it.
+      return false;
     }
   }
 
@@ -318,6 +338,8 @@
       status: 'error', message: null, reductionLabel: null,
       queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
       collapsed: state.plan.collapsed === true,
+      saveError: state.saveFailed === true,
+      selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
     };
 
     if (!state.fetchResult.ok) {
@@ -393,6 +415,8 @@
       finishLabel: queue.length > 0 ? formatTimestamp(result.finishesAt) : null,
       totalLabel: queue.length > 0 ? formatDuration(result.totalSeconds) : null,
       collapsed: state.plan.collapsed === true,
+      saveError: state.saveFailed === true,
+      selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
     };
   }
 
@@ -412,7 +436,31 @@
     return null;
   }
 
+  // Injected once and left alone across redraws: the panel itself is torn
+  // down and rebuilt on every draw (see the #tes-panel removal below), but a
+  // <style> tag has no reason to churn with it, and re-appending on every
+  // draw would grow an unbounded pile of identical <style> tags over a
+  // session.
+  function injectStyleOnce(doc) {
+    if (doc.querySelector('#tes-style')) return;
+    const style = doc.createElement('style');
+    style.id = 'tes-style';
+    style.textContent = [
+      '#tes-panel { border: 1px solid #4a4a4a; background: #1c1c1c; color: #e6e6e6;',
+      '  padding: 12px 14px; margin: 12px 0; border-radius: 6px; font-size: 13px; line-height: 1.5; }',
+      '#tes-panel .tes-header { font-weight: bold; cursor: pointer; margin-bottom: 8px; }',
+      '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
+      '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
+      '#tes-panel .tes-summary { white-space: pre-line; margin-bottom: 8px; }',
+      '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
+    ].join('\n');
+    const parent = doc.head || doc.body;
+    if (parent && parent.appendChild) parent.appendChild(style);
+  }
+
   function renderPanel(doc, mount, model, handlers) {
+    injectStyleOnce(doc);
+
     const existing = doc.querySelector('#tes-panel');
     if (existing && existing.remove) existing.remove();
 
@@ -421,6 +469,7 @@
     panel.setAttribute('data-tes-version', SCRIPT_VERSION);
 
     const header = doc.createElement('div');
+    header.className = 'tes-header';
     header.textContent = `Education Scheduler — ${model.collapsed ? 'show' : 'hide'}`;
     if (header.addEventListener) header.addEventListener('click', handlers.onToggle);
     panel.appendChild(header);
@@ -435,10 +484,27 @@
         return panel;
       }
 
+      if (model.saveError) {
+        const saveError = doc.createElement('div');
+        saveError.className = 'tes-save-error';
+        saveError.textContent = "Couldn't save your plan — your last change may not persist.";
+        body.appendChild(saveError);
+      }
+
+      // The finish date is the number this whole tool exists to produce, so
+      // it gets its own prominent line rather than sitting mid-paragraph in
+      // the summary below.
+      if (model.finishLabel) {
+        const finish = doc.createElement('div');
+        finish.className = 'tes-finish';
+        finish.textContent = `Queue finishes: ${model.finishLabel}`;
+        body.appendChild(finish);
+      }
+
       const summary = doc.createElement('div');
+      summary.className = 'tes-summary';
       const lines = [`Perk reduction: ${model.reductionLabel}`];
       if (model.finishLabel) {
-        lines.push(`Queue finishes: ${model.finishLabel}`);
         lines.push(`Total queued time: ${model.totalLabel}`);
       } else {
         lines.push('Queue is empty. Add a course below.');
@@ -456,6 +522,7 @@
 
       for (const item of model.queue) {
         const row = doc.createElement('div');
+        row.className = 'tes-row';
         const label = doc.createElement('span');
         label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — done ${item.finishLabel}`;
         row.appendChild(label);
@@ -474,12 +541,24 @@
         const opt = doc.createElement('option');
         opt.value = String(option.courseId);
         opt.textContent = `${option.prefix} ${option.name} (${option.durationLabel})`;
+        // Rebuilding the list on every draw would otherwise reset the
+        // scroll position back to the top of a ~130-entry list on every add.
+        if (model.selectedCourseId != null && option.courseId === model.selectedCourseId) {
+          opt.selected = true;
+        }
         picker.appendChild(opt);
+      }
+      if (picker.addEventListener && handlers.onPickerChange) {
+        picker.addEventListener('change', function () { handlers.onPickerChange(picker.value); });
       }
       const add = doc.createElement('button');
       add.textContent = 'add';
       if (add.addEventListener) {
         add.addEventListener('click', function () {
+          // An empty addable list leaves picker.value === '', and
+          // Number('') is 0 — a valid-looking integer that is not a real
+          // selection. Guard on the selection itself, not just its shape.
+          if (picker.value === '') return;
           const chosen = Number(picker.value);
           if (Number.isInteger(chosen)) handlers.onAdd(chosen);
         });
@@ -494,41 +573,83 @@
     return panel;
   }
 
+  // A fallback error model, shared by buildPanelModel's fetch-failure path
+  // and the catch block below, so renderPanel always gets a complete shape.
+  function errorModel(message) {
+    return {
+      status: 'error', message: message, reductionLabel: null,
+      queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
+      collapsed: false, saveError: false, selectedCourseId: null,
+    };
+  }
+
+  const noopHandlers = { onToggle: function () {}, onAdd: function () {}, onRemove: function () {}, onPickerChange: function () {} };
+
   async function init() {
     const plan = loadPlan();
     const fetchResult = await fetchEducationData(null);
-    const mount = findMountPoint(document);
-    if (!mount) return null;
 
-    function draw(currentPlan) {
-      const model = buildPanelModel({
-        fetchResult: fetchResult,
-        plan: currentPlan,
-        now: Math.floor(Date.now() / 1000),
-      });
-      function commit(next) {
-        savePlan(next);
-        draw(next);
-      }
-
-      return renderPanel(document, mount, model, {
-        onToggle: function () {
-          commit({ queue: currentPlan.queue, collapsed: !currentPlan.collapsed });
-        },
-        onAdd: function (courseId) {
-          if (currentPlan.queue.indexOf(courseId) !== -1) return;
-          commit({ queue: currentPlan.queue.concat([courseId]), collapsed: currentPlan.collapsed });
-        },
-        onRemove: function (courseId) {
-          commit({
-            queue: currentPlan.queue.filter(function (id) { return id !== courseId; }),
-            collapsed: currentPlan.collapsed,
-          });
-        },
-      });
+    // The design requires the panel to be visible even when Torn's markup
+    // does not match any known mount selector, rather than rendering
+    // nothing with no explanation.
+    let mount = findMountPoint(document);
+    if (!mount) {
+      mount = document.createElement('div');
+      mount.id = 'tes-fallback-mount';
+      mount.style.position = 'fixed';
+      mount.style.bottom = '12px';
+      mount.style.right = '12px';
+      mount.style.zIndex = '2147483647';
+      document.body.appendChild(mount);
     }
 
-    return draw(plan);
+    let selectedCourseId = null;
+
+    // draw/buildPanelModel/renderPanel are unguarded and schedule() throws
+    // plain Errors on unexpected input; without this the throw becomes an
+    // unhandled rejection (init is async) and the page goes blank with no
+    // hint why. Catching here keeps the failure inside the panel instead.
+    function draw(currentPlan, saveFailed) {
+      try {
+        const model = buildPanelModel({
+          fetchResult: fetchResult,
+          plan: currentPlan,
+          now: Math.floor(Date.now() / 1000),
+          saveFailed: saveFailed === true,
+          selectedCourseId: selectedCourseId,
+        });
+
+        function commit(next) {
+          const saved = savePlan(next);
+          draw(next, !saved);
+        }
+
+        return renderPanel(document, mount, model, {
+          onToggle: function () {
+            commit({ queue: currentPlan.queue, collapsed: !currentPlan.collapsed });
+          },
+          onAdd: function (courseId) {
+            if (currentPlan.queue.indexOf(courseId) !== -1) return;
+            commit({ queue: currentPlan.queue.concat([courseId]), collapsed: currentPlan.collapsed });
+          },
+          onRemove: function (courseId) {
+            commit({
+              queue: currentPlan.queue.filter(function (id) { return id !== courseId; }),
+              collapsed: currentPlan.collapsed,
+            });
+          },
+          onPickerChange: function (value) {
+            const parsed = Number(value);
+            selectedCourseId = Number.isInteger(parsed) ? parsed : null;
+          },
+        });
+      } catch (e) {
+        const detail = (e && e.message) || String(e);
+        return renderPanel(document, mount, errorModel(`Education Scheduler hit an error and stopped: ${detail}`), noopHandlers);
+      }
+    }
+
+    return draw(plan, false);
   }
 
   // The guard wraps only the bootstrap, never the IIFE body. Torn Bookie's
