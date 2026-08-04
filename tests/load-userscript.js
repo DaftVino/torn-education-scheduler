@@ -26,6 +26,8 @@ const SOURCE_PATH = path.join(__dirname, '..', 'torn-education-scheduler.user.js
 const EXPORT_NAMES = [
   'SCRIPT_VERSION', 'EDU_ENDPOINT', 'STORAGE_KEY',
   'isEducationPage',
+  // payload
+  'PayloadError', 'parsePayload',
 ];
 
 function buildInstrumentedSource() {
@@ -105,13 +107,63 @@ function makeSandbox(options = {}) {
   return { sandbox, gmStore, setNow: (ms) => { currentNow = ms; } };
 }
 
+function transformFromVM(value) {
+  // Recursively transform objects from the VM context to the main context
+  // to fix prototype chain issues with deepStrictEqual
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Date || value instanceof Error || value instanceof Function) return value;
+  if (value instanceof Map) {
+    const newMap = new Map();
+    for (const [k, v] of value) {
+      newMap.set(transformFromVM(k), transformFromVM(v));
+    }
+    return newMap;
+  }
+  if (value instanceof Set) {
+    const newSet = new Set();
+    for (const v of value) {
+      newSet.add(transformFromVM(v));
+    }
+    return newSet;
+  }
+  if (Array.isArray(value)) {
+    // Create a new array in the main context, not via map()
+    const arr = [];
+    for (const item of value) {
+      arr.push(transformFromVM(item));
+    }
+    return arr;
+  }
+  // Plain object - reconstruct in main context
+  const result = {};
+  for (const key of Object.keys(value)) {
+    result[key] = transformFromVM(value[key]);
+  }
+  return result;
+}
+
+function wrapExports(vmExports) {
+  const wrapped = {};
+  for (const [key, value] of Object.entries(vmExports)) {
+    if (typeof value === 'function') {
+      wrapped[key] = function(...args) {
+        const result = value.apply(this, args);
+        return transformFromVM(result);
+      };
+    } else {
+      wrapped[key] = value;
+    }
+  }
+  return wrapped;
+}
+
 function loadUserscript(options = {}) {
   const { sandbox, gmStore, setNow } = makeSandbox(options);
   const context = vm.createContext(sandbox);
   vm.runInContext(buildInstrumentedSource(), context, { filename: 'torn-education-scheduler.user.js' });
   if (sandbox.__TES_ERR__) throw sandbox.__TES_ERR__;
   if (!sandbox.__TES__) throw new Error('Export injection failed: __TES__ not set');
-  return { exports: sandbox.__TES__, sandbox, gmStore, setNow };
+  return { exports: wrapExports(sandbox.__TES__), sandbox, gmStore, setNow };
 }
 
 function loadFixture(name = 'education-init-data.json') {

@@ -25,6 +25,99 @@
   // Pure functions only. No DOM, no network, no GM_*, no ambient clock.
   // Enforced by tests/purity.test.js — read that before adding anything here.
 
+  const VALID_STATUSES = new Set(['completed', 'inProgress', 'available', 'notMeetRequirement']);
+
+  function PayloadError(reason, detail) {
+    const err = new Error(`education payload rejected: ${reason}${detail ? ` (${detail})` : ''}`);
+    err.name = 'PayloadError';
+    err.reason = reason;
+    return err;
+  }
+
+  function isInt(v) {
+    return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v;
+  }
+
+  function normaliseCourse(raw, categoryId) {
+    if (!raw || !isInt(raw.id)) throw PayloadError('bad-course', 'missing id');
+    if (!isInt(raw.originDuration) || !isInt(raw.actualDuration)) {
+      throw PayloadError('bad-course', `${raw.prefix || raw.id} has no usable duration`);
+    }
+    if (raw.parentId !== null && !isInt(raw.parentId)) {
+      throw PayloadError('bad-course', `${raw.prefix || raw.id} has a non-numeric parentId`);
+    }
+    if (!VALID_STATUSES.has(raw.status)) {
+      throw PayloadError('bad-course', `${raw.prefix || raw.id} has unknown status ${raw.status}`);
+    }
+    return {
+      id: raw.id,
+      prefix: raw.prefix,
+      name: raw.name,
+      tier: raw.tier,
+      categoryId: categoryId,
+      status: raw.status,
+      baseDuration: raw.originDuration,
+      duration: raw.actualDuration,
+      baseCost: raw.originCost,
+      cost: raw.actualCost,
+      parentId: raw.parentId,
+    };
+  }
+
+  // The design assumes one account-wide reduction. If that stops being true,
+  // say so rather than picking a value — a per-course ratio would mean Torn
+  // changed the mechanic, and a guess would hide it.
+  function deriveReduction(courses) {
+    const seen = new Set();
+    for (const course of courses.values()) {
+      if (course.baseDuration > 0) {
+        seen.add(Number((course.duration / course.baseDuration).toFixed(6)));
+      }
+    }
+    const ratios = [...seen].sort((a, b) => a - b);
+    return {
+      ratio: ratios.length === 1 ? ratios[0] : null,
+      constant: ratios.length === 1,
+      ratios: ratios,
+    };
+  }
+
+  function parsePayload(raw) {
+    if (!raw || raw.success !== true) throw PayloadError('not-a-payload');
+    if (!Array.isArray(raw.categories) || raw.categories.length === 0) throw PayloadError('no-categories');
+
+    const courses = new Map();
+    const categories = [];
+    const completedIds = new Set();
+
+    for (const category of raw.categories) {
+      if (!isInt(category.id) || !Array.isArray(category.courses)) {
+        throw PayloadError('no-categories', `category ${category && category.name} is malformed`);
+      }
+      const courseIds = [];
+      for (const rawCourse of category.courses) {
+        const course = normaliseCourse(rawCourse, category.id);
+        courses.set(course.id, course);
+        courseIds.push(course.id);
+        if (course.status === 'completed') completedIds.add(course.id);
+      }
+      categories.push({ id: category.id, name: category.name, courseIds: courseIds });
+    }
+
+    const active = raw.activeCourse;
+    const activeCourse = active && isInt(active.id)
+      ? { id: active.id, categoryId: active.category, name: active.name, completedAt: active.completedAt }
+      : null;
+
+    return {
+      courses: courses,
+      categories: categories,
+      activeCourse: activeCourse,
+      completedIds: completedIds,
+      reduction: deriveReduction(courses),
+    };
+  }
+
   // ─── ENGINE END ─────────────────────────────────────────────────
 
   // ─── RUNTIME ────────────────────────────────────────────────────
