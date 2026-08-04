@@ -14,10 +14,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - The panel now mounts and unmounts across Torn's single-page navigation, so
   arriving at the education page from elsewhere in Torn shows it with no
   reload, and leaving the page unmounts it cleanly.
-- A settings view behind a gear icon, holding every variable the arithmetic
-  depends on: max booster cooldown, Books of Carols owned, Book unit price,
-  job points available, and overrides for merits, Principal rank and the WSU
-  stock block.
+- A settings view behind a gear icon: max booster cooldown, Books of Carols
+  owned and their unit price feed the arithmetic directly. Job points
+  available and the merits/Principal rank/WSU stock block overrides do not —
+  Torn already applies job points to the course in progress, and the
+  reduction is read from the payload rather than reconstructed from perks.
+  Both are recorded so they travel with a shared plan string and a debug
+  report.
 - Perk inference: the panel infers merits, Principal rank and the WSU stock
   block from the observed reduction ratio wherever the split is unique, and
   prefills the settings fields with it.

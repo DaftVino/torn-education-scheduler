@@ -378,6 +378,45 @@ test('the share box carries the plan the panel is showing', async () => {
   assert.match(box.value, /(^|\|)c=48(\||$)/, `the current settings are not in the share string: ${box.value}`);
 });
 
+test('a share/import round trip under a non-default order mode leaves the stored queue byte-identical', async () => {
+  // Ordering is a display preference; storage keeps the raw order. The share
+  // box is pre-filled and one click hands its value to onImportPlan, so if
+  // the box were ever built from the *ordered* queue, the display order
+  // would get written back to storage on the very first click — with no
+  // bulk undo. shortest-first genuinely reorders these four (all children of
+  // course 34, which is not in the queue, so they are mutually unconstrained
+  // and sort purely on duration): 39 (725760s) < 38 == 41 (1088640s, original
+  // order breaks the tie) < 40 (1451520s).
+  const { doc, gmStore, exports } = await initWithFixture(
+    { orderMode: 'shortest-first' },
+    { queue: [38, 39, 40, 41], collapsed: false }
+  );
+
+  // Already on the schedule view (init()'s default) — openView('schedule')
+  // would find no nav button for the view already on screen.
+  assert.deepStrictEqual(
+    renderedQueueIds(doc),
+    [39, 38, 41, 40],
+    'shortest-first did not reorder the rendered queue — this test would not catch the regression'
+  );
+
+  const settings = openView(doc, 'settings');
+  const box = shareBox(settings);
+  assert.match(
+    box.value,
+    /(^|\|)q=38,39,40,41(\||$)/,
+    `share box held the display order instead of the stored order: ${box.value}`
+  );
+
+  fire(importButton(settings), 'click');
+
+  assert.deepStrictEqual(
+    JSON.parse(gmStore.get(exports.STORAGE_KEY)).queue,
+    [38, 39, 40, 41],
+    'a share/import round trip reordered the stored queue'
+  );
+});
+
 test('importing a plan changes the queue the panel renders', async () => {
   // The wiring assertion. Every test above this line calls decodePlan
   // directly, so deleting the handler would leave all of them green.

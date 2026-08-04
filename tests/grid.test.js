@@ -247,7 +247,10 @@ test('the grid view renders a box per degree, naming the bachelor', () => {
   const sports = model.grid.boxes.find((b) => b.name === 'Sports Science');
   assert.strictEqual(sports.courseCount, 0, 'the fixture no longer has a completed degree to check');
   assert.ok(details.includes('Already complete'), 'a completed degree does not say so on screen');
-  assert.ok(!details.some((t) => /0 courses/.test(t)), 'a completed degree renders as an empty estimate');
+  // \b0, not a bare /0 courses/: category sizes are 6-15 today, so this would
+  // false-positive on a fixture refresh landing exactly on "10 courses" or
+  // "20 courses" with an actively misleading failure message.
+  assert.ok(!details.some((t) => /\b0 courses/.test(t)), 'a completed degree renders as an empty estimate');
 });
 
 // The dates are what a reader will try to add up: twelve boxes finishing in

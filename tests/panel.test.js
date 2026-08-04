@@ -267,6 +267,30 @@ test('renderPanel surfaces a visible message naming what is missing when the pla
   assert.doesNotMatch(summary.textContent, /Total queued time/);
 });
 
+test('renderPanel names a dropped stale queue entry on screen, not only in the model', () => {
+  // Half of do-not-revert #6 ("dropped from a stored queue and reported"):
+  // the dropping is pinned by the model test above this one, but nothing
+  // asserted the entry actually reaches the rendered summary.
+  const { exports, state } = okState([999999, 38]);
+  const model = exports.buildPanelModel(state);
+  assert.deepStrictEqual(model.stale, [{ courseId: 999999, why: 'no longer in the catalogue' }]);
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const panel = exports.renderPanel(doc, mount, model, noopHandlers);
+  const body = panel.children[1];
+  // Both the Books-of-Carols block and the real queue summary render with
+  // class .tes-summary — this queue has consumables (no problems, non-empty),
+  // so .find would grab the wrong one. Match on content instead of position.
+  const summaries = body.children.filter((c) => c.className === 'tes-summary');
+  const summary = summaries.find((c) => /Removed/.test(c.textContent));
+  assert.ok(summary, `no .tes-summary block named the stale entry: ${summaries.map((s) => s.textContent).join(' | ')}`);
+  assert.match(
+    summary.textContent,
+    /Removed 999999 from your queue — no longer in the catalogue\./,
+    `the stale entry never reached the rendered panel: ${summary.textContent}`
+  );
+});
+
 test('adding a tier-3 course to an empty queue auto-queues its whole prerequisite chain and validates clean', async () => {
   const doc = makeFakeDocument();
   doc.cookie = 'rfc_v=abcdefghijklm'; // fetchEducationData needs a session token to attempt the fetch
@@ -564,8 +588,12 @@ test('the settings view shows the inference as an inference, not as a reading', 
   assert.strictEqual(model.perkInference.determinate, true);
 
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
-  const note = descendants(panel.children[1]).find((c) => c.className === 'tes-note');
-  assert.ok(note, 'the perks section has no note');
+  // The Boosters section carries its own .tes-note (job points) ahead of this
+  // one in document order, so match on content rather than taking the first.
+  const note = descendants(panel.children[1])
+    .filter((c) => c.className === 'tes-note')
+    .find((c) => /Inferred from your/.test(c.textContent));
+  assert.ok(note, 'the perks section has no inference note');
   assert.match(note.textContent, /Inferred from your 40% reduction/);
   assert.match(note.textContent, /Correct it if it is wrong/);
 });
