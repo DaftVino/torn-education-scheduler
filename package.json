@@ -1,0 +1,13 @@
+{
+  "name": "torn-education-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Development tooling for the Torn Education Scheduler userscript. Not shipped; adds no runtime dependencies.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:syntax": "node --check torn-education-scheduler.user.js"
+  },
+  "devDependencies": {},
+  "license": "MIT"
+}
