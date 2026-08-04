@@ -38,6 +38,8 @@ const EXPORT_NAMES = [
   'freshPlan', 'loadPlan', 'savePlan',
   // adapter
   'fetchEducationData',
+  // acquisition
+  'looksLikePayload', 'searchForPayload', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
   'formatTimestamp', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
 ];
