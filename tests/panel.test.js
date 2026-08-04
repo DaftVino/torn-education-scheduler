@@ -2,6 +2,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { loadUserscript, loadFixture } = require('./load-userscript');
+// The shared fake DOM (tests/fake-document.js): id-aware `querySelector` over a
+// registry of created elements, and a `<select>` that reports what a browser
+// would. The harness's own document stub is too inert — querySelector always
+// null, appendChild a no-op — to show what a view actually appended.
+const { makeFakeDocument } = require('./fake-document');
 
 const NOW = 1767000000;
 
@@ -157,67 +162,6 @@ test('an error model still has an addable array', () => {
   });
   assert.deepStrictEqual(model.addable, []);
 });
-
-// A minimal fake DOM for exercising renderPanel/init directly. Unlike the
-// harness's default document stub (querySelector always null, appendChild a
-// no-op), this one tracks created elements well enough to answer '#id'
-// lookups and record what got appended where — just enough to assert on
-// renderPanel's actual output rather than only on buildPanelModel's data.
-function makeFakeDocument() {
-  const registry = [];
-  function makeElement(tag) {
-    const el = {
-      tagName: tag,
-      id: '',
-      className: '',
-      textContent: '',
-      value: '',
-      style: {},
-      dataset: {},
-      children: [],
-      listeners: {},
-      appendChild(child) { this.children.push(child); return child; },
-      setAttribute(name, val) { this[name] = val; },
-      addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
-      remove() { this.removed = true; },
-    };
-    // A <select> is not a blank slate: a browser selects its first option the
-    // moment one is appended, so `picker.value` is never '' while options
-    // exist unless an inert option sits at the top. A stub that hard-coded
-    // value: '' hid exactly that — every test set picker.value by hand first,
-    // so no test could ever see what an untouched picker submits. Reading it
-    // resolves the way a browser does: the option marked selected, else the
-    // first one. Writing it still works, because a test choosing a course is
-    // simulating the player choosing one.
-    if (tag === 'select') {
-      let chosenByHand = null;
-      Object.defineProperty(el, 'value', {
-        configurable: true,
-        enumerable: true,
-        get() {
-          if (chosenByHand !== null) return chosenByHand;
-          const option = this.children.find((c) => c.selected) || this.children[0];
-          return option ? option.value : '';
-        },
-        set(v) { chosenByHand = v; },
-      });
-    }
-    registry.push(el);
-    return el;
-  }
-  const body = makeElement('body');
-  return {
-    createElement: makeElement,
-    querySelector(sel) {
-      if (typeof sel === 'string' && sel.startsWith('#')) {
-        const id = sel.slice(1);
-        return registry.find((el) => el.id === id && !el.removed) || null;
-      }
-      return null;
-    },
-    body: body,
-  };
-}
 
 const noopHandlers = { onToggle() {}, onAdd() {}, onRemove() {}, onPickerChange() {} };
 
@@ -492,6 +436,39 @@ test('the all-remaining entry queues every remaining course, in a followable ord
   const summary = redrawn.children.find((c) => c.className === 'tes-summary');
   assert.ok(!/cannot be followed/.test(summary.textContent), summary.textContent.split('\n')[1]);
   assert.ok(redrawn.children.some((c) => c.className === 'tes-finish'), 'no finish date for the full plan');
+});
+
+// Number('') is 0 and passes Number.isInteger, so choosing the placeholder back
+// used to leave the panel remembering a selection of course 0 — invisible only
+// because no course has that id and the placeholder is first anyway.
+test('choosing the placeholder returns the panel to no selection at all', async () => {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm';
+  const { exports } = loadUserscript({
+    location: { search: '' },
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  await exports.init();
+
+  const pickerIn = (panel) => panel.children[1].children.find((c) => c.tagName === 'select');
+  const picker = pickerIn(doc.querySelector('#tes-panel'));
+  picker.value = '38';
+  for (const fn of picker.listeners.change) fn();
+  picker.value = '';
+  for (const fn of picker.listeners.change) fn();
+
+  // Redraw through a handler that changes nothing else about the plan: collapse
+  // and reopen, which rebuilds the picker from the model twice.
+  for (let i = 0; i < 2; i += 1) {
+    const header = doc.querySelector('#tes-panel').children[0];
+    for (const fn of header.listeners.click) fn();
+  }
+
+  const redrawn = pickerIn(doc.querySelector('#tes-panel'));
+  assert.strictEqual(redrawn.children[0].selected, true, 'the placeholder is not the selection');
+  assert.strictEqual(redrawn.value, '');
+  assert.ok(!redrawn.children.some((c) => c.value === '0'), 'course 0 must not be a real option');
 });
 
 test('adding everything twice does not queue anything a second time', async () => {
@@ -840,6 +817,15 @@ test('the queue order is stored as its id, not coerced into a number', async () 
   // Task 10 adds the other modes to the dropdown; the handler must already
   // carry a string through intact, or every choice arrives as NaN and
   // normaliseSettings silently restores the default.
+  //
+  // The option is appended first because a real <select> reports '' for a value
+  // none of its options offer — writing `shortest-first` into a one-option
+  // dropdown would test the write, not the handler. This is the mode Task 10
+  // adds; the assertion below is unchanged.
+  const mode = doc.createElement('option');
+  mode.value = 'shortest-first';
+  mode.textContent = 'Shortest first';
+  select.appendChild(mode);
   select.value = 'shortest-first';
   fire(select, 'change');
   assert.strictEqual(stored().orderMode, 'shortest-first');

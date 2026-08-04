@@ -2,45 +2,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { loadUserscript, loadFixture } = require('./load-userscript');
-
-// A local fake DOM, as panel.test.js builds one: the sandbox document stub is
-// too inert to record what a view actually appended.
-function makeFakeDocument() {
-  const registry = [];
-  function makeElement(tag) {
-    const el = {
-      tagName: tag,
-      id: '',
-      className: '',
-      textContent: '',
-      value: '',
-      style: {},
-      dataset: {},
-      attributes: {},
-      children: [],
-      listeners: {},
-      appendChild(child) { this.children.push(child); return child; },
-      setAttribute(name, val) { this.attributes[name] = val; this[name] = val; },
-      addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
-      remove() { this.removed = true; },
-    };
-    registry.push(el);
-    return el;
-  }
-  const body = makeElement('body');
-  return {
-    createElement: makeElement,
-    querySelector(sel) {
-      if (typeof sel === 'string' && sel.startsWith('#')) {
-        const id = sel.slice(1);
-        return registry.find((el) => el.id === id && !el.removed) || null;
-      }
-      return null;
-    },
-    body: body,
-    registry: registry,
-  };
-}
+// The shared fake DOM: the sandbox document stub is too inert to record what a
+// view actually appended. One copy, in tests/fake-document.js — three copies is
+// how the picker's default selection went unmodelled everywhere but here.
+const { makeFakeDocument } = require('./fake-document');
 
 function flatten(el, out) {
   out = out || [];
