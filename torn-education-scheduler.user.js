@@ -164,6 +164,41 @@
     return problems;
   }
 
+  // actualDuration already carries the player's perk reduction, so the base
+  // case is a sum. Timestamps are Unix seconds throughout, matching
+  // activeCourse.completedAt.
+  //
+  // Order does not change finishesAt — a sum is order-independent. Ordering
+  // changes time-to-benefit, which is a different question and a later
+  // release. tests/engine.test.js asserts this property directly.
+  function schedule(options) {
+    const courses = options.courses;
+    const activeCourse = options.activeCourse;
+    const queue = options.queue || [];
+    const now = options.now;
+
+    if (!Number.isFinite(now)) throw new Error('schedule: now is required (Unix seconds)');
+
+    let cursor = activeCourse && Number.isFinite(activeCourse.completedAt)
+      ? Math.max(activeCourse.completedAt, now)
+      : now;
+
+    const startsAt = cursor;
+    const items = [];
+    let totalSeconds = 0;
+
+    for (const courseId of queue) {
+      const course = courses.get(courseId);
+      if (!course) throw new Error(`schedule: unknown course ${courseId}`);
+      const itemStart = cursor;
+      cursor += course.duration;
+      totalSeconds += course.duration;
+      items.push({ courseId: courseId, startsAt: itemStart, finishesAt: cursor });
+    }
+
+    return { startsAt: startsAt, items: items, finishesAt: cursor, totalSeconds: totalSeconds };
+  }
+
   // ─── ENGINE END ─────────────────────────────────────────────────
 
   // ─── RUNTIME ────────────────────────────────────────────────────
