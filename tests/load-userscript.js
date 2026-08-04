@@ -46,6 +46,9 @@ const EXPORT_NAMES = [
   'looksLikePayload', 'searchForPayload', 'newWalkState', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
   'formatTimestamp', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
+  // errorModel/noopHandlers are exported as a pair: the render path treats
+  // noopHandlers by identity, so a test asserting that needs the real object.
+  'errorModel', 'noopHandlers',
   // views
   'renderScheduleView', 'renderSettingsView', 'renderGridView',
   // navigation

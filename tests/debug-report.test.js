@@ -126,7 +126,9 @@ test("Torn's own \"Wrong rfcv token\" diagnosis reaches the report as words, not
   const report = x.buildDebugReport(input);
   assert.ok(report.includes('Wrong rfcv token'), "Torn's diagnosis was dropped from the report");
   assert.ok(!/rfc_?v\s*=/i.test(report), 'a token assignment accompanied the diagnosis');
-  assert.ok(!/\brfcv\b\S/i.test(report.replace('Wrong rfcv token', '')), 'a second rfcv mention appeared');
+  // The word appears exactly once, and it is Torn's. Anything else naming the
+  // token would be the script volunteering it.
+  assert.strictEqual((report.match(/rfcv/gi) || []).length, 1, 'the report names rfcv somewhere else too');
 });
 
 test('the report excludes a raw payload even when one is smuggled in', () => {
@@ -471,6 +473,55 @@ test('gatherDebugContext refuses a non-string course prefix rather than stringif
   });
   assert.deepStrictEqual(ctx.queueCodes, ['7'], 'a non-string prefix was passed through');
   assert.ok(!x.buildDebugReport(ctx).includes('PREFIX_FROM_TOSTRING'), 'toString was invoked on payload data');
+});
+
+test('gatherDebugContext bounds the detail Torn wrote, and marks the truncation', () => {
+  const { exports: x } = loadUserscript();
+  // parsePayload splices raw.error into the detail whole, and that string is
+  // Torn's, not ours. The player pastes this in public by hand.
+  const huge = 'E'.repeat(5000);
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: false, reason: 'not-a-payload', detail: huge },
+    plan: { queue: [] },
+    settings: null,
+  });
+  assert.ok(ctx.failureDetail.length < 400, `the detail was not bounded (${ctx.failureDetail.length} chars)`);
+  assert.match(ctx.failureDetail, /truncated, 5000 chars total/, 'the truncation was silent');
+  assert.ok(ctx.failureDetail.startsWith('EEEE'), 'the start of the detail was lost');
+  const report = x.buildDebugReport(ctx);
+  assert.ok(report.length < 2000, 'the report is unbounded despite the clamp');
+});
+
+test('gatherDebugContext drops a non-string reason rather than coercing it', () => {
+  const { exports: x } = loadUserscript();
+  // The catch blocks build a detail from `(e && e.message)`, and a thrown
+  // value is whatever threw it — an object with a toString reaches here.
+  const hostile = { toString() { return 'REASON_FROM_TOSTRING'; } };
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: false, reason: hostile, detail: { toString() { return 'DETAIL_FROM_TOSTRING'; } } },
+    plan: { queue: [] },
+    settings: null,
+  });
+  assert.strictEqual(ctx.failureReason, null, 'a non-string reason was passed through');
+  assert.strictEqual(ctx.failureDetail, null, 'a non-string detail was passed through');
+  const report = x.buildDebugReport(ctx);
+  assert.ok(!report.includes('REASON_FROM_TOSTRING'), 'toString was invoked on a thrown value');
+  assert.ok(!report.includes('DETAIL_FROM_TOSTRING'), 'toString was invoked on a thrown value');
+  assert.match(report, /Reason: not recorded/, 'the dropped field did not render as absent');
+});
+
+test('a panel with no live handlers renders no controls that do nothing', () => {
+  const { exports: x } = loadUserscript();
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  // init() passes the module's own noopHandlers for a draw() that threw.
+  // Everything on that panel is inert, so nav buttons would only invite a
+  // click that reads as the script being broken twice over.
+  const panel = x.renderPanel(doc, mount, x.errorModel('it broke'), x.noopHandlers);
+  const nodes = flatten(panel);
+  assert.ok(nodes.some((n) => n.textContent === 'it broke'), 'the failure was not named');
+  assert.ok(!nodes.some((n) => n.className === 'tes-nav'), 'an inert nav row was rendered');
+  assert.ok(!nodes.some((n) => n.textContent === '⚙ settings'), 'an inert settings button was rendered');
 });
 
 test('gatherDebugContext says so when the manager and browser cannot be read', () => {

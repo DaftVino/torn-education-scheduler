@@ -28,6 +28,52 @@ function probeOf(cell) {
   return (m ? m[1] : cell).replace(/\s+/g, ' ').trim();
 }
 
+// Matching against raw source text means a label is satisfiable by prose: a
+// comment that happens to quote a signature verifies as though it were the
+// declaration. That is not hypothetical — a review moved the `init()` row to a
+// comment reading "But this is the function init()" 770 lines from the real
+// declaration and every test here stayed green. So code rows match against a
+// comment-stripped copy of the source, and only a row that says it is anchored
+// to a comment may match one.
+//
+// Line-count-preserving, and quote-aware so `'https://…'` is not read as the
+// start of a comment. Block-comment state carries across lines.
+function stripComments(lines) {
+  let inBlock = false;
+  return lines.map((raw) => {
+    let out = '';
+    let quote = null;
+    let i = 0;
+    while (i < raw.length) {
+      const c = raw[i];
+      const next = raw[i + 1];
+      if (inBlock) {
+        if (c === '*' && next === '/') { inBlock = false; i += 2; continue; }
+        i += 1; continue;
+      }
+      if (quote) {
+        out += c;
+        if (c === '\\') { out += next || ''; i += 2; continue; }
+        if (c === quote) quote = null;
+        i += 1; continue;
+      }
+      if (c === "'" || c === '"' || c === '`') { quote = c; out += c; i += 1; continue; }
+      if (c === '/' && next === '/') break;               // rest of the line is comment
+      if (c === '/' && next === '*') { inBlock = true; i += 2; continue; }
+      out += c;
+      i += 1;
+    }
+    return out;
+  });
+}
+
+// The three kinds of row that are legitimately anchored to a comment: the
+// userscript metadata header, the ENGINE/RUNTIME section markers, and any row
+// whose cell says so in as many words. Everything else is code.
+function labelAllowsComment(cell, probe) {
+  return probe.startsWith('//') || probe.includes('─') || /\(comment\)/i.test(cell);
+}
+
 // A line only counts as "quoted by the map" if it is substantial enough to
 // identify something. Without this, `})();` — and every bare closing brace in
 // the file — is a substring of any label that happens to contain one, and the
@@ -80,24 +126,72 @@ function anchorRows() {
   return rows;
 }
 
+// Every line in the file the label could be pointing at. A label that matches
+// more than one place does not identify anything, and an anchor is only
+// trustworthy if it is the single answer to "where is this?".
+function matchingLines(row, raw, stripped) {
+  const src = labelAllowsComment(row.cell, row.probe) ? raw : stripped;
+  const hits = [];
+  for (let i = 0; i < src.length; i++) {
+    if (matches(src[i], row.probe)) hits.push(i + 1);
+  }
+  return hits;
+}
+
 test('every code-map anchor points at the declaration it names', () => {
-  const src = fs.readFileSync(SOURCE_PATH, 'utf8').split(/\r?\n/);
+  const raw = fs.readFileSync(SOURCE_PATH, 'utf8').split(/\r?\n/);
+  const stripped = stripComments(raw);
   const rows = anchorRows();
   assert.ok(rows.length > 50, `the map yielded only ${rows.length} anchored rows — the table shape may have changed`);
 
   const wrong = [];
   for (const row of rows) {
-    let ok = false;
-    for (let i = row.start; i <= row.end && !ok; i++) {
-      if (matches(src[i - 1] || '', row.probe)) ok = true;
-    }
-    if (!ok) {
-      wrong.push(`code-map.md:${row.mapLine} anchors "${row.probe.slice(0, 60)}" at ` +
-        `${row.start}${row.end !== row.start ? '-' + row.end : ''}, which reads: ` +
-        `${(src[row.start - 1] || '(past end of file)').trim().slice(0, 60)}`);
+    const hits = matchingLines(row, raw, stripped);
+    const inRange = hits.filter((n) => n >= row.start && n <= row.end);
+    const span = `${row.start}${row.end !== row.start ? '-' + row.end : ''}`;
+    if (inRange.length === 0) {
+      wrong.push(`code-map.md:${row.mapLine} anchors "${row.probe.slice(0, 60)}" at ${span}, ` +
+        `which reads: ${(raw[row.start - 1] || '(past end of file)').trim().slice(0, 60)}` +
+        (hits.length ? ` — it is really at ${hits.join(', ')}` : ' — no line in the file matches it'));
     }
   }
   assert.deepStrictEqual(wrong, [], `stale code-map anchors:\n  ${wrong.join('\n  ')}`);
+});
+
+test('no code-map label matches more than one place in the file', () => {
+  // An anchor that happens to be right is not the same as a label that can
+  // only mean one thing. A label matching several lines can be moved to any
+  // of them and still verify, which is how a wrong anchor survives a check.
+  const raw = fs.readFileSync(SOURCE_PATH, 'utf8').split(/\r?\n/);
+  const stripped = stripComments(raw);
+
+  const ambiguous = [];
+  for (const row of anchorRows()) {
+    const hits = matchingLines(row, raw, stripped);
+    const outside = hits.filter((n) => n < row.start || n > row.end);
+    if (outside.length > 0) {
+      ambiguous.push(`code-map.md:${row.mapLine} "${row.probe.slice(0, 50)}" also matches ` +
+        `line${outside.length > 1 ? 's' : ''} ${outside.join(', ')} — quote enough to be unambiguous`);
+    }
+  }
+  assert.deepStrictEqual(ambiguous, [], `ambiguous code-map labels:\n  ${ambiguous.join('\n  ')}`);
+});
+
+test('a declaration label cannot be satisfied by a comment quoting it', () => {
+  // The exploit this closes: a row moved to prose that quotes the signature.
+  const raw = [
+    "  // The bootstrap calls it below. But this is the function init()",
+    "  async function init() {",
+    "  const url = 'https://example.invalid//not-a-comment';",
+    "  /* function init() { */",
+  ];
+  const stripped = stripComments(raw);
+  const probe = probeOf('`init()` — re-entrant');
+  assert.strictEqual(matches(stripped[0], probe), false, 'a comment satisfied a declaration label');
+  assert.strictEqual(matches(stripped[1], probe), true, 'the real declaration stopped verifying');
+  assert.strictEqual(matches(stripped[3], probe), false, 'a block comment satisfied a declaration label');
+  // The quote-awareness that keeps a URL from being read as a comment.
+  assert.match(stripped[2], /example\.invalid\/\/not-a-comment/, 'a string literal was truncated at //');
 });
 
 test('the anchor check tells a call site from its declaration, in both directions', () => {

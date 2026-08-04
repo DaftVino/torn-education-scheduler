@@ -1044,6 +1044,23 @@
   // security surface for a diagnostic nicety. Absent, the report says so.
   // navigator gets the same guard — it does not exist in the test sandbox,
   // and an unguarded reference is a ReferenceError that blanks the panel.
+  // The same guard course.prefix gets, for the same reason. Every realistic
+  // producer of a reason/detail hands us a string, but the catch blocks build
+  // theirs from `(e && e.message)` — and a thrown value is whatever threw it.
+  // A non-string is dropped rather than coerced, so nothing reaches String()
+  // that could carry a toString we did not write.
+  //
+  // The bound is on the detail because parsePayload splices Torn's own
+  // `raw.error` into it whole, and that string is not ours to size. The report
+  // is pasted in public by hand; an unbounded server message in it is a wall
+  // of text at best. Truncation is marked, so nothing disappears silently.
+  const MAX_DETAIL_CHARS = 300;
+  function debugText(v, limit) {
+    if (typeof v !== 'string') return null;
+    if (!limit || v.length <= limit) return v;
+    return `${v.slice(0, limit)}… (truncated, ${v.length} chars total)`;
+  }
+
   function gatherDebugContext(state) {
     const nav = (typeof navigator !== 'undefined') ? navigator : null;
     const data = (state.fetchResult && state.fetchResult.ok) ? state.fetchResult.data : null;
@@ -1054,9 +1071,9 @@
       manager: (typeof GM_info !== 'undefined' && GM_info && GM_info.scriptHandler)
         ? `${GM_info.scriptHandler} ${GM_info.version || ''}`.trim()
         : null,
-      failureReason: state.fetchResult && !state.fetchResult.ok ? state.fetchResult.reason : null,
-      failureDetail: state.fetchResult && !state.fetchResult.ok ? state.fetchResult.detail : null,
-      source: state.fetchResult && state.fetchResult.ok ? state.fetchResult.source : null,
+      failureReason: state.fetchResult && !state.fetchResult.ok ? debugText(state.fetchResult.reason) : null,
+      failureDetail: state.fetchResult && !state.fetchResult.ok ? debugText(state.fetchResult.detail, MAX_DETAIL_CHARS) : null,
+      source: state.fetchResult && state.fetchResult.ok ? debugText(state.fetchResult.source) : null,
       courseCount: data ? data.courses.size : null,
       categoryCount: data ? data.categories.length : null,
       reductionConstant: data ? data.reduction.constant : null,
@@ -1186,18 +1203,26 @@
 
       // The view controls sit above the body so they keep their position as
       // the body's height changes between views.
-      const nav = doc.createElement('div');
-      nav.className = 'tes-nav';
-      for (const target of ['schedule', 'grid', 'settings']) {
-        if (target === view) continue;
-        const btn = doc.createElement('button');
-        btn.textContent = target === 'settings' ? '⚙ settings' : target === 'grid' ? 'degrees' : 'schedule';
-        if (btn.addEventListener && handlers.onViewChange) {
-          btn.addEventListener('click', function () { handlers.onViewChange(target); });
+      //
+      // noopHandlers is init()'s signal that nothing on this panel can respond
+      // — it uses it for a draw() that threw. Buttons that render and do
+      // nothing are worse than no buttons: they invite a click that reads as
+      // the script being broken twice over. Identity, not a shape check: any
+      // real handler set is a different object.
+      if (handlers !== noopHandlers) {
+        const nav = doc.createElement('div');
+        nav.className = 'tes-nav';
+        for (const target of ['schedule', 'grid', 'settings']) {
+          if (target === view) continue;
+          const btn = doc.createElement('button');
+          btn.textContent = target === 'settings' ? '⚙ settings' : target === 'grid' ? 'degrees' : 'schedule';
+          if (btn.addEventListener && handlers.onViewChange) {
+            btn.addEventListener('click', function () { handlers.onViewChange(target); });
+          }
+          nav.appendChild(btn);
         }
-        nav.appendChild(btn);
+        body.appendChild(nav);
       }
-      body.appendChild(nav);
 
       // Settings renders in full either way — it reads nothing from the
       // payload. Schedule and Degrees have nothing to draw without data, and
@@ -1568,16 +1593,26 @@
     };
   }
 
-  // A fallback error model, shared by buildPanelModel's fetch-failure path
-  // and the catch block below, so renderPanel always gets a complete shape.
+  // The model for the two failures init() has to render without a panel model:
+  // a draw() that threw, and a mount phase that could not read the page.
+  //
+  // buildPanelModel does NOT use this. Its fetch-failure path builds an
+  // equivalent shape inline, because that one carries the player's real plan,
+  // settings and collapsed state while this one cannot know them. The two
+  // therefore have to be kept in step by hand — a field added to one and not
+  // the other is a renderer meeting an undefined on whichever path is rarer.
   function errorModel(message) {
     return {
       status: 'error', message: message, reductionLabel: null,
       queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
       collapsed: false, saveError: false, selectedCourseId: null, view: 'schedule',
-      // The error model short-circuits before the view switch, so these are
-      // never read today. They are here so that stops being load-bearing: a
-      // renderer handed this model must not meet an undefined.
+      // Unread today, but check the mechanism before trusting that: this model
+      // carries view: 'schedule', and renderPanel skips the schedule and grid
+      // renderers on an error model, so nothing reaches them. It is NOT the
+      // old short-circuit that keeps them unread — that was removed, and the
+      // comment saying so outlived the code by a whole review cycle. They are
+      // here so the fact stays incidental rather than load-bearing: a renderer
+      // handed this model must not meet an undefined.
       settings: normaliseSettings(null), settingsSaveError: false,
       perkInference: NO_INFERENCE, orderModes: [], debugReport: null,
     };
