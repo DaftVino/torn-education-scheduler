@@ -15,15 +15,22 @@ const MAP_PATH = path.join(__dirname, '..', 'docs', 'code-map.md');
 // code. That is a checkable property, so it is checked here rather than
 // promised in a comment.
 //
-// The rule that matters: a row is verified against the FIRST backticked
-// snippet in its label cell, not against any identifier anywhere in the row.
-// An earlier hand-rolled verifier keyed on "does the anchor line contain the
-// row's leading identifier", and was structurally blind to rows whose label is
-// prose wrapping a call site rather than a declaration — the Bootstrap row,
-// labelled with the call `observeNavigation(document, window, ...)`, happily
-// matched `function observeNavigation(doc, win, handlers)` 360 lines away.
-// Comparing the whole snippet in both directions is what separates the two:
-// the call site is not a substring of the declaration, nor the reverse.
+// The invariant every rule below serves: **a row must be satisfiable by
+// exactly one place in the file, and that place must be where a reader would
+// go to find what the row names.** Everything else here — the declaration
+// rule, comment stripping, uniqueness, range exactness, checking every symbol
+// a label names rather than the first — is a way of failing an anchor that
+// satisfies the letter of "it matches" while sending a reader somewhere
+// useless. Each was added after an attack that did exactly that; see
+// `rowProbes` and the tests below for which rule answers which.
+//
+// (This header claimed a mechanism — "a row is verified against the FIRST
+// backticked snippet" — until the multi-symbol fix made it false, and it
+// disagreed with `rowProbes` a few dozen lines down for a commit. It is stated
+// as an invariant now for the reason the userscript's renderPanel comment
+// gives. Written up in the same round that hunted four instances of the class
+// elsewhere: the rule is easy to apply to someone else's comments and hard to
+// apply to your own.)
 function probeOf(cell) {
   const m = cell.match(/`([^`]+)`/);
   return (m ? m[1] : cell).replace(/\s+/g, ' ').trim();
