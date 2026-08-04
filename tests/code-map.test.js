@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { SOURCE_PATH } = require('./load-userscript');
+const { stripComments } = require('./strip-comments');
 
 const MAP_PATH = path.join(__dirname, '..', 'docs', 'code-map.md');
 
@@ -36,35 +37,14 @@ function probeOf(cell) {
 // comment-stripped copy of the source, and only a row that says it is anchored
 // to a comment may match one.
 //
-// Line-count-preserving, and quote-aware so `'https://…'` is not read as the
-// start of a comment. Block-comment state carries across lines.
-function stripComments(lines) {
-  let inBlock = false;
-  return lines.map((raw) => {
-    let out = '';
-    let quote = null;
-    let i = 0;
-    while (i < raw.length) {
-      const c = raw[i];
-      const next = raw[i + 1];
-      if (inBlock) {
-        if (c === '*' && next === '/') { inBlock = false; i += 2; continue; }
-        i += 1; continue;
-      }
-      if (quote) {
-        out += c;
-        if (c === '\\') { out += next || ''; i += 2; continue; }
-        if (c === quote) quote = null;
-        i += 1; continue;
-      }
-      if (c === "'" || c === '"' || c === '`') { quote = c; out += c; i += 1; continue; }
-      if (c === '/' && next === '/') break;               // rest of the line is comment
-      if (c === '/' && next === '*') { inBlock = true; i += 2; continue; }
-      out += c;
-      i += 1;
-    }
-    return out;
-  });
+// The stripper is the one tests/purity.test.js uses, not a copy: it is a full
+// eight-mode scanner with regex-literal tracking, and a simpler copy that
+// lived here was defeated by both `const re = /['"]/; // comment` (comment
+// left standing) and a regex literal containing a slash-star (every following
+// line swallowed). See tests/strip-comments.js for why there is only one.
+// Line numbers survive stripping, so a reported location is the real one.
+function strippedLines(raw) {
+  return stripComments(raw.join('\n')).split('\n');
 }
 
 // The three kinds of row that are legitimately anchored to a comment: the
@@ -107,7 +87,32 @@ function matches(sourceLine, probe) {
   return line.length >= MIN_QUOTED_LINE && probe.includes(line);
 }
 
-function anchorRows() {
+// A row's *label* is everything before the first em dash; the prose after it
+// may name any symbol it likes without claiming to be anchored to it. Rows
+// routinely document several declarations at once — `mounted` / `inFlight` /
+// `generation` / `attempts` / `pending` is one row covering five lines — and
+// checking only the first backticked snippet verified one symbol in five.
+// Demonstrated: the TRI_STATE_OPTIONS row could be shrunk to drop
+// `triStateField` entirely and stay green.
+//
+// Secondary symbols are only enforced when they are declaration-shaped AND
+// actually declared somewhere, so prose backticks in the label — `null`, `#`,
+// `@grant` — are ignored rather than turned into impossible requirements.
+function rowProbes(cell, stripped) {
+  const label = cell.split(/\s+—\s+/)[0];
+  const snippets = (label.match(/`[^`]+`/g) || []).map((s) => s.slice(1, -1).replace(/\s+/g, ' ').trim());
+  const primary = probeOf(cell);
+  const probes = [{ text: primary, allowComment: labelAllowsComment(cell, primary) }];
+  for (const s of snippets.slice(1)) {
+    if (!DECLARATION_LABEL.test(s)) continue;
+    const re = declarationRe(s.replace(/\(.*$/, ''));
+    if (!stripped.some((line) => re.test(line))) continue;
+    probes.push({ text: s, allowComment: false });
+  }
+  return probes;
+}
+
+function anchorRows(stripped) {
   const rows = [];
   const lines = fs.readFileSync(MAP_PATH, 'utf8').split(/\r?\n/);
   lines.forEach((line, i) => {
@@ -119,6 +124,7 @@ function anchorRows() {
       mapLine: i + 1,
       cell: cell,
       probe: probeOf(cell),
+      probes: rowProbes(cell, stripped),
       start: Number(m[2]),
       end: m[3] ? Number(m[3]) : Number(m[2]),
     });
@@ -126,31 +132,38 @@ function anchorRows() {
   return rows;
 }
 
-// Every line in the file the label could be pointing at. A label that matches
+// Every line in the file a label could be pointing at. A label that matches
 // more than one place does not identify anything, and an anchor is only
 // trustworthy if it is the single answer to "where is this?".
-function matchingLines(row, raw, stripped) {
-  const src = labelAllowsComment(row.cell, row.probe) ? raw : stripped;
+function hitsFor(probe, raw, stripped) {
+  const src = probe.allowComment ? raw : stripped;
   const hits = [];
   for (let i = 0; i < src.length; i++) {
-    if (matches(src[i], row.probe)) hits.push(i + 1);
+    if (matches(src[i], probe.text)) hits.push(i + 1);
   }
   return hits;
 }
 
+function matchingLines(row, raw, stripped) {
+  const all = new Set();
+  for (const probe of row.probes) for (const n of hitsFor(probe, raw, stripped)) all.add(n);
+  return Array.from(all).sort((a, b) => a - b);
+}
+
 test('every code-map anchor points at the declaration it names', () => {
   const raw = fs.readFileSync(SOURCE_PATH, 'utf8').split(/\r?\n/);
-  const stripped = stripComments(raw);
-  const rows = anchorRows();
+  const stripped = strippedLines(raw);
+  const rows = anchorRows(stripped);
   assert.ok(rows.length > 50, `the map yielded only ${rows.length} anchored rows — the table shape may have changed`);
 
   const wrong = [];
   for (const row of rows) {
-    const hits = matchingLines(row, raw, stripped);
-    const inRange = hits.filter((n) => n >= row.start && n <= row.end);
     const span = `${row.start}${row.end !== row.start ? '-' + row.end : ''}`;
-    if (inRange.length === 0) {
-      wrong.push(`code-map.md:${row.mapLine} anchors "${row.probe.slice(0, 60)}" at ${span}, ` +
+    // Every symbol the label names, not just the first.
+    for (const probe of row.probes) {
+      const hits = hitsFor(probe, raw, stripped);
+      if (hits.some((n) => n >= row.start && n <= row.end)) continue;
+      wrong.push(`code-map.md:${row.mapLine} anchors "${probe.text.slice(0, 60)}" at ${span}, ` +
         `which reads: ${(raw[row.start - 1] || '(past end of file)').trim().slice(0, 60)}` +
         (hits.length ? ` — it is really at ${hits.join(', ')}` : ' — no line in the file matches it'));
     }
@@ -158,15 +171,37 @@ test('every code-map anchor points at the declaration it names', () => {
   assert.deepStrictEqual(wrong, [], `stale code-map anchors:\n  ${wrong.join('\n  ')}`);
 });
 
+test('a code-map range is exactly the lines it documents, not a net cast wide', () => {
+  // Nothing else bounds range width: `| init() | 1-1933 |` contains every
+  // matching line and would otherwise pass, sending a reader to the right
+  // code but with no useful precision. The range must be the span of what the
+  // label names — first named line to last, nothing spare on either side.
+  const raw = fs.readFileSync(SOURCE_PATH, 'utf8').split(/\r?\n/);
+  const stripped = strippedLines(raw);
+
+  const loose = [];
+  for (const row of anchorRows(stripped)) {
+    const hits = matchingLines(row, raw, stripped);
+    if (hits.length === 0) continue; // reported by the anchor test
+    const first = hits[0];
+    const last = hits[hits.length - 1];
+    if (row.start !== first || row.end !== last) {
+      loose.push(`code-map.md:${row.mapLine} "${row.probe.slice(0, 46)}" spans ` +
+        `${row.start}-${row.end} but what it names lives at ${first}-${last}`);
+    }
+  }
+  assert.deepStrictEqual(loose, [], `code-map ranges wider than what they document:\n  ${loose.join('\n  ')}`);
+});
+
 test('no code-map label matches more than one place in the file', () => {
   // An anchor that happens to be right is not the same as a label that can
   // only mean one thing. A label matching several lines can be moved to any
   // of them and still verify, which is how a wrong anchor survives a check.
   const raw = fs.readFileSync(SOURCE_PATH, 'utf8').split(/\r?\n/);
-  const stripped = stripComments(raw);
+  const stripped = strippedLines(raw);
 
   const ambiguous = [];
-  for (const row of anchorRows()) {
+  for (const row of anchorRows(stripped)) {
     const hits = matchingLines(row, raw, stripped);
     const outside = hits.filter((n) => n < row.start || n > row.end);
     if (outside.length > 0) {
@@ -185,7 +220,7 @@ test('a declaration label cannot be satisfied by a comment quoting it', () => {
     "  const url = 'https://example.invalid//not-a-comment';",
     "  /* function init() { */",
   ];
-  const stripped = stripComments(raw);
+  const stripped = strippedLines(raw);
   const probe = probeOf('`init()` — re-entrant');
   assert.strictEqual(matches(stripped[0], probe), false, 'a comment satisfied a declaration label');
   assert.strictEqual(matches(stripped[1], probe), true, 'the real declaration stopped verifying');
@@ -213,6 +248,28 @@ test('the anchor check tells a call site from its declaration, in both direction
 
   // A bare closing brace must never satisfy a label that happens to contain one.
   assert.strictEqual(matches('  }', probeOf('IIFE close `})();`')), false, 'a stray brace satisfied a label');
+});
+
+test('every test count the code-map states is the real one', () => {
+  // The row documenting the debug report's own coverage claimed 26 tests
+  // against 24 actual, and 22 against 21 before that — a false number in the
+  // round that was closing false claims. Numbers nothing verifies drift, so
+  // either they get checked or they should not be written down.
+  const rows = fs.readFileSync(MAP_PATH, 'utf8').split(/\r?\n/);
+  const wrong = [];
+  rows.forEach((line, i) => {
+    const m = line.match(/^\|\s*`(tests\/[\w.-]+\.test\.js)`\s*\|(.*)\|\s*$/);
+    if (!m) return;
+    const claimed = m[2].match(/\((\d+) tests?\)/);
+    if (!claimed) return;
+    const file = path.join(__dirname, '..', m[1]);
+    if (!fs.existsSync(file)) { wrong.push(`code-map.md:${i + 1} names ${m[1]}, which does not exist`); return; }
+    const actual = (fs.readFileSync(file, 'utf8').match(/^test\(/gm) || []).length;
+    if (actual !== Number(claimed[1])) {
+      wrong.push(`code-map.md:${i + 1} claims ${m[1]} has ${claimed[1]} tests; it has ${actual}`);
+    }
+  });
+  assert.deepStrictEqual(wrong, [], `code-map test counts are wrong:\n  ${wrong.join('\n  ')}`);
 });
 
 test('the code-map records the userscript length it was generated against', () => {
