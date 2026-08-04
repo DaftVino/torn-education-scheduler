@@ -92,31 +92,37 @@ test('tolerates a payload with no active course', () => {
   assert.strictEqual(exports.parsePayload(raw).activeCourse, null);
 });
 
-test('harness passes Promises through untouched', async () => {
-  // Verify that wrapping functions do not flatten Promises into plain objects.
-  // A Promise is typeof 'object' and has no VM realm prototype, so it must
-  // pass through the wrapper without being reconstructed.
-  const mainRealmPromise = Promise.resolve({ ok: true });
-  const result = await mainRealmPromise;
-  assert.deepStrictEqual(result, { ok: true });
-  assert.strictEqual(typeof mainRealmPromise.then, 'function');
+test('transform rebuilds vm-realm objects so deepStrictEqual can compare them', () => {
+  const { transform, runInVm } = loadUserscript();
+  const vmObj = runInVm('({ a: 1, b: [2, 3] })');
+  assert.notStrictEqual(Object.getPrototypeOf(vmObj), Object.prototype,
+    'precondition: a vm-realm literal must not share the main realm prototype');
+  const plain = transform(vmObj);
+  assert.strictEqual(Object.getPrototypeOf(plain), Object.prototype);
+  assert.deepStrictEqual(plain, { a: 1, b: [2, 3] });
 });
 
-test('harness preserves identity of foreign objects', () => {
-  // Verify that the wrapper does not deep-copy main-realm objects that
-  // pass through it. A stub or external object must maintain identity so
-  // that strictEqual assertions in downstream tests work.
-  const { exports } = loadUserscript();
-  const stub = { sentinel: true };
-  // isEducationPage returns a boolean (primitive), but test the invariant:
-  // if an export function received a foreign object and returned it, the
-  // returned value must be the same reference.
-  assert.strictEqual(typeof exports.isEducationPage, 'function');
-  assert.strictEqual(stub, stub, 'object identity must be preserved');
-  // Verify a Promise constructed outside the VM stays a Promise when passed through
-  const externalPromise = Promise.resolve(42);
-  // (we can't directly test passing external object through exports without modifying
-  // the userscript, but the prototype check ensures it: if getPrototypeOf(value) is
-  // neither vmObjectProto nor vmArrayProto, we return value unchanged)
-  assert.strictEqual(typeof externalPromise.then, 'function');
+test('transform passes thenables through by identity', () => {
+  const { transform } = loadUserscript();
+  const promise = Promise.resolve({ ok: true });
+  assert.strictEqual(transform(promise), promise);
+  const thenable = { then: function (cb) { cb(1); } };
+  assert.strictEqual(transform(thenable), thenable);
+});
+
+test('transform passes main-realm objects through by identity', () => {
+  const { transform } = loadUserscript();
+  const foreign = { sentinel: true, nested: { deep: 1 } };
+  assert.strictEqual(transform(foreign), foreign);
+  assert.strictEqual(transform(foreign).nested, foreign.nested);
+});
+
+test('transform keeps Map and Set as Map and Set with contents rebuilt', () => {
+  const { transform, runInVm } = loadUserscript();
+  const out = transform(runInVm('new Map([[1, { x: 1 }]])'));
+  assert.ok(out instanceof Map);
+  assert.deepStrictEqual(out.get(1), { x: 1 });
+  const set = transform(runInVm('new Set([{ y: 2 }])'));
+  assert.ok(set instanceof Set);
+  assert.deepStrictEqual([...set], [{ y: 2 }]);
 });
