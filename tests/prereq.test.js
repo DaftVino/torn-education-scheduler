@@ -86,3 +86,12 @@ test('an empty queue validates clean', () => {
   const { exports, courses, completedIds } = setup();
   assert.deepStrictEqual(exports.validateQueue([], completedIds, courses), []);
 });
+
+test('a cyclic prerequisite graph terminates instead of hanging the tab', () => {
+  const { exports, courses, completedIds } = setup();
+  // Torn's data is acyclic today, but a corrupt or changed payload must not
+  // freeze the page. 32 → 26 → 22 is a real chain; point 22 back at 32 to
+  // close the loop.
+  courses.get(22).parentId = 32;
+  assert.deepStrictEqual(exports.unmetPrerequisites(32, completedIds, courses), [22, 26, 32]);
+});
