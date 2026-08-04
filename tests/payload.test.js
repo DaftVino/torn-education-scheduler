@@ -106,6 +106,37 @@ test('rejects an active course whose id is null', () => {
   assert.throws(() => exports.parsePayload(raw), (err) => err.reason === 'bad-active-course');
 });
 
+test('rejects an active course completedAt given in milliseconds, not seconds', () => {
+  const { exports } = loadUserscript();
+  const raw = loadFixture();
+  // The fixture's real value (1767225600) times 1000 — a plausible-looking
+  // integer that isInt alone would wave through, and the exact corruption
+  // that would otherwise land a finish date around the year 57970.
+  raw.activeCourse.completedAt = 1767225600000;
+  assert.throws(() => exports.parsePayload(raw), (err) => err.reason === 'bad-active-course');
+});
+
+test('rejects an active course completedAt of 0', () => {
+  const { exports } = loadUserscript();
+  const raw = loadFixture();
+  raw.activeCourse.completedAt = 0;
+  assert.throws(() => exports.parsePayload(raw), (err) => err.reason === 'bad-active-course');
+});
+
+test('rejects a negative active course completedAt', () => {
+  const { exports } = loadUserscript();
+  const raw = loadFixture();
+  raw.activeCourse.completedAt = -1767225600;
+  assert.throws(() => exports.parsePayload(raw), (err) => err.reason === 'bad-active-course');
+});
+
+test('accepts the fixture\'s real completedAt — the range check must not reject valid data', () => {
+  const { exports } = loadUserscript();
+  const raw = loadFixture();
+  assert.strictEqual(raw.activeCourse.completedAt, 1767225600);
+  assert.strictEqual(exports.parsePayload(raw).activeCourse.completedAt, 1767225600);
+});
+
 test('transform rebuilds vm-realm objects so deepStrictEqual can compare them', () => {
   const { transform, runInVm } = loadUserscript();
   const vmObj = runInVm('({ a: 1, b: [2, 3] })');
