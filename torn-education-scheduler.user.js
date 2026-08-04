@@ -242,6 +242,47 @@
     }
   }
 
+  // Same-origin, so the session cookie rides along and no @connect is needed.
+  // Always resolves: the panel must be able to say what went wrong, and a
+  // rejected promise here would surface as a blank panel instead.
+  async function fetchEducationData(fetchImpl) {
+    const doFetch = fetchImpl || (typeof fetch === 'function' ? fetch : null);
+    if (!doFetch) return { ok: false, reason: 'network', detail: 'no fetch available' };
+
+    let response;
+    try {
+      response = await doFetch(EDU_ENDPOINT, {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+    } catch (e) {
+      return { ok: false, reason: 'network', detail: String(e && e.message ? e.message : e) };
+    }
+
+    if (!response) return { ok: false, reason: 'network', detail: 'empty response' };
+    if (!response.ok) return { ok: false, reason: 'http', detail: `status ${response.status}` };
+
+    let text;
+    try {
+      text = await response.text();
+    } catch (e) {
+      return { ok: false, reason: 'network', detail: 'could not read response body' };
+    }
+
+    let raw;
+    try {
+      raw = JSON.parse(text);
+    } catch (e) {
+      return { ok: false, reason: 'not-json', detail: text.slice(0, 80) };
+    }
+
+    try {
+      return { ok: true, data: parsePayload(raw) };
+    } catch (e) {
+      return { ok: false, reason: e.reason || 'not-a-payload', detail: e.message };
+    }
+  }
+
   function isEducationPage() {
     return typeof location !== 'undefined'
       && location.pathname === '/page.php'
