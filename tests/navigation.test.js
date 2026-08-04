@@ -87,6 +87,33 @@ function makeFakeDocument() {
   };
 }
 
+// A document that throws on every query but can still build and hold elements:
+// exactly the case findMountPoint's try/catch exists for, and the only case in
+// which the "could not read the page" error can be shown at all.
+function hostileDocument() {
+  const doc = makeFakeDocument();
+  doc.querySelector = function () { throw new Error('host document is hostile'); };
+  doc.querySelectorAll = function () { throw new Error('host document is hostile'); };
+  return doc;
+}
+
+// A page that swallows whatever we append: querySelector never finds the panel,
+// so every sync sees a missing panel and wants to remount. This is what the
+// attempt cap is for.
+function neverFindsDocument() {
+  const doc = makeFakeDocument();
+  doc.querySelector = function () { return null; };
+  return doc;
+}
+
+function collectText(node, out) {
+  const acc = out || [];
+  if (!node || typeof node !== 'object') return acc;
+  if (typeof node.textContent === 'string' && node.textContent) acc.push(node.textContent);
+  for (const child of node.children || []) collectText(child, acc);
+  return acc;
+}
+
 const okFetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) });
 
 // init() is async and awaits the acquisition chain; a route change only starts
@@ -218,20 +245,38 @@ test('observer churn while already mounted does not re-acquire the data', async 
   const doc = makeFakeDocument();
   let fetches = 0;
   const countingFetch = async (...args) => { fetches += 1; return okFetch(...args); };
-  const { win, runTimers } = loadUserscript({ document: doc, fetch: countingFetch });
+  const { win, observers, runTimers } = loadUserscript({ document: doc, fetch: countingFetch });
   await flush();
   assert.strictEqual(fetches, 1, 'the initial mount did not fetch exactly once');
+  assert.strictEqual(observers.length, 1, 'the bootstrap installed no MutationObserver');
 
+  // Both live signals, not just the back button: on a real page the observer is
+  // the one that fires constantly.
   for (let i = 0; i < 20; i += 1) {
+    observers[0].cb([], observers[0]);
     win.fire('popstate');
     runTimers();
+    await flush();
   }
-  await flush();
   assert.strictEqual(fetches, 1, 'a mounted panel re-fetched on DOM churn — this is a request storm against Torn');
 });
 
-test('init() does not reject when the host document throws on every query', async () => {
-  const hostile = {
+test('a host document that throws on every query renders a named error rather than nothing', async () => {
+  // The guard is only worth having if it produces the visible failure the repo
+  // requires. Reverting findMountPoint's try/catch must fail THIS test — the
+  // bootstrap's own .catch would otherwise absorb the rejection and leave a
+  // blank page that no assertion notices.
+  const hostile = hostileDocument();
+  const { exports: x } = loadUserscript({ location: { search: '' }, document: hostile });
+  const panel = await x.init();
+  assert.ok(panel, 'init() drew nothing for a document it could still build elements in');
+  const text = collectText(panel).join(' ');
+  assert.match(text, /could not read the page/i, 'the failure was not named in the panel');
+  assert.match(text, /hostile/, 'the underlying reason was not carried into the panel');
+});
+
+test('init() does not reject when the host document has nowhere left to draw', async () => {
+  const nowhere = {
     readyState: 'complete',
     querySelector() { throw new Error('host document is hostile'); },
     querySelectorAll() { throw new Error('host document is hostile'); },
@@ -241,30 +286,204 @@ test('init() does not reject when the host document throws on every query', asyn
   };
   // location.search is cleared so the bootstrap does not race this call; the
   // point of the test is that init() itself never rejects.
-  const { exports: x } = loadUserscript({ location: { search: '' }, document: hostile });
+  const { exports: x } = loadUserscript({ location: { search: '' }, document: nowhere });
   await assert.doesNotReject(() => x.init(), 'init() rejected on a hostile document');
+  assert.strictEqual(await x.init(), null, 'init() must resolve null when there is nowhere to draw');
 });
 
-test('a hostile document does not leave the bootstrap with an unhandled rejection', async () => {
+test('a hostile document leaves the bootstrap with a visible error and no unhandled rejection', async () => {
   const rejections = [];
   const onUnhandled = (reason) => { rejections.push(reason); };
   process.on('unhandledRejection', onUnhandled);
+  let hostile;
+  let win;
   try {
-    const hostile = {
-      readyState: 'complete',
-      querySelector() { throw new Error('host document is hostile'); },
-      querySelectorAll() { throw new Error('host document is hostile'); },
-      createElement() { throw new Error('host document is hostile'); },
-      addEventListener() {},
-      get body() { throw new Error('host document is hostile'); },
-    };
-    const { win, runTimers } = loadUserscript({ document: hostile });
+    hostile = hostileDocument();
+    const loaded = loadUserscript({ document: hostile, fetch: okFetch });
+    win = loaded.win;
     await flush();
     win.fire('popstate');
-    runTimers();
+    loaded.runTimers();
     await flush();
   } finally {
     process.off('unhandledRejection', onUnhandled);
   }
   assert.deepStrictEqual(rejections, [], 'the bootstrap produced an unhandled rejection');
+  const text = collectText(hostile.body).join(' ');
+  assert.match(text, /could not read the page/i, 'the bootstrap swallowed the failure silently');
+});
+
+test('a mount whose render lands after the player has left does not orphan the panel', async () => {
+  // mounted is set synchronously but init() awaits the network. If the route
+  // changes during that await, the unmount runs against a panel that does not
+  // exist yet, and the late render would paste the panel onto an unrelated page
+  // with nothing left to take it away.
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const heldFetch = async () => { await held; return okFetch(); };
+  const doc = makeFakeDocument();
+  const { win, runTimers } = loadUserscript({ document: doc, fetch: heldFetch });
+  await flush();
+  assert.strictEqual(doc.querySelector('#tes-panel'), null, 'the panel drew before the fetch resolved');
+
+  win.location.search = '?sid=crimes';
+  win.fire('popstate');
+  runTimers();
+  await flush();
+
+  release();
+  await flush();
+
+  assert.strictEqual(doc.querySelector('#tes-panel'), null, 'a late render orphaned the panel on another page');
+  assert.strictEqual(doc.querySelector('#tes-fallback-mount'), null, 'a late render orphaned the fallback mount on another page');
+
+  // And it stays gone through further churn — the orphan must not be something
+  // only the next navigation happens to clean up.
+  win.fire('popstate');
+  runTimers();
+  await flush();
+  assert.strictEqual(doc.querySelector('#tes-panel'), null, 'the orphaned panel came back');
+});
+
+test('a re-render that drops the panel while the route never changed remounts it', async () => {
+  const doc = makeFakeDocument();
+  let fetches = 0;
+  const countingFetch = async () => { fetches += 1; return okFetch(); };
+  const { observers, runTimers } = loadUserscript({ document: doc, fetch: countingFetch });
+  await flush();
+  const panel = doc.querySelector('#tes-panel');
+  assert.ok(panel, 'the panel never mounted');
+
+  // Torn reconciles the container we mounted into and our node goes with it.
+  panel.remove();
+  assert.strictEqual(doc.querySelector('#tes-panel'), null);
+
+  assert.strictEqual(observers.length, 1, 'the bootstrap installed no MutationObserver');
+  observers[0].cb([], observers[0]);
+  runTimers();
+  await flush();
+
+  assert.ok(doc.querySelector('#tes-panel'), 'a dropped panel was never remounted');
+  assert.strictEqual(fetches, 2, 'the remount did not re-acquire, or acquired more than once');
+});
+
+test('a page the panel can never be found in stops remounting at the cap', async () => {
+  const doc = neverFindsDocument();
+  let fetches = 0;
+  const countingFetch = async () => { fetches += 1; return okFetch(); };
+  const { win, runTimers } = loadUserscript({ document: doc, fetch: countingFetch });
+  await flush();
+
+  for (let i = 0; i < 50; i += 1) {
+    win.fire('popstate');
+    runTimers();
+    await flush();
+  }
+  assert.strictEqual(fetches, 20, 'the mount attempt cap did not hold — this loops for the whole session');
+
+  // Leaving and returning is a new visit and gets a fresh budget.
+  win.location.search = '?sid=crimes';
+  win.fire('popstate');
+  runTimers();
+  await flush();
+  win.location.search = '?sid=education';
+  win.fire('popstate');
+  runTimers();
+  await flush();
+  assert.strictEqual(fetches, 21, 'a new visit did not get a fresh mount budget');
+});
+
+test('churn while a mount is still in flight does not start a second acquisition', async () => {
+  // The window between "mounted" and "the panel exists" is exactly when the
+  // remount rule would otherwise see a missing panel and mount again, once per
+  // debounce tick, for as long as the network takes.
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let fetches = 0;
+  const heldFetch = async () => { fetches += 1; await held; return okFetch(); };
+  const doc = makeFakeDocument();
+  const { win, observers, runTimers } = loadUserscript({ document: doc, fetch: heldFetch });
+  await flush();
+  assert.strictEqual(fetches, 1, 'the initial mount did not fetch exactly once');
+
+  for (let i = 0; i < 5; i += 1) {
+    observers[0].cb([], observers[0]);
+    win.fire('popstate');
+    runTimers();
+    await flush();
+  }
+  assert.strictEqual(fetches, 1, 'churn during an in-flight mount started another acquisition');
+
+  release();
+  await flush();
+  assert.ok(doc.querySelector('#tes-panel'), 'the in-flight mount never finished');
+});
+
+test('remounting does not stack fixed-position fallback containers', async () => {
+  const doc = makeFakeDocument();
+  const { observers, runTimers } = loadUserscript({ document: doc, fetch: okFetch });
+  await flush();
+  const panel = doc.querySelector('#tes-panel');
+  assert.ok(panel, 'the panel never mounted');
+
+  // The panel goes, our fallback mount stays — nothing in Torn's DOM owns it.
+  panel.remove();
+  observers[0].cb([], observers[0]);
+  runTimers();
+  await flush();
+
+  const live = doc.body.children.filter((c) => c.id === 'tes-fallback-mount' && !c.removed);
+  assert.strictEqual(live.length, 1, 'the remount left a second fixed-position container over the site');
+});
+
+test('a mount that had nowhere to draw does not latch the session with no panel', async () => {
+  // init() resolves null rather than rejecting when it cannot create a mount,
+  // so the bootstrap's rejection path never fires. Treating that as a
+  // successful mount would leave mounted = true for the rest of the session:
+  // no panel, no retry, no complaint.
+  const doc = makeFakeDocument();
+  const realAppend = doc.body.appendChild.bind(doc.body);
+  let failuresLeft = 1;
+  doc.body.appendChild = function (child) {
+    if (failuresLeft > 0) { failuresLeft -= 1; throw new Error('nowhere to draw'); }
+    return realAppend(child);
+  };
+
+  const { win, runTimers } = loadUserscript({ document: doc, fetch: okFetch });
+  await flush();
+  assert.strictEqual(doc.querySelector('#tes-panel'), null, 'the first mount was supposed to fail');
+
+  win.fire('popstate');
+  runTimers();
+  await flush();
+  assert.ok(doc.querySelector('#tes-panel'), 'a failed mount latched mounted = true and never retried');
+});
+
+test('a sidebar click that only pushStates into education mounts the panel', async () => {
+  // The signal that motivates the whole task: Torn navigates programmatically,
+  // fires no popstate, and reloads nothing.
+  const doc = makeFakeDocument();
+  const { win, runTimers } = loadUserscript({ location: { search: '' }, document: doc, fetch: okFetch });
+  await flush();
+  assert.strictEqual(doc.querySelector('#tes-panel'), null);
+
+  win.location.search = '?sid=education';
+  win.history.pushState({}, '', '/page.php?sid=education');
+  runTimers();
+  await flush();
+  assert.ok(doc.querySelector('#tes-panel'), 'the pushState signal never reached the bootstrap');
+});
+
+test('a route change Torn makes without touching history still mounts the panel', async () => {
+  const doc = makeFakeDocument();
+  const { win, observers, runTimers } = loadUserscript({ location: { search: '' }, document: doc, fetch: okFetch });
+  await flush();
+  assert.strictEqual(observers.length, 1, 'the bootstrap installed no MutationObserver');
+  assert.strictEqual(doc.querySelector('#tes-panel'), null);
+
+  win.location.search = '?sid=education';
+  observers[0].cb([], observers[0]);
+  runTimers();
+  await flush();
+  assert.ok(doc.querySelector('#tes-panel'), 'the MutationObserver signal never reached the bootstrap');
 });

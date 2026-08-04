@@ -785,8 +785,18 @@
   // <style> tag has no reason to churn with it, and re-appending on every
   // draw would grow an unbounded pile of identical <style> tags over a
   // session.
+  // Every render-path lookup against the host document goes through here.
+  // findMountPoint is deliberately not one of them: its throw is the signal
+  // init() turns into a named visible error. Everywhere else a document that
+  // throws on querySelector must degrade to "not found" rather than take the
+  // render down with it — the render is the only thing that can tell the user
+  // anything at all.
+  function queryOne(doc, selector) {
+    try { return doc.querySelector(selector); } catch (e) { return null; }
+  }
+
   function injectStyleOnce(doc) {
-    if (doc.querySelector('#tes-style')) return;
+    if (queryOne(doc, '#tes-style')) return;
     const style = doc.createElement('style');
     style.id = 'tes-style';
     style.textContent = [
@@ -801,14 +811,17 @@
       '  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: inherit; }',
       '#tes-panel button:hover { border-color: #7ee081; }',
     ].join('\n');
-    const parent = doc.head || doc.body;
+    // Reading head/body is a property access on a document we do not own; a
+    // page that throws here must still get its panel.
+    let parent = null;
+    try { parent = doc.head || doc.body; } catch (e) { parent = null; }
     if (parent && parent.appendChild) parent.appendChild(style);
   }
 
   function renderPanel(doc, mount, model, handlers) {
     injectStyleOnce(doc);
 
-    const existing = doc.querySelector('#tes-panel');
+    const existing = queryOne(doc, '#tes-panel');
     if (existing && existing.remove) existing.remove();
 
     const panel = doc.createElement('div');
@@ -934,8 +947,7 @@
   function unmountPanel(doc) {
     if (!doc || typeof doc.querySelector !== 'function') return;
     for (const id of ['#tes-panel', '#tes-fallback-mount']) {
-      let el = null;
-      try { el = doc.querySelector(id); } catch (e) { el = null; }
+      const el = queryOne(doc, id);
       if (el && typeof el.remove === 'function') el.remove();
     }
   }
@@ -944,7 +956,11 @@
   // page load, so @run-at document-idle never runs again and the panel simply
   // is not there. Three signals, because no one of them is reliable alone:
   // history patches catch programmatic navigation, popstate catches the back
-  // button, and the observer catches a re-render that replaces our mount.
+  // button, and the MutationObserver catches a route change Torn makes without
+  // touching history at all — including one where only the page content is
+  // swapped. The observer is a route-change signal only. Noticing that a
+  // re-render dropped our panel while the route never changed is the
+  // bootstrap's job, in syncToRoute below.
   const NAV_INSTALLED_FLAG = '__tesNavInstalled';
 
   function observeNavigation(doc, win, handlers) {
@@ -1120,27 +1136,83 @@
   // injection never runs, and the test fails with no usable hint.
   //
   // init() is re-entrant — it holds no module state — so a route change can
-  // call it again. The mounted flag lives here, at IIFE scope rather than
-  // inside init(), and is what stops the observer (which fires on every DOM
-  // mutation) from turning into a request storm against Torn.
-  let mounted = false;
+  // call it again. All the state that must not be re-entered lives here, at
+  // IIFE scope rather than inside init(), and is what stops the observer
+  // (which fires on every DOM mutation) from turning into a request storm
+  // against Torn.
+  let mounted = false;     // a panel of ours belongs on the page we are on now
+  let inFlight = 0;        // init() calls between their first await and their render
+  let generation = 0;      // bumped on every route transition; a render from an older generation is stale
+  let attempts = 0;        // mount attempts spent on the current visit to education
   let pending = null;
+  // The ceiling on remounts per visit. A page we can never successfully draw
+  // into would otherwise re-acquire every debounce tick, forever.
+  const MAX_MOUNT_ATTEMPTS = 20;
+
+  function panelPresent() {
+    return queryOne(document, '#tes-panel') !== null;
+  }
+
+  function startMount() {
+    // The generation this render belongs to. init() awaits the network, and
+    // the player can leave the education page while it does; a render that
+    // lands after that would paste the panel — and its fixed-position fallback
+    // mount — onto whatever page they are looking at now, with mounted already
+    // false so nothing would ever take it away again.
+    const bornAt = generation;
+    inFlight += 1;
+    // Deliberately re-acquired on every mount rather than cached: the old
+    // mount node does not survive Torn's SPA navigation and the active
+    // course's remaining time keeps moving, so a cached finish date would be
+    // wrong by exactly as long as the player was away.
+    init().then(function (panel) {
+      inFlight -= 1;
+      if (bornAt !== generation) {
+        unmountPanel(document);
+        scheduleSync();
+        return;
+      }
+      // init() resolves null only when there was nowhere to draw at all.
+      // Keeping mounted = true there would claim a panel that does not exist;
+      // the remount rule in syncToRoute already recovers from it, so this line
+      // is belt-and-braces rather than the guarantee, and no test can
+      // distinguish it — it keeps the flag's meaning honest.
+      if (!panel) mounted = false;
+    }, function () {
+      inFlight -= 1;
+      if (bornAt === generation) mounted = false;
+    });
+  }
 
   function syncToRoute() {
-    const onEducation = isEducationPage();
-    if (onEducation && !mounted) {
-      mounted = true;
-      // Deliberately re-acquired on every mount rather than cached: the old
-      // mount node does not survive Torn's SPA navigation and the active
-      // course's remaining time keeps moving, so a cached finish date would be
-      // wrong by exactly as long as the player was away.
-      init().catch(function () { mounted = false; });
+    if (!isEducationPage()) {
+      attempts = 0;
+      if (mounted) {
+        mounted = false;
+        generation += 1;
+        unmountPanel(document);
+      }
       return;
     }
-    if (!onEducation && mounted) {
-      mounted = false;
-      unmountPanel(document);
-    }
+
+    // A mount already on its way owns the outcome; starting a second one here
+    // is the request storm.
+    if (inFlight > 0) return;
+    // The common case by far: the observer fired for something that has
+    // nothing to do with us.
+    if (mounted && panelPresent()) return;
+    // Either we have just arrived, or a React re-render of the container we
+    // mounted into dropped our panel while the route never changed. Both are
+    // fixed by mounting again — under a cap, because a page we cannot draw
+    // into must fail quietly rather than loop.
+    if (attempts >= MAX_MOUNT_ATTEMPTS) return;
+    attempts += 1;
+    generation += 1;
+    mounted = true;
+    // Clears a stranded fallback mount from the attempt that just lost its
+    // panel, so remounting cannot stack fixed-position containers.
+    unmountPanel(document);
+    startMount();
   }
 
   function scheduleSync() {
