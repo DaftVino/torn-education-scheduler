@@ -21,6 +21,10 @@
   const EDU_ENDPOINT = '/page.php?sid=educationInitData';
   const STORAGE_KEY = 'tes:plan';
   const SETTINGS_KEY = 'tes:settings';
+  // The picker's "everything I have left" entry. A string, deliberately: it
+  // shares a field with course ids, and Number('__all__') is NaN rather than a
+  // plausible id, so a missed guard fails visibly instead of queueing course 0.
+  const ALL_COURSES_OPTION = '__all__';
 
   // Resolved post-launch, once the script is published. Until then every
   // consumer guards on null and renders nothing: a wrong link in a diagnostic
@@ -258,6 +262,52 @@
 
     visit(courseId);
     return result;
+  }
+
+  // What the player will have finished by the time a *plan* starts, as opposed
+  // to what they have finished today. The two differ by exactly one thing: the
+  // course being served right now. Nothing queued can begin before it ends —
+  // schedule() starts the queue at activeCourse.completedAt — so for judging a
+  // plan the in-progress course is done.
+  //
+  // unmetPrerequisites answers the other question, "can I start this today?",
+  // where an in-progress course is correctly *not* completed
+  // (tests/prereq.test.js pins that, deliberately). Neither is a softening of
+  // the other: the caller picks the set that matches the question it is asking.
+  // Without this, the Biology bachelor is unqueueable for as long as any
+  // Biology tier-2 course is running — which, for a player on the education
+  // page, is nearly always — and the panel would answer "all remaining courses"
+  // with a plan it then refuses to date.
+  function plannedCompletions(completedIds, courses) {
+    const done = new Set(completedIds);
+    for (const course of courses.values()) {
+      if (course.status === 'inProgress') done.add(course.id);
+    }
+    return done;
+  }
+
+  // "Queue everything I have not done" — the question the community guides and
+  // the old PHP tool both centred on. Folding requiredCoursesFor over the
+  // catalogue rather than sorting the courses directly means the result is a
+  // queue validateQueue accepts, by construction rather than by argument.
+  function allRemainingCourses(completedIds, courses) {
+    // The in-progress course is treated as done, so requiredCoursesFor never
+    // emits it and a course gated on it is still reachable. Completed and
+    // in-progress courses are skipped as roots for the same reason
+    // buildPanelModel drops them from a stored queue: neither is work remaining.
+    const done = plannedCompletions(completedIds, courses);
+    const queued = new Set();
+    const out = [];
+    for (const course of courses.values()) {
+      if (course.status === 'completed' || course.status === 'inProgress') continue;
+      if (queued.has(course.id)) continue;
+      for (const id of requiredCoursesFor(course.id, done, courses)) {
+        if (queued.has(id)) continue;
+        queued.add(id);
+        out.push(id);
+      }
+    }
+    return out;
   }
 
   function validateQueue(queue, completedIds, courses) {
@@ -949,7 +999,14 @@
 
     const finishById = new Map(result.items.map(function (i) { return [i.courseId, i.finishesAt]; }));
 
-    const problems = validateQueue(queue, data.completedIds, data.courses).map(function (problem) {
+    // Judged against what the player will have finished when the queue starts,
+    // not against today: the active course completes first (schedule() begins
+    // the queue at activeCourse.completedAt), so a course gated on it is
+    // followable and must not be reported as a missing prerequisite. Reporting
+    // it would withhold the finish date — the number this tool exists for —
+    // from a plan the player can actually follow.
+    const plannedDone = plannedCompletions(data.completedIds, data.courses);
+    const problems = validateQueue(queue, plannedDone, data.courses).map(function (problem) {
       return {
         courseId: problem.courseId,
         prefix: data.courses.get(problem.courseId).prefix,
@@ -965,11 +1022,17 @@
     for (const course of data.courses.values()) {
       if (course.status === 'completed' || course.status === 'inProgress') continue;
       if (queued.has(course.id)) continue;
+      // Tier-3 courses unlock things and gate on an entire degree, so they have
+      // to stand out among ~115 entries. Styling an <option> is unreliable
+      // across browsers; a text marker in the label is the portable answer.
+      const isBachelor = course.tier === 3;
       addable.push({
         courseId: course.id,
         prefix: course.prefix,
         name: course.name,
+        isBachelor: isBachelor,
         durationLabel: formatDuration(course.duration),
+        label: `${isBachelor ? '[bachelor] ' : ''}${course.prefix} ${course.name} (${formatDuration(course.duration)})`,
       });
     }
     addable.sort(function (a, b) { return a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0; });
@@ -1491,10 +1554,22 @@
     }
 
     const picker = doc.createElement('select');
+    // First, so it is reachable without scrolling a ~115-entry list. Only when
+    // there is something left to add: an entry reading "all remaining (0)"
+    // invites a click that can do nothing.
+    if (model.addable.length > 0) {
+      const allOpt = doc.createElement('option');
+      allOpt.value = ALL_COURSES_OPTION;
+      allOpt.textContent = `— all remaining courses (${model.addable.length}) —`;
+      if (model.selectedCourseId === ALL_COURSES_OPTION) allOpt.selected = true;
+      picker.appendChild(allOpt);
+    }
     for (const option of model.addable) {
       const opt = doc.createElement('option');
       opt.value = String(option.courseId);
-      opt.textContent = `${option.prefix} ${option.name} (${option.durationLabel})`;
+      // The label already carries the bachelor marker, built once in the model
+      // rather than reassembled per render. textContent, never innerHTML.
+      opt.textContent = option.label;
       // Rebuilding the list on every draw would otherwise reset the
       // scroll position back to the top of a ~130-entry list on every add.
       if (model.selectedCourseId != null && option.courseId === model.selectedCourseId) {
@@ -1513,6 +1588,10 @@
         // Number('') is 0 — a valid-looking integer that is not a real
         // selection. Guard on the selection itself, not just its shape.
         if (picker.value === '') return;
+        // Before the numeric conversion, not after: the sentinel is a string
+        // and Number() would turn it into NaN, which the integer guard would
+        // then swallow silently.
+        if (picker.value === ALL_COURSES_OPTION) { handlers.onAddAll(); return; }
         const chosen = Number(picker.value);
         if (Number.isInteger(chosen)) handlers.onAdd(chosen);
       });
@@ -1631,6 +1710,7 @@
 
   const noopHandlers = {
     onToggle: function () {}, onAdd: function () {}, onRemove: function () {},
+    onAddAll: function () {},
     onPickerChange: function () {}, onViewChange: function () {},
     onSettingChange: function () {},
     onToggleDebugReport: function () {}, onCopyDebugReport: function () {},
@@ -1750,12 +1830,26 @@
             // player picked — the panel must never invite a plan validateQueue
             // will reject. requiredCoursesFor already excludes completed
             // courses and ends with courseId itself; only skip what is
-            // already queued so existing order is preserved.
+            // already queued so existing order is preserved. It is handed
+            // plannedCompletions rather than completedIds so it never emits the
+            // course being served now — buildPanelModel would strip that from
+            // the queue as stale, leaving whatever depended on it stranded.
             const data = fetchResult.ok ? fetchResult.data : null;
             const required = data
-              ? requiredCoursesFor(courseId, data.completedIds, data.courses)
+              ? requiredCoursesFor(courseId, plannedCompletions(data.completedIds, data.courses), data.courses)
               : [courseId];
             const toAdd = required.filter(function (id) { return currentPlan.queue.indexOf(id) === -1; });
+            if (toAdd.length === 0) return;
+            commit({ queue: currentPlan.queue.concat(toAdd), collapsed: currentPlan.collapsed });
+          },
+          // The whole catalogue, in an order validateQueue accepts, appended
+          // after whatever is already queued — adding everything must not
+          // reorder or discard a plan the player already built.
+          onAddAll: function () {
+            const data = fetchResult.ok ? fetchResult.data : null;
+            if (!data) return;
+            const everything = allRemainingCourses(data.completedIds, data.courses);
+            const toAdd = everything.filter(function (id) { return currentPlan.queue.indexOf(id) === -1; });
             if (toAdd.length === 0) return;
             commit({ queue: currentPlan.queue.concat(toAdd), collapsed: currentPlan.collapsed });
           },
@@ -1766,6 +1860,10 @@
             });
           },
           onPickerChange: function (value) {
+            // The sentinel is preserved rather than coerced: Number('__all__')
+            // is NaN, so the integer guard below would reset the picker to the
+            // top of the list on the next redraw.
+            if (value === ALL_COURSES_OPTION) { selectedCourseId = ALL_COURSES_OPTION; return; }
             const parsed = Number(value);
             selectedCourseId = Number.isInteger(parsed) ? parsed : null;
           },
