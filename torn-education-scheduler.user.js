@@ -38,6 +38,21 @@
     return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v;
   }
 
+  // Sane Unix-seconds bounds for activeCourse.completedAt:
+  // 2020-01-01T00:00:00Z (1577836800) to 2100-01-01T00:00:00Z (4102444800).
+  // Torn launched well after the lower bound and this script will be long
+  // dead before the upper one, so any real completedAt sits comfortably
+  // between them. The pair exists for one specific corruption: a backend
+  // that starts sending milliseconds instead of seconds. isInt alone waves
+  // that through — a millisecond timestamp is still a perfectly good
+  // integer — and it would silently multiply the finish date out by a
+  // factor of ~1000 (e.g. the year 57970 instead of 2026) with no error.
+  // A millisecond value for "now" is on the order of 1.7e12, three orders
+  // of magnitude past MAX_COMPLETED_AT, so it falls outside these bounds
+  // and gets rejected here instead of shipped to the player as a real date.
+  const MIN_COMPLETED_AT = 1577836800; // 2020-01-01T00:00:00Z
+  const MAX_COMPLETED_AT = 4102444800; // 2100-01-01T00:00:00Z
+
   function normaliseCourse(raw, categoryId) {
     if (!raw || !isInt(raw.id)) throw PayloadError('bad-course', 'missing id');
     if (!isInt(raw.originDuration) || !isInt(raw.actualDuration)) {
@@ -109,6 +124,13 @@
     if (active !== null && active !== undefined) {
       if (!isInt(active.id) || !isInt(active.completedAt)) {
         throw PayloadError('bad-active-course', 'id and completedAt must both be integers');
+      }
+      if (active.completedAt < MIN_COMPLETED_AT || active.completedAt > MAX_COMPLETED_AT) {
+        throw PayloadError(
+          'bad-active-course',
+          `completedAt ${active.completedAt} is outside the sane Unix-seconds range ` +
+          `${MIN_COMPLETED_AT}-${MAX_COMPLETED_AT} (2020-2100) — looks like milliseconds or a corrupt value`
+        );
       }
       activeCourse = { id: active.id, categoryId: active.category, name: active.name, completedAt: active.completedAt };
     }
