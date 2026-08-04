@@ -36,12 +36,16 @@ const EXPORT_NAMES = [
   'schedule',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
+  // settings
+  'SETTINGS_KEY', 'normaliseSettings', 'freshSettings', 'loadSettings', 'saveSettings',
   // adapter
   'fetchEducationData',
   // acquisition
   'looksLikePayload', 'searchForPayload', 'newWalkState', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
   'formatTimestamp', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
+  // views
+  'renderScheduleView', 'renderSettingsView', 'renderGridView',
   // navigation
   'unmountPanel', 'observeNavigation',
 ];
