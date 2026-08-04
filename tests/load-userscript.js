@@ -50,6 +50,8 @@ const EXPORT_NAMES = [
   'renderScheduleView', 'renderSettingsView', 'renderGridView',
   // navigation
   'unmountPanel', 'observeNavigation',
+  // debug report and the (still unresolved) guide links
+  'GREASY_FORK_URL', 'FORUM_POST_URL', 'buildDebugReport', 'gatherDebugContext',
 ];
 
 function buildInstrumentedSource() {

@@ -22,6 +22,12 @@
   const STORAGE_KEY = 'tes:plan';
   const SETTINGS_KEY = 'tes:settings';
 
+  // Resolved post-launch, once the script is published. Until then every
+  // consumer guards on null and renders nothing: a wrong link in a diagnostic
+  // is worse than an obvious placeholder, because it looks like it works.
+  const GREASY_FORK_URL = null;
+  const FORUM_POST_URL = null;
+
   // ─── ENGINE START ───────────────────────────────────────────────
   // Pure functions only. No DOM, no network, no GM_*, no ambient clock.
   // Enforced by tests/purity.test.js, which strips comments before scanning —
@@ -487,6 +493,64 @@
     };
   }
 
+  // Built by allowlist, never blocklist. Every value in the report is read
+  // from a named field below; an unrecognised field on the input is ignored
+  // rather than serialised. A blocklist gets one field wrong eventually, and
+  // the failure mode is a player pasting their session into a public forum.
+  //
+  // Deliberately absent: the anti-CSRF token, any raw response body, the
+  // player's completed-course set, and the active course's timing.
+  function buildDebugReport(input) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const show = function (v) {
+      if (v === null || v === undefined) return 'not recorded';
+      if (v === true) return 'yes';
+      if (v === false) return 'no';
+      return String(v);
+    };
+
+    const settings = (src.settings && typeof src.settings === 'object') ? src.settings : null;
+    const perks = (settings && settings.perks) ? settings.perks : {};
+
+    const lines = [
+      'Torn Education Scheduler — debug report',
+      '',
+      `Script version: ${show(src.scriptVersion)}`,
+      `Userscript manager: ${show(src.manager)}`,
+      `Browser: ${show(src.userAgent)}`,
+      '',
+      'Failure',
+      `  Reason: ${show(src.failureReason)}`,
+      `  Detail: ${show(src.failureDetail)}`,
+      `  Data came from: ${show(src.source)}`,
+      '',
+      'Payload shape',
+      `  Courses: ${show(src.courseCount)}`,
+      `  Categories: ${show(src.categoryCount)}`,
+      `  Reduction constant across courses: ${show(src.reductionConstant)}`,
+      `  An active course was present: ${show(src.hasActiveCourse)}`,
+      '',
+      'Settings',
+      `  Max booster cooldown (hours): ${show(settings && settings.maxCooldownHours)}`,
+      `  Books owned: ${show(settings && settings.booksOwned)}`,
+      `  Book price: ${show(settings && settings.bookPrice)}`,
+      `  Job points: ${show(settings && settings.jobPoints)}`,
+      `  Merits reduction (%): ${show(perks.meritsPercent)}`,
+      `  Principal rank: ${show(perks.principal)}`,
+      `  WSU stock block: ${show(perks.wsuBlock)}`,
+      `  Queue order: ${show(settings && settings.orderMode)}`,
+      '',
+      'Queue',
+      `  Length: ${show(src.queueLength)}`,
+      // Joined with a space, not a comma, so no run of ids can be mistaken
+      // for the completed-course set this report deliberately withholds.
+      `  Courses: ${Array.isArray(src.queueCodes) && src.queueCodes.length > 0 ? src.queueCodes.join(' ') : 'none'}`,
+      '',
+      'Please paste this into the feedback area on the Greasy Fork page for this script.',
+    ];
+    return lines.join('\n');
+  }
+
   // ─── ENGINE END ─────────────────────────────────────────────────
 
   // ─── RUNTIME ────────────────────────────────────────────────────
@@ -843,6 +907,9 @@
       perkInference: NO_INFERENCE,
       // Task 10 replaces this with the real orderings.
       orderModes: [{ id: 'as-listed', label: 'As listed' }],
+      // Null until the player asks for it. The acquisition failure is exactly
+      // when the report is most wanted, so it is offered on this model too.
+      debugReport: state.debugReport || null,
     };
 
     if (!state.fetchResult.ok) {
@@ -953,6 +1020,42 @@
       perkInference: perkInference,
       // Task 10 replaces this with the real orderings.
       orderModes: [{ id: 'as-listed', label: 'As listed' }],
+      debugReport: state.debugReport || null,
+    };
+  }
+
+  // Every field here is named explicitly. Adding a field to the report means
+  // adding it here and to buildDebugReport, which is the point — nothing
+  // reaches the report by being present on some object that got passed along.
+  //
+  // GM_info is read through a typeof guard and is deliberately NOT added to
+  // @grant: it is ambient in every manager, and a grant would widen the
+  // security surface for a diagnostic nicety. Absent, the report says so.
+  // navigator gets the same guard — it does not exist in the test sandbox,
+  // and an unguarded reference is a ReferenceError that blanks the panel.
+  function gatherDebugContext(state) {
+    const nav = (typeof navigator !== 'undefined') ? navigator : null;
+    const data = (state.fetchResult && state.fetchResult.ok) ? state.fetchResult.data : null;
+    const queue = (state.plan && Array.isArray(state.plan.queue)) ? state.plan.queue : [];
+    return {
+      scriptVersion: SCRIPT_VERSION,
+      userAgent: nav && typeof nav.userAgent === 'string' ? nav.userAgent : null,
+      manager: (typeof GM_info !== 'undefined' && GM_info && GM_info.scriptHandler)
+        ? `${GM_info.scriptHandler} ${GM_info.version || ''}`.trim()
+        : null,
+      failureReason: state.fetchResult && !state.fetchResult.ok ? state.fetchResult.reason : null,
+      failureDetail: state.fetchResult && !state.fetchResult.ok ? state.fetchResult.detail : null,
+      source: state.fetchResult && state.fetchResult.ok ? state.fetchResult.source : null,
+      courseCount: data ? data.courses.size : null,
+      categoryCount: data ? data.categories.length : null,
+      reductionConstant: data ? data.reduction.constant : null,
+      hasActiveCourse: data ? data.activeCourse !== null : null,
+      queueLength: queue.length,
+      queueCodes: data ? queue.map(function (id) {
+        const c = data.courses.get(id);
+        return c ? c.prefix : String(id);
+      }) : [],
+      settings: state.settings || null,
     };
   }
 
@@ -1008,6 +1111,13 @@
       '#tes-panel .tes-note { opacity: 0.75; margin-bottom: 6px; }',
       '#tes-panel input { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
       '  border-radius: 4px; padding: 3px 6px; font-size: inherit; width: 10em; }',
+      // The report is shown before it can be copied, so it needs to be
+      // readable in place: wrapped, scrollable, and visibly a block of text
+      // the player is about to hand to someone else.
+      '#tes-panel .tes-report { white-space: pre-wrap; word-break: break-word; background: #111;',
+      '  border: 1px solid #4a4a4a; border-radius: 4px; padding: 8px; margin: 8px 0; max-height: 240px; overflow: auto; }',
+      '#tes-panel .tes-foot { margin-top: 8px; opacity: 0.7; font-size: 0.95em; }',
+      '#tes-panel a { color: #7ee081; }',
     ].join('\n');
     // Reading head/body is a property access on a document we do not own; a
     // page that throws here must still get its panel.
@@ -1203,6 +1313,47 @@
     }
     modeRow.appendChild(modeSelect);
     planning.appendChild(modeRow);
+
+    const help = settingsSection(doc, body, 'Help');
+
+    // One compact line, and nothing at all while the URL is unresolved — not a
+    // dead link, not a "#" href, not placeholder text pretending to be a link.
+    if (FORUM_POST_URL) {
+      const guide = doc.createElement('div');
+      const link = doc.createElement('a');
+      link.setAttribute('href', FORUM_POST_URL);
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+      link.textContent = 'A beginner’s guide to education — which courses to take first, and why';
+      guide.appendChild(link);
+      const ask = doc.createElement('div');
+      ask.className = 'tes-note';
+      ask.textContent = 'If it helped, a like on the post surfaces it for the next new player.';
+      guide.appendChild(ask);
+      help.appendChild(guide);
+    }
+
+    const reportBtn = doc.createElement('button');
+    reportBtn.textContent = model.debugReport ? 'hide debug report' : 'build debug report';
+    if (reportBtn.addEventListener && handlers.onToggleDebugReport) {
+      reportBtn.addEventListener('click', handlers.onToggleDebugReport);
+    }
+    help.appendChild(reportBtn);
+
+    // Shown before it can be copied. A copy button that hides its payload is
+    // how people leak things they did not know they had.
+    if (model.debugReport) {
+      const pre = doc.createElement('pre');
+      pre.className = 'tes-report';
+      pre.textContent = model.debugReport;
+      help.appendChild(pre);
+      const copy = doc.createElement('button');
+      copy.textContent = 'copy';
+      if (copy.addEventListener && handlers.onCopyDebugReport) {
+        copy.addEventListener('click', handlers.onCopyDebugReport);
+      }
+      help.appendChild(copy);
+    }
   }
 
   // Placeholder until Task 8 fills it in — a line of text rather than nothing,
@@ -1303,6 +1454,21 @@
     }
     body.appendChild(picker);
     body.appendChild(add);
+
+    // One unobtrusive line: a player who needs the guide will not go looking
+    // in settings for it, but the schedule view must not become an advert.
+    // Null URL renders nothing at all, exactly as in the settings view.
+    if (FORUM_POST_URL) {
+      const foot = doc.createElement('div');
+      foot.className = 'tes-foot';
+      const link = doc.createElement('a');
+      link.setAttribute('href', FORUM_POST_URL);
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+      link.textContent = 'New to education? Read the guide.';
+      foot.appendChild(link);
+      body.appendChild(foot);
+    }
   }
 
   // Leaving the education page has to take the panel with it: Torn's SPA
@@ -1384,7 +1550,7 @@
       // never read today. They are here so that stops being load-bearing: a
       // renderer handed this model must not meet an undefined.
       settings: normaliseSettings(null), settingsSaveError: false,
-      perkInference: NO_INFERENCE, orderModes: [],
+      perkInference: NO_INFERENCE, orderModes: [], debugReport: null,
     };
   }
 
@@ -1392,6 +1558,7 @@
     onToggle: function () {}, onAdd: function () {}, onRemove: function () {},
     onPickerChange: function () {}, onViewChange: function () {},
     onSettingChange: function () {},
+    onToggleDebugReport: function () {}, onCopyDebugReport: function () {},
   };
 
   async function init() {
@@ -1465,6 +1632,10 @@
     prefillPerks(fetchResult.ok ? fetchResult.data : null);
 
     let selectedCourseId = null;
+    // Built on demand and never persisted: it is a snapshot of one moment's
+    // failure, and a stale one pasted into a forum thread describes a bug
+    // nobody is looking at any more.
+    let debugReport = null;
     // Held in this closure, not persisted: collapsed is a standing preference,
     // but which view you last opened is not. A player who hides the panel wants
     // it hidden next visit; a player who opened settings once does not want
@@ -1486,6 +1657,7 @@
           settingsSaveFailed: settingsSaveFailed,
           selectedCourseId: selectedCourseId,
           view: view,
+          debugReport: debugReport,
         });
 
         function commit(next) {
@@ -1542,6 +1714,22 @@
             settings = normaliseSettings(next);
             settingsSaveFailed = !saveSettings(settings);
             draw(currentPlan, saveFailed === true);
+          },
+          onToggleDebugReport: function () {
+            debugReport = debugReport
+              ? null
+              : buildDebugReport(gatherDebugContext({ fetchResult: fetchResult, plan: currentPlan, settings: settings }));
+            draw(currentPlan, saveFailed === true);
+          },
+          onCopyDebugReport: function () {
+            if (!debugReport) return;
+            // Clipboard access is not granted and may be refused; the report is
+            // already on screen, so a failed copy costs the player nothing.
+            try {
+              if (typeof navigator !== 'undefined' && navigator && navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(debugReport);
+              }
+            } catch (e) { /* the report is visible; selecting it still works */ }
           },
         });
       } catch (e) {
