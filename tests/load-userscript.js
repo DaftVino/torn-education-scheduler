@@ -36,7 +36,7 @@ const EXPORT_NAMES = [
   // the picker's all-remaining sentinel
   'ALL_COURSES_OPTION',
   // schedule
-  'schedule',
+  'schedule', 'buildDegreeGrid',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
   // settings

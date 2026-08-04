@@ -372,6 +372,79 @@
     return { startsAt: startsAt, items: items, finishesAt: cursor, totalSeconds: totalSeconds };
   }
 
+  // "If I did only this degree, starting now, how long?" — so every box is
+  // computed independently from the same starting point, including the
+  // prerequisites it needs from other categories and skipping what is done.
+  //
+  // The boxes therefore do NOT sum to the all-courses box: degrees share
+  // prerequisites, and a shared course is counted by every degree that needs
+  // it. sumsDiffer carries that fact to the UI, because a reader who adds the
+  // boxes up and gets a different number will assume the tool is broken.
+  //
+  // Declared below allRemainingCourses and schedule, both of which it calls.
+  // Function declarations hoist, so this is not a requirement — it is the
+  // reading order being kept honest.
+  function buildDegreeGrid(options) {
+    const courses = options.courses;
+    const categories = options.categories;
+    const completedIds = options.completedIds;
+    const activeCourse = options.activeCourse;
+    const now = options.now;
+
+    const boxFor = function (key, name, bachelorPrefix, queue) {
+      const result = schedule({ courses: courses, activeCourse: activeCourse, queue: queue, now: now });
+      return {
+        key: key,
+        name: name,
+        bachelorPrefix: bachelorPrefix,
+        courseCount: queue.length,
+        totalSeconds: result.totalSeconds,
+        // schedule() starts its cursor at max(activeCourse.completedAt, now),
+        // so an empty queue would otherwise report the active course's end as
+        // this degree's finish date — a date for work it does not contain.
+        finishesAt: queue.length > 0 ? result.finishesAt : now,
+      };
+    };
+
+    const boxes = [];
+    let summedCount = 0;
+
+    for (const category of categories) {
+      // plannedCompletions, not completedIds. By the time any queued course
+      // runs, the course now in progress has finished, because schedule()
+      // starts its cursor at max(activeCourse.completedAt, now). Gating on
+      // today's completions instead reports a phantom missing prerequisite
+      // for every bachelor in the active course's category.
+      const done = plannedCompletions(completedIds, courses, activeCourse);
+      const queued = new Set();
+      const queue = [];
+      let bachelorPrefix = null;
+
+      for (const courseId of category.courseIds) {
+        const course = courses.get(courseId);
+        if (!course) continue;
+        if (course.tier === 3) bachelorPrefix = course.prefix;
+        if (course.status === 'completed' || course.status === 'inProgress') continue;
+        for (const id of requiredCoursesFor(courseId, done, courses)) {
+          if (queued.has(id)) continue;
+          const required = courses.get(id);
+          if (required && required.status === 'inProgress') continue;
+          queued.add(id);
+          queue.push(id);
+        }
+      }
+
+      summedCount += queue.length;
+      boxes.push(boxFor(category.id, category.name, bachelorPrefix, queue));
+    }
+
+    const everything = allRemainingCourses(completedIds, courses, activeCourse);
+    const allBox = boxFor('all', 'All courses', null, everything);
+    boxes.push(allBox);
+
+    return { boxes: boxes, sumsDiffer: summedCount > allBox.courseCount };
+  }
+
   // Torn's own React tree carries the same education payload the endpoint
   // returns. Path 2 walks that tree when path 1 fails. The walk is the part
   // that can hang a tab, so it lives here as a pure function over a plain
@@ -987,6 +1060,9 @@
       // populated at all, so if it stops being reachable the report's whole
       // Failure block silently becomes "not recorded".
       debugReport: state.debugReport || null,
+      // There is no payload to derive degrees from, so the grid view says so
+      // rather than drawing thirteen empty boxes.
+      grid: null,
     };
 
     if (!state.fetchResult.ok) {
@@ -1057,6 +1133,26 @@
     // two situations the player is in, so a prefilled field is visibly an
     // inference they are invited to correct rather than a value we read off
     // their account.
+    // The grid is independent of the player's queue: each box starts from now
+    // and answers its own question. Labels are built here rather than in the
+    // view, because formatDuration/formatTimestamp are runtime while
+    // buildDegreeGrid is engine.
+    const rawGrid = buildDegreeGrid({
+      courses: data.courses, categories: data.categories, completedIds: data.completedIds,
+      activeCourse: data.activeCourse, now: state.now,
+    });
+    const grid = {
+      sumsDiffer: rawGrid.sumsDiffer,
+      boxes: rawGrid.boxes.map(function (b) {
+        return {
+          key: b.key, name: b.name, bachelorPrefix: b.bachelorPrefix,
+          courseCount: b.courseCount, totalSeconds: b.totalSeconds, finishesAt: b.finishesAt,
+          durationLabel: formatDuration(b.totalSeconds),
+          finishLabel: formatTimestamp(b.finishesAt),
+        };
+      }),
+    };
+
     const inference = inferPerks(data.reduction);
     const perkInference = {
       determinate: inference.determinate,
@@ -1111,6 +1207,7 @@
       // Task 10 replaces this with the real orderings.
       orderModes: [{ id: 'as-listed', label: 'As listed' }],
       debugReport: state.debugReport || null,
+      grid: grid,
     };
   }
 
@@ -1228,6 +1325,15 @@
       // the player is about to hand to someone else.
       '#tes-panel .tes-report { white-space: pre-wrap; word-break: break-word; background: #111;',
       '  border: 1px solid #4a4a4a; border-radius: 4px; padding: 8px; margin: 8px 0; max-height: 240px; overflow: auto; }',
+      // auto-fill rather than a fixed column count: the panel sits inside
+      // Torn's own column, whose width the script does not control.
+      '#tes-panel .tes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: 8px 0; }',
+      '#tes-panel .tes-cell { border: 1px solid #4a4a4a; border-radius: 4px; padding: 8px; }',
+      '#tes-panel .tes-cell-all { border-color: #7ee081; }',
+      '#tes-panel .tes-cell-title { font-weight: bold; margin-bottom: 4px; }',
+      // pre-line, because the detail carries a newline between the duration
+      // and the finish date rather than two elements.
+      '#tes-panel .tes-cell-detail { white-space: pre-line; opacity: 0.85; }',
       '#tes-panel .tes-foot { margin-top: 8px; opacity: 0.7; font-size: 0.95em; }',
       '#tes-panel a { color: #7ee081; }',
     ].join('\n');
@@ -1500,13 +1606,71 @@
     }
   }
 
-  // Placeholder until Task 8 fills it in — a line of text rather than nothing,
-  // because an empty view reads as a broken panel.
+  // One box per degree plus one for everything, each answering the same
+  // question independently: if I did only this, starting now, when would it
+  // finish? Every name here is Torn's, so every one goes in through
+  // textContent.
   function renderGridView(doc, body, model, handlers) {
-    const line = doc.createElement('div');
-    line.className = 'tes-summary';
-    line.textContent = 'Degrees';
-    body.appendChild(line);
+    // A guard on the model contract, not a state this panel produces:
+    // renderPanel reaches this renderer only on a non-error model, and every
+    // non-error model carries a grid. It is here so a renderer handed a model
+    // never meets an undefined — the same reason errorModel carries fields
+    // nothing currently reads.
+    if (!model.grid) {
+      const none = doc.createElement('div');
+      none.className = 'tes-summary';
+      none.textContent = 'No course data, so no degree estimates.';
+      body.appendChild(none);
+      return;
+    }
+
+    const intro = doc.createElement('div');
+    intro.className = 'tes-summary';
+    intro.textContent = 'Each box answers: if I did only this degree, starting now, when would it finish?';
+    body.appendChild(intro);
+
+    const grid = doc.createElement('div');
+    grid.className = 'tes-grid';
+    for (const box of model.grid.boxes) {
+      const cell = doc.createElement('div');
+      cell.className = box.key === 'all' ? 'tes-cell tes-cell-all' : 'tes-cell';
+      const title = doc.createElement('div');
+      title.className = 'tes-cell-title';
+      title.textContent = box.bachelorPrefix ? `${box.name} (${box.bachelorPrefix})` : box.name;
+      cell.appendChild(title);
+      const detail = doc.createElement('div');
+      detail.textContent = box.courseCount === 0
+        ? 'Already complete'
+        : `${box.courseCount} courses — ${box.durationLabel}\n${box.finishLabel}`;
+      detail.className = 'tes-cell-detail';
+      cell.appendChild(detail);
+      grid.appendChild(cell);
+    }
+    body.appendChild(grid);
+
+    // The number on this screen that looks wrong, and it looks wrong every
+    // time: eleven degrees dated 2026 above an all-courses box dated 2029.
+    // Every box starts from today by design — that is the question the view
+    // answers — so the dates overlap and the durations cannot be laid end to
+    // end. Unconditional, because it is unconditionally true.
+    const overlap = doc.createElement('div');
+    overlap.className = 'tes-note';
+    overlap.textContent = 'The dates overlap: each starts from today, as if you did that degree and nothing else, so they cannot be read as a sequence. Doing all of them takes the all-courses box’s time, not the sum of the others.';
+    body.appendChild(overlap);
+
+    // A separate fact, and currently a quiet one: Torn keeps a course's
+    // prerequisites inside its own category, so the boxes do sum today and
+    // this line does not appear. It is here for the catalogue where they stop
+    // doing that — a reader who adds the boxes up, gets a bigger number than
+    // the all-courses box and finds no explanation concludes the tool is
+    // broken. tests/grid.test.js drives both directions through the DOM
+    // against a real shared prerequisite, not by flipping the flag.
+    if (model.grid.sumsDiffer) {
+      const caveat = doc.createElement('div');
+      caveat.className = 'tes-note';
+      caveat.textContent = 'These do not add up to the all-courses total, and should not: degrees share prerequisite courses, so a shared course is counted once by every degree that needs it.';
+      body.appendChild(caveat);
+    }
   }
 
   // The default view: the queue, its finish date, and the add/remove controls.
@@ -1732,7 +1896,7 @@
       // here so the fact stays incidental rather than load-bearing: a renderer
       // handed this model must not meet an undefined.
       settings: normaliseSettings(null), settingsSaveError: false,
-      perkInference: NO_INFERENCE, orderModes: [], debugReport: null,
+      perkInference: NO_INFERENCE, orderModes: [], debugReport: null, grid: null,
     };
   }
 
