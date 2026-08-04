@@ -203,6 +203,45 @@
 
   // ─── RUNTIME ────────────────────────────────────────────────────
 
+  const DEFAULT_PLAN = { queue: [], collapsed: false };
+
+  // GM storage rather than localStorage: a plan can represent months of intent,
+  // so it should survive a site-data clear and stay unreadable by torn.com's
+  // own page scripts.
+  function loadPlan() {
+    let stored;
+    try {
+      stored = GM_getValue(STORAGE_KEY, null);
+    } catch (e) {
+      return { queue: [], collapsed: false };
+    }
+    if (typeof stored !== 'string') return { queue: [], collapsed: false };
+
+    let parsed;
+    try {
+      parsed = JSON.parse(stored);
+    } catch (e) {
+      return { queue: [], collapsed: false };
+    }
+    if (!parsed || !Array.isArray(parsed.queue)) return { queue: [], collapsed: false };
+
+    return {
+      queue: parsed.queue.filter(function (id) { return Number.isInteger(id); }),
+      collapsed: parsed.collapsed === true,
+    };
+  }
+
+  function savePlan(plan) {
+    try {
+      GM_setValue(STORAGE_KEY, JSON.stringify({
+        queue: (plan.queue || []).filter(function (id) { return Number.isInteger(id); }),
+        collapsed: plan.collapsed === true,
+      }));
+    } catch (e) {
+      // Storage failure must not take the panel down with it.
+    }
+  }
+
   function isEducationPage() {
     return typeof location !== 'undefined'
       && location.pathname === '/page.php'

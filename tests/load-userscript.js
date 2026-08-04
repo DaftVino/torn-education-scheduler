@@ -32,6 +32,8 @@ const EXPORT_NAMES = [
   'unmetPrerequisites', 'validateQueue',
   // schedule
   'schedule',
+  // storage
+  'DEFAULT_PLAN', 'loadPlan', 'savePlan',
 ];
 
 function buildInstrumentedSource() {
