@@ -18,6 +18,17 @@ course ends. The script never parses HTML for data.
   this by reading the section and failing on a forbidden reference.
 - **Runtime** — GM storage, the fetch adapter, the panel, and the bootstrap.
 
+There are two notions of "completed" and they must not be merged.
+`unmetPrerequisites` answers "can I start this course today?", where the course
+currently being served is **not** completed; `plannedCompletions` answers "is
+this plan followable?", where it **is**, because nothing queued can begin before
+`activeCourse.completedAt` and the schedule already starts there. Collapsing
+them either way is a bug: use the first for a plan and a degree gated on the
+active course is permanently unqueueable, use the second for a start check and
+the panel invites a course the player cannot begin. The promotion is gated on
+`activeCourse` naming the course, so a course marked in progress with no
+completion time anywhere withholds the finish date rather than under-counting it.
+
 Because `actualDuration` already carries the player's perk reduction, the
 finish date is `activeCourse.completedAt` plus a sum over the queue. That sum
 is order-independent, which is why ordering features are about time-to-benefit

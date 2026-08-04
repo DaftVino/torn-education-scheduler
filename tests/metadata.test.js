@@ -28,6 +28,15 @@ test('@match and @grant are exactly the declared security surface', () => {
   assert.strictEqual(/^\/\/ @connect/m.test(src), false, '@connect must not be present');
 });
 
+test('@downloadURL and @updateURL are absent, and stay that way', () => {
+  // There is no deploy target — the release is a tag plus the raw file URL —
+  // so neither directive belongs here. Both are correctly absent today; this
+  // guards against a future edit adding either silently.
+  const src = fs.readFileSync(SOURCE_PATH, 'utf8');
+  assert.strictEqual(/^\/\/ @downloadURL/m.test(src), false, '@downloadURL must not be present');
+  assert.strictEqual(/^\/\/ @updateURL/m.test(src), false, '@updateURL must not be present');
+});
+
 test('the education page guard accepts only the education page', () => {
   const cases = [
     ['?sid=education', true],
