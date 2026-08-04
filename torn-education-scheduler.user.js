@@ -659,27 +659,38 @@
       floorSaving: floorSaving,
       floorSeconds: base - floorSaving,
       floorCost: floorBooks * price,
+      // A price of zero is not a price. SETTINGS_BOUNDS lets bookPrice reach 0
+      // and clearing the field gets there, since Number('') is 0 — so the
+      // arithmetic below is honest and the sentence it produces ("the floor
+      // costs $0") is the single most misleading thing this feature could say.
+      // The distinction is drawn here, in the engine, so every consumer
+      // inherits it rather than each one rediscovering that 0 means "unsaid".
+      priceKnown: price > 0,
     };
   }
 
   // Torn players write money as 5.35b, not 5,346,000,000.
   //
-  // The third element of each unit is whether a value below it may round UP
-  // into it. Two decimal places can carry a number across a unit boundary —
-  // 999,999,999 over a million is 1000.00 — and "$1000m" is a unit nobody
-  // writes. But that promotion must not reach the bottom: below a thousand the
-  // player is reading exact dollars, so 999 stays $999 rather than becoming
-  // $1k.
+  // A unit is reached either by the value passing it outright, or by the unit
+  // BELOW it overflowing — 999,999,999 renders as 1000.00 in millions, and
+  // "$1000m" is a unit nobody writes. The promotion tests the smaller unit's
+  // overflow rather than this unit reaching 1, and the difference is not
+  // cosmetic: "reaching 1" fires from 0.995, so 74 Books at 13.5m
+  // ($999,000,000) would print $1b — a 0.1% overstatement in the one figure
+  // this feature exists to make trustworthy, where $999m was both available
+  // and exact. Nothing promotes into `k`, because below a thousand the player
+  // is reading whole dollars and 999 must stay $999.
+  const MONEY_UNITS = [[1e9, 'b'], [1e6, 'm'], [1e3, 'k']];
   function formatMoney(n) {
     if (!Number.isFinite(n)) return '$0';
     const abs = Math.abs(n);
     const trim = function (v) { return String(Number(v.toFixed(2))); };
-    const units = [[1e9, 'b', true], [1e6, 'm', true], [1e3, 'k', false]];
-    for (const unit of units) {
-      const reached = unit[2]
-        ? Number((abs / unit[0]).toFixed(2)) >= 1
-        : abs >= unit[0];
-      if (reached) return `$${trim(n / unit[0])}${unit[1]}`;
+    for (let i = 0; i < MONEY_UNITS.length; i++) {
+      const scale = MONEY_UNITS[i][0];
+      const below = i + 1 < MONEY_UNITS.length ? MONEY_UNITS[i + 1][0] : null;
+      const reached = abs >= scale
+        || (below !== null && Number((abs / below).toFixed(2)) >= 1000);
+      if (reached) return `$${trim(n / scale)}${MONEY_UNITS[i][1]}`;
     }
     return `$${Math.round(n)}`;
   }
@@ -1296,7 +1307,12 @@
       floorBooks: consumables.floorBooks,
       floorFinishLabel: formatTimestamp(result.startsAt + consumables.floorSeconds),
       floorDurationLabel: formatDuration(consumables.floorSeconds),
-      floorCostLabel: formatMoney(consumables.floorCost),
+      // Withheld rather than rendered as "$0" when no price is set. The rule
+      // this feature turns on is that the floor date never appears without its
+      // cost — and "$0" satisfies the letter of that while defeating its whole
+      // purpose, because it tells the player the floor is free.
+      floorCostKnown: consumables.priceKnown,
+      floorCostLabel: consumables.priceKnown ? formatMoney(consumables.floorCost) : null,
     } : null;
 
     const inference = inferPerks(data.reduction);
@@ -1859,8 +1875,14 @@
         lines.push(`With ${c.plannedBooks} Books of Carols: ${c.plannedFinishLabel} (${c.plannedDurationLabel})`);
       }
       // The cost is not decoration. A floor date without it is a number
-      // nobody can act on.
-      lines.push(`Floor with maximum Books (${c.floorBooks} — ${c.floorCostLabel}): ${c.floorFinishLabel} (${c.floorDurationLabel})`);
+      // nobody can act on — and "$0", which is what an unset price would
+      // arithmetically produce, is worse than no figure at all: it reads as
+      // "the floor is free". Name the gap instead, and say how to close it.
+      const costText = c.floorCostKnown ? c.floorCostLabel : 'cost unknown, no Book price set';
+      lines.push(`Floor with maximum Books (${c.floorBooks} — ${costText}): ${c.floorFinishLabel} (${c.floorDurationLabel})`);
+      if (!c.floorCostKnown) {
+        lines.push('Set a Book price in settings to see what that floor would cost.');
+      }
       lines.push('Books shorten queued course time. Time already running on your current course is not affected.');
       boost.textContent = lines.join('\n');
       body.appendChild(boost);
