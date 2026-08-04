@@ -273,13 +273,18 @@
     try {
       raw = JSON.parse(text);
     } catch (e) {
-      return { ok: false, reason: 'not-json', detail: text.slice(0, 80) };
+      // Never echo the response body. When Torn serves an HTML page here it is
+      // a logged-out or error page, and this repo has already found userID,
+      // logoutHash and a signed JWT inline in that markup. The size and type
+      // are enough to diagnose; the bytes are not ours to put on screen.
+      const shape = typeof text === 'string' ? `${text.length} bytes of non-JSON` : `a ${typeof text}`;
+      return { ok: false, reason: 'not-json', detail: `response was ${shape}` };
     }
 
     try {
       return { ok: true, data: parsePayload(raw) };
     } catch (e) {
-      return { ok: false, reason: e.reason || 'not-a-payload', detail: e.message };
+      return { ok: false, reason: (e && e.reason) || 'not-a-payload', detail: (e && e.message) || 'unknown parser failure' };
     }
   }
 

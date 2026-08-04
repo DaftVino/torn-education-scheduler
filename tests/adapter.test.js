@@ -66,8 +66,26 @@ test('it never rejects, whatever the transport does', async () => {
     async () => { throw new Error('boom'); },
     async () => ({ ok: true, status: 200, text: async () => { throw new Error('read failed'); } }),
     async () => null,
+    // text() that resolves to a non-string: JSON.parse throws, and any
+    // string method called on the result inside the catch would throw again,
+    // this time with nothing to catch it.
+    async () => ({ ok: true, status: 200, text: async () => undefined }),
+    async () => ({ ok: true, status: 200, text: async () => ({}) }),
+    async () => ({ ok: true, status: 200, text: async () => 12345 }),
   ]) {
     const result = await exports.fetchEducationData(impl);
     assert.strictEqual(result.ok, false, 'must resolve with ok:false');
+    assert.strictEqual(typeof result.reason, 'string');
   }
+});
+
+test('a non-JSON response never puts the response body on screen', async () => {
+  const { exports } = loadUserscript();
+  const secret = '<!doctype html><script>var logoutHash="deadbeefcafe";</script>';
+  const result = await exports.fetchEducationData(fetchReturning(secret));
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.reason, 'not-json');
+  assert.ok(!result.detail.includes('logoutHash'), 'detail leaked page content');
+  assert.ok(!result.detail.includes('deadbeefcafe'), 'detail leaked a credential');
+  assert.match(result.detail, /bytes of non-JSON/);
 });
