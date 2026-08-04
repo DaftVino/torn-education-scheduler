@@ -1147,6 +1147,14 @@
   let pending = null;
   // The ceiling on remounts per visit. A page we can never successfully draw
   // into would otherwise re-acquire every debounce tick, forever.
+  //
+  // FOR QA — the shape of this is wrong even though the number is safe. The
+  // counter never decays while the player stays on education, so the realistic
+  // way to exhaust it is not a pathological re-render burst: it is a long
+  // dwell. A player parked on the education page while Torn reconciles
+  // periodically spends the budget over an hour and then loses the panel for
+  // the rest of that visit. A rate-windowed budget (N per minute) is the right
+  // shape; measure the real reconciliation rate before choosing N.
   const MAX_MOUNT_ATTEMPTS = 20;
 
   function panelPresent() {
@@ -1173,10 +1181,9 @@
         return;
       }
       // init() resolves null only when there was nowhere to draw at all.
-      // Keeping mounted = true there would claim a panel that does not exist;
-      // the remount rule in syncToRoute already recovers from it, so this line
-      // is belt-and-braces rather than the guarantee, and no test can
-      // distinguish it — it keeps the flag's meaning honest.
+      // Keeping mounted = true there would claim a panel that does not exist,
+      // and the remount rule in syncToRoute recovers from it either way — but
+      // the flag must still be honest, because the unmount below reads it.
       if (!panel) mounted = false;
     }, function () {
       inFlight -= 1;
@@ -1190,8 +1197,12 @@
       if (mounted) {
         mounted = false;
         generation += 1;
-        unmountPanel(document);
       }
+      // Unconditional, not gated on `mounted`: a mount that resolved with no
+      // panel has already cleared the flag, and it may still have appended a
+      // fallback mount to document.body before it gave up. Gating here strands
+      // that div on every page the player visits next.
+      unmountPanel(document);
       return;
     }
 
