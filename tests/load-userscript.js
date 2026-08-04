@@ -43,6 +43,8 @@ const EXPORT_NAMES = [
   'SETTINGS_KEY', 'normaliseSettings', 'freshSettings', 'loadSettings', 'saveSettings',
   // perks
   'inferPerks',
+  // consumables: the Books ceiling, the floor date, and what it costs
+  'SECONDS_PER_BOOK', 'booksCeiling', 'planConsumables', 'formatMoney',
   // adapter
   'fetchEducationData',
   // acquisition

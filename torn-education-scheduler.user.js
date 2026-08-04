@@ -601,6 +601,65 @@
     };
   }
 
+  const SECONDS_PER_BOOK = 21600;          // a Book of Carols removes 6 hours of course time
+  const BOOK_COOLDOWN_SECONDS = 21600;     // and adds 6 hours of booster cooldown
+  const BOOK_FIXED_POINT_SECONDS = 43200;  // 6 + 6: the closed form's divisor
+
+  // Cooldown decays in real time, so over a long path the ceiling is set by the
+  // total cooldown budget rather than by a single sitting:
+  //
+  //   budget over a path of length T = T + maxCooldown
+  //   maxBooks = floor((T + maxCooldown) / 6h)
+  //
+  // But each Book also shortens T by 6h, so it is a fixed point, and the closed
+  // form falls out as (baseTime + maxCooldown) / 12h. On the real 197-day path
+  // with a 24h maximum that is 396 Books, halving it to about 98 days.
+  function booksCeiling(options) {
+    const opts = options || {};
+    const base = opts.baseSeconds;
+    const cooldown = opts.maxCooldownSeconds;
+    if (!isInt(base) || !isInt(cooldown) || base < 0 || cooldown < 0) return 0;
+    return Math.floor((base + cooldown) / BOOK_FIXED_POINT_SECONDS);
+  }
+
+  // Two figures, computed independently: what the player says they will spend,
+  // and the floor from maximum possible use. The floor is NOT the planned date
+  // minus leftovers, and it ships with its cost because "98 days for 5.35b" is
+  // actionable where "98 days" is not.
+  function planConsumables(options) {
+    const opts = options || {};
+    const base = isInt(opts.baseSeconds) && opts.baseSeconds >= 0 ? opts.baseSeconds : 0;
+    const owned = isInt(opts.booksOwned) && opts.booksOwned >= 0 ? opts.booksOwned : 0;
+    const price = isInt(opts.bookPrice) && opts.bookPrice >= 0 ? opts.bookPrice : 0;
+    const ceiling = booksCeiling({ baseSeconds: base, maxCooldownSeconds: opts.maxCooldownSeconds });
+
+    const plannedBooks = Math.min(owned, ceiling);
+    const plannedSaving = Math.min(plannedBooks * SECONDS_PER_BOOK, base);
+    const floorSaving = Math.min(ceiling * SECONDS_PER_BOOK, base);
+
+    return {
+      ceiling: ceiling,
+      plannedBooks: plannedBooks,
+      plannedSaving: plannedSaving,
+      plannedSeconds: base - plannedSaving,
+      floorBooks: ceiling,
+      floorSaving: floorSaving,
+      floorSeconds: base - floorSaving,
+      floorCost: ceiling * price,
+    };
+  }
+
+  // Torn players write money as 5.35b, not 5,346,000,000.
+  function formatMoney(n) {
+    if (!Number.isFinite(n)) return '$0';
+    const abs = Math.abs(n);
+    const trim = function (v) { return String(Number(v.toFixed(2))); };
+    if (abs >= 1e9) return `$${trim(n / 1e9)}b`;
+    if (abs >= 1e6) return `$${trim(n / 1e6)}m`;
+    if (abs >= 1e3 && abs % 1e3 === 0) return `$${trim(n / 1e3)}k`;
+    return `$${Math.round(n)}`;
+  }
+
   // The three documented perks stack additively: merits 0-20 in 2% steps,
   // Principal rank 0 or 10, the WSU stock block 0 or 10. Totals below 10 and
   // above 30 have exactly one decomposition; the middle band has three or
@@ -1066,6 +1125,10 @@
   };
 
   function buildPanelModel(state) {
+    // Computed once, here, so nothing downstream depends on the caller having
+    // normalised: panelSettings runs normaliseSettings, which turns anything —
+    // including undefined — into the documented defaults.
+    const settings = panelSettings(state);
     const empty = {
       status: 'error', message: null, reductionLabel: null,
       queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
@@ -1073,9 +1136,12 @@
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
-      settings: panelSettings(state),
+      settings: settings,
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: NO_INFERENCE,
+      // No payload means no total to reduce, so there is no floor date to
+      // quote — and a floor date is the one thing that must never be guessed.
+      consumables: null,
       // Task 10 replaces this with the real orderings.
       orderModes: [{ id: 'as-listed', label: 'As listed' }],
       // Null until the player asks for it. An acquisition failure is exactly
@@ -1179,6 +1245,36 @@
       }),
     };
 
+    // Same gate as finishLabel/totalLabel below, and for the same reason: a
+    // queue with unmet prerequisites has no honest total, so it has nothing for
+    // Books to reduce either. Reducing a fiction would produce a floor date
+    // that is wrong twice over.
+    //
+    // Both figures come off the queue's own seconds. The floor is derived from
+    // the ceiling directly — never from the planned date minus leftovers — so
+    // it does not move when the player edits how many Books they own.
+    const consumables = (queue.length > 0 && problems.length === 0)
+      ? planConsumables({
+          baseSeconds: result.totalSeconds,
+          maxCooldownSeconds: settings.maxCooldownHours * 3600,
+          booksOwned: settings.booksOwned,
+          bookPrice: settings.bookPrice,
+        })
+      : null;
+    // startsAt + seconds, not finishesAt - saving: the queue begins when the
+    // active course ends, and that anchor is the only fixed point either date
+    // can be measured from.
+    const consumablesModel = consumables ? {
+      ceiling: consumables.ceiling,
+      plannedBooks: consumables.plannedBooks,
+      plannedFinishLabel: formatTimestamp(result.startsAt + consumables.plannedSeconds),
+      plannedDurationLabel: formatDuration(consumables.plannedSeconds),
+      floorBooks: consumables.floorBooks,
+      floorFinishLabel: formatTimestamp(result.startsAt + consumables.floorSeconds),
+      floorDurationLabel: formatDuration(consumables.floorSeconds),
+      floorCostLabel: formatMoney(consumables.floorCost),
+    } : null;
+
     const inference = inferPerks(data.reduction);
     const perkInference = {
       determinate: inference.determinate,
@@ -1227,9 +1323,10 @@
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
-      settings: panelSettings(state),
+      settings: settings,
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: perkInference,
+      consumables: consumablesModel,
       // Task 10 replaces this with the real orderings.
       orderModes: [{ id: 'as-listed', label: 'As listed' }],
       debugReport: state.debugReport || null,
@@ -1727,6 +1824,24 @@
       body.appendChild(finish);
     }
 
+    // Null whenever the finish date is withheld (buildPanelModel), so this
+    // block never appears beside a queue that cannot be followed.
+    if (model.consumables) {
+      const c = model.consumables;
+      const boost = doc.createElement('div');
+      boost.className = 'tes-summary';
+      const lines = [];
+      if (c.plannedBooks > 0) {
+        lines.push(`With ${c.plannedBooks} Books of Carols: ${c.plannedFinishLabel} (${c.plannedDurationLabel})`);
+      }
+      // The cost is not decoration. A floor date without it is a number
+      // nobody can act on.
+      lines.push(`Floor with maximum Books (${c.floorBooks} — ${c.floorCostLabel}): ${c.floorFinishLabel} (${c.floorDurationLabel})`);
+      lines.push('Books shorten queued course time. Time already running on your current course is not affected.');
+      boost.textContent = lines.join('\n');
+      body.appendChild(boost);
+    }
+
     const summary = doc.createElement('div');
     summary.className = 'tes-summary';
     const lines = [`Perk reduction: ${model.reductionLabel}`];
@@ -1932,6 +2047,7 @@
       // handed this model must not meet an undefined.
       settings: normaliseSettings(null), settingsSaveError: false,
       perkInference: NO_INFERENCE, orderModes: [], debugReport: null, grid: null,
+      consumables: null,
     };
   }
 
