@@ -130,6 +130,28 @@ test('rejects a negative active course completedAt', () => {
   assert.throws(() => exports.parsePayload(raw), (err) => err.reason === 'bad-active-course');
 });
 
+test('carries Torn\'s own error message through — the exact live QA failure', () => {
+  const { exports } = loadUserscript();
+  const raw = { success: false, error: 'Wrong rfcv token' };
+  assert.throws(exports.parsePayload.bind(null, raw), (err) => {
+    return err.reason === 'not-a-payload' && err.message.includes('Wrong rfcv token');
+  });
+});
+
+test('rejects {success: false} with no error field cleanly', () => {
+  const { exports } = loadUserscript();
+  const raw = { success: false };
+  assert.throws(exports.parsePayload.bind(null, raw), (err) => err.reason === 'not-a-payload');
+});
+
+test('a non-string error does not render [object Object] or throw a different error', () => {
+  const { exports } = loadUserscript();
+  const raw = { success: false, error: { nested: 'object' } };
+  assert.throws(exports.parsePayload.bind(null, raw), (err) => {
+    return err.reason === 'not-a-payload' && !err.message.includes('[object Object]');
+  });
+});
+
 test('accepts the fixture\'s real completedAt — the range check must not reject valid data', () => {
   const { exports } = loadUserscript();
   const raw = loadFixture();

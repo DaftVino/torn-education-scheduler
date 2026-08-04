@@ -28,6 +28,8 @@ const EXPORT_NAMES = [
   'isEducationPage',
   // payload
   'PayloadError', 'parsePayload',
+  // rfcv token
+  'readRfcvToken',
   // prerequisites
   'unmetPrerequisites', 'validateQueue',
   // schedule
