@@ -483,19 +483,23 @@ together in one commit, per repo rule 3.
 
 ## Open items
 
-**Moved to `docs/designs/v0.2.0-scope.md`**, which is the current home for all
-unshipped work. Retained here for context:
+**All four are now resolved.** See `docs/designs/v0.2.0-scope.md`, which is the
+current home for all unshipped work. Recorded here for provenance:
 
-1. **Book of Carols reduction.** 2h vs 6h, absent from the payload. Verify
-   in-game before v0.3.0.
-2. **Booster cooldown source.** Needed for the Book ceiling. Check
-   `page.php?sid=UserApiData` and `sidebarAjaxAction.php?q=getBars` before the
-   consumable work; fall back to a manual field if neither carries it.
-3. **Whether the booster cooldown blocks or stacks.** The ceiling formula
-   assumes one Book per cooldown period. Verify in-game alongside item 1.
-4. **Whether `actualDuration` updates live** as job points are spent on the
-   current course, or only recalculates at course start. Affects whether the
-   consumable model can be validated against the payload.
+1. **Book of Carols reduction — resolved.** −6 hours of course time, +6 hours of
+   booster cooldown. The source guides conflicted (one claimed −2h); the owner
+   confirmed −6h.
+2. **Booster cooldown source — resolved, no source needed.** It is a
+   player-entered maximum in the settings menu, not a value read from Torn. No
+   endpoint probing required.
+3. **Whether the cooldown blocks or stacks — resolved.** A booster may be used
+   whenever accumulated cooldown is *below* the maximum, and the use is allowed
+   even if it pushes the total above it. The check is on the state before the
+   use, not after.
+4. **Whether `actualDuration` updates live — resolved, yes.** Job points reduce
+   the current course's remaining time immediately, so `activeCourse.completedAt`
+   already reflects every point spent. Nothing to detect and nothing to correct
+   for, since the script never knows when a course started.
 
 Resolved: the reduction stacking rule. Confirmed additive — see *Reduction
 perks stack additively, not multiplicatively* above. What-if overrides are in
