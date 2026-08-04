@@ -193,7 +193,17 @@ function loadUserscript(options = {}) {
     return wrapped;
   }
 
-  return { exports: wrapExports(sandbox.__TES__), sandbox, gmStore, setNow };
+  // Expose test utilities for guards that need to directly test transformFromVM
+  const runInVm = (expr) => vm.runInContext(expr, context);
+
+  return {
+    exports: wrapExports(sandbox.__TES__),
+    sandbox,
+    gmStore,
+    setNow,
+    transform: transformFromVM,
+    runInVm,
+  };
 }
 
 function loadFixture(name = 'education-init-data.json') {
