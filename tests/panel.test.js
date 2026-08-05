@@ -1221,7 +1221,8 @@ function handlers() {
     onPickerChange() {}, onViewChange() {},
     onSettingChange() {}, onToggleDebugReport() {}, onCopyDebugReport() {},
     onImportPlan() {},
-    onFocusToggle() {}, onFocusPriority() {}, onFocusSectionToggle() {}, onFocusRankToggle() {},
+    onFocusToggle() {}, onFocusPriority() {}, onFocusSectionToggle() {}, onFocusCompletedToggle() {},
+    onFocusRankToggle() {},
     onResetArm() {}, onResetConfirm() {},
   };
 }
@@ -1230,6 +1231,15 @@ function handlers() {
 // implement a real browser's aggregating textContent, so a search across a
 // whole rendered panel has to walk descendants and join them itself.
 function allText(el) { return descendants(el).map((c) => c.textContent).join(' '); }
+
+function focusSectionFor(panel, category) {
+  return descendants(panel).find((c) => c.className === 'tes-focus-section'
+    && c.children[0].children[1].textContent.startsWith(category));
+}
+
+function completedGroupFor(section) {
+  return section.children.find((c) => c.className === 'tes-focus-completed');
+}
 
 function focusNavButton(panel) {
   const nav = descendants(panel).find((c) => c.className === 'tes-nav');
@@ -1376,6 +1386,147 @@ test('focus section headings are buttons with matching expanded state', () => {
   header = descendants(panel).find((c) => c.className === 'tes-focus-section-header');
   heading = header.children[1];
   assert.strictEqual(heading['aria-expanded'], 'true');
+});
+
+test('completed unchosen selections render only behind a collapsed completed group', () => {
+  const { x } = load();
+  const category = 'Gym Gain Bonus';
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  const source = model.focusGroups.find((group) => group.category === category);
+  const completedNames = source.selections.map((sel) => sel.selection);
+  assert.ok(source.selections.every((sel) => sel.remainingLabel === 'complete' && sel.priority === null),
+    'the all-completed fixture category changed');
+  model.focusOpenCategories = [category];
+
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const section = focusSectionFor(panel, category);
+  const completed = completedGroupFor(section);
+  assert.ok(completed, 'an all-completed category still needs its nested disclosure');
+  assert.strictEqual(completed.children[0]['aria-expanded'], 'false');
+  assert.strictEqual(completed.children.length, 1, 'closed groups must not build their rows');
+  assert.strictEqual(section.children.filter((child) => child.className === 'tes-focus-row').length, 0,
+    'an all-completed category must have no ungrouped rows');
+  for (const name of completedNames) assert.ok(!allText(section).includes(name), `${name} leaked out while closed`);
+});
+
+test('opening one completed group reveals exactly its rows and resets on Focus re-entry', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [] }, { orderMode: 'focus' });
+  const panelEl = () => doc.querySelector('#tes-panel');
+  const navButton = (pattern) => descendants(panelEl()).find((c) => c.className === 'tes-nav')
+    .children.find((button) => pattern.test(button.textContent));
+  const storedPlan = gmStore.get(x.STORAGE_KEY);
+  const storedSettings = gmStore.get(x.SETTINGS_KEY);
+
+  fire(navButton(/focus/i), 'click');
+  fire(descendants(panelEl()).find((c) => c.className === 'tes-focus-section-title'
+    && c.textContent.startsWith('Unlocks & Abilities')), 'click');
+  fire(descendants(panelEl()).find((c) => c.className === 'tes-focus-section-title'
+    && c.textContent.startsWith('Combat Bonuses')), 'click');
+
+  let unlocks = focusSectionFor(panelEl(), 'Unlocks & Abilities');
+  let combat = focusSectionFor(panelEl(), 'Combat Bonuses');
+  fire(completedGroupFor(unlocks).children[0], 'click');
+  unlocks = focusSectionFor(panelEl(), 'Unlocks & Abilities');
+  combat = focusSectionFor(panelEl(), 'Combat Bonuses');
+
+  const expected = x.buildPanelModel(state({ view: 'focus' })).focusGroups
+    .find((group) => group.category === 'Unlocks & Abilities').selections
+    .filter((sel) => sel.remainingLabel === 'complete' && sel.priority === null)
+    .map((sel) => sel.selection);
+  const revealed = completedGroupFor(unlocks).children.slice(1).map((row) => row.children[1].textContent);
+  assert.deepStrictEqual(revealed, expected);
+  assert.strictEqual(completedGroupFor(unlocks).children[0]['aria-expanded'], 'true');
+  assert.strictEqual(completedGroupFor(combat).children[0]['aria-expanded'], 'false');
+  assert.strictEqual(completedGroupFor(combat).children.length, 1,
+    'opening one category must leave another category\'s completed rows unbuilt');
+  assert.strictEqual(gmStore.get(x.STORAGE_KEY), storedPlan);
+  assert.strictEqual(gmStore.get(x.SETTINGS_KEY), storedSettings,
+    'completed disclosure state must never be persisted');
+
+  fire(navButton(/schedule/i), 'click');
+  fire(navButton(/focus/i), 'click');
+  fire(descendants(panelEl()).find((c) => c.className === 'tes-focus-section-title'
+    && c.textContent.startsWith('Unlocks & Abilities')), 'click');
+  unlocks = focusSectionFor(panelEl(), 'Unlocks & Abilities');
+  assert.strictEqual(completedGroupFor(unlocks).children[0]['aria-expanded'], 'false',
+    'completed disclosure state must reset whenever Focus is entered');
+  assert.strictEqual(gmStore.get(x.STORAGE_KEY), storedPlan);
+  assert.strictEqual(gmStore.get(x.SETTINGS_KEY), storedSettings);
+});
+
+test('a completed chosen selection stays in the main list and out of the completed group', () => {
+  const { x } = load();
+  const category = 'Unlocks & Abilities';
+  const selection = 'Sports Shop Access';
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [{ category: category, selection: selection }] },
+  }));
+  model.focusOpenCategories = [category];
+  model.focusOpenCompletedCategories = [category];
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const section = focusSectionFor(panel, category);
+  const completed = completedGroupFor(section);
+  const mainRow = section.children.find((child) => child.className === 'tes-focus-row'
+    && child.children[1].textContent === selection);
+  assert.ok(mainRow, 'the chosen completed row must stay immediately reachable');
+  assert.strictEqual(mainRow.children[0].checked, true);
+  assert.ok(!completed.children.slice(1).some((row) => row.children[1].textContent === selection));
+  assert.strictEqual(completed.children[0].textContent, 'completed (2)');
+});
+
+test('a category with no completed selections renders no completed group', () => {
+  const { x } = load();
+  const category = 'Working Stats';
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  model.focusOpenCategories = [category];
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  assert.strictEqual(completedGroupFor(focusSectionFor(panel, category)), undefined);
+});
+
+test('the completed heading is a count-labelled button with matching expanded state', () => {
+  const { x } = load();
+  const category = 'Unlocks & Abilities';
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  model.focusOpenCategories = [category];
+  const doc = makeDocument();
+
+  let panel = x.renderPanel(doc, doc.body, model, handlers());
+  let heading = completedGroupFor(focusSectionFor(panel, category)).children[0];
+  assert.strictEqual(heading.tagName, 'button');
+  assert.strictEqual(heading.textContent, 'completed (3)');
+  assert.strictEqual(heading['aria-expanded'], 'false');
+
+  model.focusOpenCompletedCategories = [category];
+  panel = x.renderPanel(doc, doc.body, model, handlers());
+  heading = completedGroupFor(focusSectionFor(panel, category)).children[0];
+  assert.strictEqual(heading.tagName, 'button');
+  assert.strictEqual(heading.textContent, 'completed (3)');
+  assert.strictEqual(heading['aria-expanded'], 'true');
+});
+
+test('completed-group rows keep their checkbox name remaining figure and disabled state', () => {
+  const { x } = load();
+  const category = 'Unlocks & Abilities';
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  model.focusOpenCategories = [category];
+  model.focusOpenCompletedCategories = [category];
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const rows = completedGroupFor(focusSectionFor(panel, category)).children.slice(1);
+  assert.strictEqual(rows.length, 3);
+  for (const row of rows) {
+    assert.strictEqual(row.className, 'tes-focus-row');
+    assert.strictEqual(row.children.length, 3);
+    assert.strictEqual(row.children[0].type, 'checkbox');
+    assert.ok(row.children[1].textContent);
+    assert.strictEqual(row.children[2].textContent, 'complete');
+    assert.strictEqual(row.children[0].disabled, true);
+    assert.strictEqual(row['data-disabled'], 'true');
+  }
 });
 
 test('the header priority slot precedes its toggle and rows have only three tracks', () => {
@@ -1529,6 +1680,7 @@ test('the Focus rank button states both bases and commits through the real handl
 function renderedFocusRow(x, settings, category, selection) {
   const model = x.buildPanelModel(state({ view: 'focus', settings: settings }));
   model.focusOpenCategories = [category];
+  model.focusOpenCompletedCategories = [category];
   const doc = makeDocument();
   const panel = x.renderPanel(doc, doc.body, model, handlers());
   return descendants(panel).find((row) => row.className === 'tes-focus-row'
