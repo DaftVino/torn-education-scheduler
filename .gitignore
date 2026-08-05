@@ -31,3 +31,8 @@ tests/fixtures/*.html
 
 # Tool artifact directory — visualizations are duplicated into docs/designs/
 .codex/
+
+# The nine community guides this project was specced from. Third-party forum
+# content, kept locally for reference and removed from history before the repo
+# went public (see docs/designs/v0.2.0-scope.md).
+docs/initial-spec.md

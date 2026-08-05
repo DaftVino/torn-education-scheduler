@@ -23,9 +23,17 @@ A guide to Torn education for a complete beginner, for the Torn forums.
 
 - **Aimed at a total novice.** What education is, why starting early matters,
   how tiers and prerequisites work, what a bachelor's degree actually gates on.
-- **Better organised and more engaging than the nine guides** in
-  `docs/initial-spec.md`. Those are long, repetitive, and contradict each other
-  — which is the gap this fills.
+- **Better organised and more engaging than the nine community guides** the
+  project was specced from. Those are long, repetitive, and contradict each
+  other — which is the gap this fills.
+
+  **Those guides are no longer in the repository.** They lived in
+  `docs/initial-spec.md`, which was removed from the working tree and from
+  history on 2026-08-05 before the repo went public: it reproduced nine
+  third-party forum posts in full, images included, and that is not ours to
+  republish under an MIT licence. The file is kept locally and gitignored, so
+  it is still available to whoever writes this post — but it cannot be assumed
+  present, and nothing else in the repo may cite it.
 - **Ends with a short advertisement for the script** and where to download it.
   The Greasy Fork link comes later; leave a clear placeholder.
 
