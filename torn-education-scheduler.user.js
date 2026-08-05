@@ -37,28 +37,35 @@
   // plausible id, so a missed guard fails visibly instead of queueing course 0.
   const ALL_COURSES_OPTION = '__all__';
 
-  // Resolved post-launch, once the script is published (§ K1). They resolve at
-  // DIFFERENT moments — the script is listed on Greasy Fork before the forum
-  // post is written — so expect two passes, not one.
+  // The two § K1 launch URLs. They resolve at DIFFERENT moments — the script is
+  // listed on Greasy Fork before the forum post is written — so this is two
+  // passes, and **only the first has happened**. GREASY_FORK_URL is real;
+  // FORUM_POST_URL is still a placeholder. Do not read the pair as one state.
   //
-  // Placeholders rather than null, at the owner's request, so resolving them
-  // at launch is swapping a string rather than reintroducing a value.
+  // PLACEHOLDER_TOKEN is therefore still live rather than a leftover, and its
+  // name invites exactly that misreading, so: it is the marker FORUM_POST_URL
+  // below is built from, and the string isResolvedUrl looks for to decide
+  // whether a URL may be rendered. Deleting it breaks both. It goes when the
+  // forum post is published and nothing is built from it any more.
+  //
+  // Placeholders rather than null, at the owner's request, so resolving one is
+  // swapping a string rather than reintroducing a value.
   //
   // What that does NOT mean, because the first version of this comment claimed
-  // it and was wrong: the placeholders are not visible anywhere in the panel
-  // and cannot be QA'd by looking. Nothing renders while a URL is unresolved —
-  // see isResolvedUrl below — because a link to a dead address is worse than no
+  // it and was wrong: a placeholder is not visible anywhere in the panel and
+  // cannot be QA'd by looking. Nothing renders while a URL is unresolved — see
+  // isResolvedUrl below — because a link to a dead address is worse than no
   // link, and shipping one is the exact failure the token is shouty to prevent.
   // The rendered-link path is covered by tests instead, which load this file
-  // with both URLs resolved (tests/load-userscript.js' resolveLaunchUrls) and
-  // assert the links appear with the right href; asserting only that nothing
-  // renders today would leave launch day untested.
+  // with both URLs forced to real values (tests/load-userscript.js'
+  // resolveLaunchUrls) and assert the links appear with the right href;
+  // asserting only that nothing renders today would leave launch day untested.
   //
   // `tests/metadata.test.js` also fails the build if a placeholder is still
   // present once @downloadURL/@updateURL are added, so one cannot ship.
   //
-  // To resolve: replace the whole string. Do not edit around the token — the
-  // guard test matches on it, and a half-edited URL would pass.
+  // To resolve the remaining one: replace the whole string. Do not edit around
+  // the token — the guard test matches on it, and a half-edited URL would pass.
   const PLACEHOLDER_TOKEN = 'REPLACE_BEFORE_LAUNCH';
   // Pass 1 is done: the script is listed, so this is the real page and the
   // debug report's contact line now names where to send it. It matches the
