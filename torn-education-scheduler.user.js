@@ -1877,8 +1877,8 @@
     const hours = Math.floor((seconds % 86400) / 3600);
     const parts = [];
     if (days > 0) parts.push(days === 1 ? '1 day' : `${days} days`);
-    if (hours > 0) parts.push(hours === 1 ? '1 hour' : `${hours} hours`);
-    if (parts.length === 0) return '0 hours';
+    if (hours > 0) parts.push(`${hours} hrs`);
+    if (parts.length === 0) return '0 hrs';
     return parts.join(' ');
   }
 
@@ -2833,7 +2833,7 @@
       const detail = doc.createElement('div');
       detail.textContent = box.courseCount === 0
         ? 'Already complete'
-        : `${box.courseCount} courses — ${box.durationLabel}\n${box.finishLabel}`;
+        : `${box.courseCount} crs — ${box.durationLabel}\n${box.finishLabel}`;
       detail.className = 'tes-cell-detail';
       cell.appendChild(detail);
       grid.appendChild(cell);
@@ -2889,7 +2889,7 @@
     if (model.finishLabel) {
       const finish = doc.createElement('div');
       finish.className = 'tes-finish';
-      finish.textContent = `Queue finishes: ${model.finishLabel}`;
+      finish.textContent = `Queue fin: ${model.finishLabel}`;
       body.appendChild(finish);
     }
 
@@ -2946,7 +2946,7 @@
       const row = doc.createElement('div');
       row.className = 'tes-row';
       const label = doc.createElement('span');
-      label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — finishes ${item.finishLabel}`;
+      label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — fin ${item.finishLabel}`;
       row.appendChild(label);
       const remove = doc.createElement('button');
       remove.textContent = 'remove';

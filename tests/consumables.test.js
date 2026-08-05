@@ -322,7 +322,7 @@ test('the clamped floor renders the Books it takes, not the Books the cooldown a
   const c = model.consumables;
   assert.strictEqual(c.ceiling, 738, 'the cooldown budget is not what this test was written against');
   assert.strictEqual(c.floorBooks, 17);
-  assert.strictEqual(c.floorDurationLabel, '0 hours');
+  assert.strictEqual(c.floorDurationLabel, '0 hrs');
 
   const line = floorLine(text);
   assert.ok(line.includes('(17 — $229.5m)'), `the floor line prices the ceiling rather than the path: ${line}`);
@@ -339,7 +339,7 @@ test('the clamped floor renders the Books it takes, not the Books the cooldown a
 
   // Owning 500 Books cannot spend more than the path can absorb either.
   assert.strictEqual(c.plannedBooks, 17);
-  assert.match(text, /With 17 Books of Carols: .* \(0 hours\)/);
+  assert.match(text, /With 17 Books of Carols: .* \(0 hrs\)/);
 });
 
 test('a queue that cannot be followed gets no consumables block at all', () => {

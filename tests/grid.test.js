@@ -230,7 +230,7 @@ test('the grid view renders a box per degree, naming the bachelor', () => {
   assert.ok(titles.includes('Biology (BIO3420)'), `no Biology box title: ${titles.join(' | ')}`);
   assert.ok(titles.includes('All courses'), 'no all-courses box title');
   const details = nodes.filter((n) => n.className === 'tes-cell-detail').map((n) => n.textContent);
-  assert.ok(details.some((t) => /115 courses/.test(t)), 'the all-courses box does not print its count');
+  assert.ok(details.some((t) => /115 crs/.test(t)), 'the all-courses box does not print its count');
 
   // The date is what this view is for, so it is asserted where the player
   // reads it rather than only on the model. Biology's box carries its own
@@ -238,7 +238,7 @@ test('the grid view renders a box per degree, naming the bachelor', () => {
   const biology = model.grid.boxes.find((b) => b.name === 'Biology');
   const biologyDetail = details.find((t) => t.indexOf(biology.finishLabel) !== -1);
   assert.ok(biologyDetail, `no cell carries Biology's finish date (${biology.finishLabel})`);
-  assert.match(biologyDetail, /^6 courses — 84 days\n/, 'the cell does not lead with its count and duration');
+  assert.match(biologyDetail, /^6 crs — 84 days\n/, 'the cell does not lead with its count and duration');
   assert.match(biologyDetail, /2026-03-26 · 00:00 TCT$/, 'the cell does not end with the finish date');
 
   // A finished degree is a box that says so, not a box reading "0 courses —
@@ -247,10 +247,10 @@ test('the grid view renders a box per degree, naming the bachelor', () => {
   const sports = model.grid.boxes.find((b) => b.name === 'Sports Science');
   assert.strictEqual(sports.courseCount, 0, 'the fixture no longer has a completed degree to check');
   assert.ok(details.includes('Already complete'), 'a completed degree does not say so on screen');
-  // \b0, not a bare /0 courses/: category sizes are 6-15 today, so this would
-  // false-positive on a fixture refresh landing exactly on "10 courses" or
-  // "20 courses" with an actively misleading failure message.
-  assert.ok(!details.some((t) => /\b0 courses/.test(t)), 'a completed degree renders as an empty estimate');
+  // \b0, not a bare /0 crs/: category sizes are 6-15 today, so this would
+  // false-positive on a fixture refresh landing exactly on "10 crs" or
+  // "20 crs" with an actively misleading failure message.
+  assert.ok(!details.some((t) => /\b0 crs/.test(t)), 'a completed degree renders as an empty estimate');
 });
 
 // The dates are what a reader will try to add up: twelve boxes finishing in

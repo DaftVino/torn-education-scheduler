@@ -128,3 +128,29 @@ test('no seconds, no milliseconds, no T, no Z', () => {
   assert.strictEqual(x.formatTime(t), '21:00');
   assert.ok(!/[TZ:]/.test(x.formatDate(t)));
 });
+
+test('durations are abbreviated', () => {
+  const { exports: x } = loadUserscript();
+  assert.strictEqual(x.formatDuration(0), '0 hrs');
+  assert.strictEqual(x.formatDuration(3600), '1 hrs');
+  assert.strictEqual(x.formatDuration(8 * 3600), '8 hrs');
+  assert.strictEqual(x.formatDuration(86400 + 3 * 3600), '1 day 3 hrs');
+  assert.strictEqual(x.formatDuration(2 * 86400), '2 days');
+});
+
+// One formatter, not two (owner decision 2): formatDuration itself
+// abbreviates, on the strength that no duration ever reaches the share
+// string or the debug report. If a future change routes one into either,
+// this is the test that reopens the two-formatter question — deliberately.
+test('the share string and the debug report carry no duration at all', () => {
+  const { exports: x, parsed } = setup();
+  const share = x.encodePlan({ queue: [38, 39] }, x.normaliseSettings(null));
+  assert.ok(!/hrs|hours|days?\b/.test(share), 'a duration in the share string reopens the one-formatter decision');
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: true, data: parsed, source: 'fetch' },
+    plan: { queue: [38, 39], collapsed: false },
+    settings: x.freshSettings(),
+  });
+  const report = x.buildDebugReport(ctx);
+  assert.ok(!/\d+\s*(hrs|hours|days?)\b/.test(report), 'a duration in the debug report reopens the one-formatter decision');
+});

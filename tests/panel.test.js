@@ -29,12 +29,12 @@ test('formats a timestamp as a Torn City Time date and time', () => {
   assert.strictEqual(exports.formatTime(1767225600), '00:00');
 });
 
-test('formats durations in days and hours', () => {
+test('formats durations in days and abbreviated hours', () => {
   const { exports } = loadUserscript();
-  assert.strictEqual(exports.formatDuration(0), '0 hours');
-  assert.strictEqual(exports.formatDuration(3600), '1 hour');
+  assert.strictEqual(exports.formatDuration(0), '0 hrs');
+  assert.strictEqual(exports.formatDuration(3600), '1 hrs');
   assert.strictEqual(exports.formatDuration(86400), '1 day');
-  assert.strictEqual(exports.formatDuration(1088640), '12 days 14 hours');
+  assert.strictEqual(exports.formatDuration(1088640), '12 days 14 hrs');
 });
 
 test('an error result produces an error model with a readable message', () => {
@@ -75,7 +75,7 @@ test('a queued course carries its name and projected finish', () => {
   assert.strictEqual(model.queue[0].prefix, 'BIO2380');
   assert.strictEqual(model.queue[0].finishesAt, 1768314240);
   assert.strictEqual(model.finishLabel, `${exports.formatDate(1768314240)} · ${exports.formatTime(1768314240)} TCT`);
-  assert.strictEqual(model.totalLabel, '12 days 14 hours');
+  assert.strictEqual(model.totalLabel, '12 days 14 hrs');
 });
 
 test('an illegal queue order is reported with readable course codes', () => {
@@ -106,7 +106,7 @@ test('a queued course finished since the plan was saved adds no time', () => {
   // 34 (BIO1340) is completed in the fixture. Counting it would push the
   // finish date out by weeks the player has already served.
   assert.deepStrictEqual(model.queue.map((q) => q.courseId), [38]);
-  assert.strictEqual(model.totalLabel, '12 days 14 hours');
+  assert.strictEqual(model.totalLabel, '12 days 14 hrs');
   assert.deepStrictEqual(model.stale, [
     { courseId: 34, prefix: 'BIO1340', why: 'already completed' },
   ]);
@@ -151,7 +151,7 @@ test('addable is sorted by course code and carries a duration label', () => {
   assert.deepStrictEqual(codes, [...codes].sort());
   const { state: s2 } = okState([]);
   const entry = exports.buildPanelModel(s2).addable.find((c) => c.courseId === 38);
-  assert.strictEqual(entry.durationLabel, '12 days 14 hours');
+  assert.strictEqual(entry.durationLabel, '12 days 14 hrs');
 });
 
 test('an error model still has an addable array', () => {
