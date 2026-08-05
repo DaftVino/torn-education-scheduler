@@ -17,7 +17,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-process.env.TZ = 'UTC';
+// Default to UTC so every test sees the same clock — but let a test that is
+// specifically about timezone handling pin its own. tests/timezone.test.js
+// exists to catch a local-getter regression, which is invisible on a UTC
+// machine, including CI.
+process.env.TZ = process.env.TZ || 'UTC';
 
 const SOURCE_PATH = path.join(__dirname, '..', 'torn-education-scheduler.user.js');
 
@@ -62,7 +66,7 @@ const EXPORT_NAMES = [
   // acquisition
   'looksLikePayload', 'searchForPayload', 'newWalkState', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
-  'formatTimestamp', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
+  'formatDate', 'formatTime', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
   // errorModel/noopHandlers are exported as a pair: the render path treats
   // noopHandlers by identity, so a test asserting that needs the real object.
   'errorModel', 'noopHandlers',

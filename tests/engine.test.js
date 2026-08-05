@@ -107,3 +107,24 @@ test('a missing now is rejected rather than defaulted', () => {
     courses: parsed.courses, activeCourse: parsed.activeCourse, queue: [],
   }), /now is required/);
 });
+
+test('formatDate is an ISO calendar date and formatTime is HH:MM', () => {
+  const { exports: x } = loadUserscript();
+  const t = Date.UTC(2026, 7, 4, 21, 0, 0) / 1000;
+  assert.strictEqual(x.formatDate(t), '2026-08-04');
+  assert.strictEqual(x.formatTime(t), '21:00');
+});
+
+test('single-digit months, days, hours and minutes are zero padded', () => {
+  const { exports: x } = loadUserscript();
+  const t = Date.UTC(2026, 0, 5, 3, 7, 0) / 1000;
+  assert.strictEqual(x.formatDate(t), '2026-01-05');
+  assert.strictEqual(x.formatTime(t), '03:07');
+});
+
+test('no seconds, no milliseconds, no T, no Z', () => {
+  const { exports: x } = loadUserscript();
+  const t = Date.UTC(2026, 7, 4, 21, 0, 45) / 1000;
+  assert.strictEqual(x.formatTime(t), '21:00');
+  assert.ok(!/[TZ:]/.test(x.formatDate(t)));
+});
