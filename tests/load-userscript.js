@@ -39,6 +39,8 @@ const EXPORT_NAMES = [
   'schedule', 'buildDegreeGrid',
   // queue ordering
   'ORDER_MODE_LABELS', 'orderQueue', 'dependentCount', 'upstreamOf',
+  // focus taxonomy
+  'FOCUS_TAXONOMY', 'focusRegistry',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
   // settings

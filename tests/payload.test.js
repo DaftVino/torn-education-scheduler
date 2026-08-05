@@ -29,6 +29,7 @@ test('normalises a course into the engine shape', () => {
     baseCost: 200,
     cost: 200,
     parentId: null,
+    learningOutcomes: [],
   });
 });
 
