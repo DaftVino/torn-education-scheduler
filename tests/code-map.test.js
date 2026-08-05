@@ -292,3 +292,55 @@ test('the code-map records the userscript length it was generated against', () =
     'the code-map was generated against a different revision of the userscript',
   );
 });
+
+// The section headers — `### RUNTIME (lines 1832–4405)` — were the one part of
+// this map nothing checked, and they drifted accordingly: found on 2026-08-05
+// stating 1–33, 35–1606 and 1608–3969 for a 4405-line file, the last of them
+// 436 lines short of the section it named. Every anchor INSIDE those sections
+// was correct, because anchors are validated and headers were not.
+//
+// That is worse than a wrong anchor rather than better. A reader grepping this
+// map for a symbol lands on a validated row; a reader orienting themselves
+// reads the section header first and takes from it a wrong idea of where the
+// engine ends and the runtime begins — and nothing they do next contradicts it.
+//
+// Checked as containment rather than by re-deriving the boundaries: a header
+// must at minimum cover every anchor listed beneath it and must not run past
+// the end of the file. That fails on exactly the drift above without this test
+// needing its own opinion about where a section ought to start.
+test('every code-map section header covers the anchors it contains', () => {
+  const raw = fs.readFileSync(SOURCE_PATH, 'utf8').split(/\r?\n/);
+  const fileLines = raw.length - (raw[raw.length - 1] === '' ? 1 : 0);
+  const mapLines = fs.readFileSync(MAP_PATH, 'utf8').split(/\r?\n/);
+  const stripped = strippedLines(raw);
+  const rows = anchorRows(stripped);
+
+  const sections = [];
+  mapLines.forEach((line, i) => {
+    const m = line.match(/^###\s+(.*?)\s*\(lines\s+(\d+)[–-](\d+)\)\s*$/);
+    if (m) sections.push({ mapLine: i + 1, name: m[1], start: Number(m[2]), end: Number(m[3]) });
+  });
+  assert.ok(sections.length > 0, 'no section headers found — has the map format changed?');
+
+  const problems = [];
+  for (let s = 0; s < sections.length; s += 1) {
+    const section = sections[s];
+    const next = sections[s + 1];
+    if (section.end > fileLines) {
+      problems.push(`code-map.md:${section.mapLine} "${section.name}" ends at ${section.end}, past the file's ${fileLines} lines`);
+    }
+    // Rows between this header and the next belong to this section.
+    const mine = rows.filter(function (r) {
+      return r.mapLine > section.mapLine && (!next || r.mapLine < next.mapLine);
+    });
+    for (const row of mine) {
+      if (row.start < section.start || row.end > section.end) {
+        problems.push(
+          `code-map.md:${section.mapLine} "${section.name}" claims lines ${section.start}–${section.end}, `
+          + `but the row at code-map.md:${row.mapLine} anchors ${row.start}–${row.end}`
+        );
+      }
+    }
+  }
+  assert.deepStrictEqual(problems, [], `code-map section headers are stale:\n  ${problems.join('\n  ')}`);
+});

@@ -81,6 +81,27 @@ test('an unresolved placeholder renders no link anywhere', () => {
   assert.strictEqual(exports.isResolvedUrl(''), false);
 });
 
+// Three places state this project's licence: the metadata block, package.json,
+// and the LICENSE file. Only the first one ships — a player installs the raw
+// .user.js and gets no repository with it — so the metadata block is the copy
+// that has to be right, and the other two are what it must not contradict.
+//
+// Asserted rather than described because a licence mismatch is invisible until
+// it matters, and by then the wrong terms are on somebody else's disk.
+test('@license agrees with package.json and the LICENSE file', () => {
+  const src = fs.readFileSync(SOURCE_PATH, 'utf8');
+  const declared = src.match(/^\/\/ @license\s+(\S+)$/m);
+  assert.ok(declared, '@license is missing from the metadata block — an installed copy would state no terms');
+  assert.strictEqual(declared[1], require('../package.json').license);
+
+  // The LICENSE file's own first line, not a second hardcoded string: this
+  // fails if the file is swapped for a different licence without the metadata
+  // block following it.
+  const licenseFile = fs.readFileSync(new URL('../LICENSE', `file://${__dirname}/`), 'utf8');
+  assert.match(licenseFile.split('\n')[0].trim(), new RegExp(`^${declared[1]}\\b`, 'i'),
+    'the LICENSE file does not name the licence the script declares');
+});
+
 test('@match and @grant are exactly the declared security surface', () => {
   const src = fs.readFileSync(SOURCE_PATH, 'utf8');
   const matches = [...src.matchAll(/^\/\/ @match\s+(\S+)$/gm)].map((m) => m[1]);

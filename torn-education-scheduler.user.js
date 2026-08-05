@@ -4,6 +4,7 @@
 // @version      1.0.0
 // @description  Turns Torn's education page into a live planner: queue courses, get the exact finish date.
 // @author       DaftVino
+// @license      MIT
 // @match        https://www.torn.com/page.php*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -13,6 +14,14 @@
 // @match cannot express a query string, so it is deliberately broader than the
 // target page and isEducationPage() below does the real scoping. Widening
 // @match or @grant beyond this needs a stated reason in the PR description.
+
+// @license is not decoration and not a duplicate of the LICENSE file. This
+// file is the whole distribution: a player installs the raw .user.js, and the
+// repository — with its LICENSE, its README and its history — does not travel
+// with it. Without this line the copy on someone's disk states no terms at
+// all, and Greasy Fork reads this key rather than the repo to decide what it
+// is allowed to host. tests/metadata.test.js pins it to package.json and the
+// LICENSE file so the three cannot drift into disagreeing about one fact.
 
 (function () {
   'use strict';
