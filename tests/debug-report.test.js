@@ -57,6 +57,18 @@ test('the report carries what a maintainer needs to diagnose a failure', () => {
   assert.ok(report.includes('13500000') || report.includes('13,500,000'), 'no settings values');
 });
 
+test('the debug report carries focusRankBasis through gatherDebugContext', () => {
+  const { exports: x } = loadUserscript();
+  const settings = x.normaliseSettings({ focusRankBasis: 'total' });
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: false, reason: 'offline', detail: 'test' },
+    plan: { queue: [], collapsed: false },
+    settings: settings,
+  });
+  assert.strictEqual(ctx.settings.focusRankBasis, 'total');
+  assert.match(x.buildDebugReport(ctx), /^  Focus rank basis: total$/m);
+});
+
 // Named for what is actually guaranteed. The *word* "rfcv" can legitimately
 // reach a real report: parsePayload carries Torn's own `raw.error` into the
 // detail, and Torn's live string for a rejected request is "Wrong rfcv token"
@@ -417,9 +429,9 @@ test('gatherDebugContext reports shape only on success, never the payload', () =
   assert.strictEqual(typeof ctx.hasActiveCourse, 'boolean');
   // The keys are the allowlist, and nothing payload-shaped is among them.
   assert.deepStrictEqual(Object.keys(ctx).sort(), [
-    'categoryCount', 'courseCount', 'failureDetail', 'failureReason', 'hasActiveCourse',
-    'manager', 'queueCodes', 'queueLength', 'reductionConstant', 'scriptVersion',
-    'settings', 'source', 'userAgent',
+    'categoryCount', 'courseCount', 'failureDetail', 'failureReason', 'focusSelections',
+    'focusStale', 'focusUnmapped', 'hasActiveCourse', 'manager', 'queueCodes', 'queueLength',
+    'reductionConstant', 'scriptVersion', 'settings', 'source', 'userAgent',
   ]);
   const report = x.buildDebugReport(ctx);
   assert.ok(!report.includes('Introduction to Biochemistry'), 'a course name reached the report');
@@ -487,6 +499,118 @@ test('a panel with no live handlers renders no controls that do nothing', () => 
   assert.ok(nodes.some((n) => n.textContent === 'it broke'), 'the failure was not named');
   assert.ok(!nodes.some((n) => n.className === 'tes-nav'), 'an inert nav row was rendered');
   assert.ok(!nodes.some((n) => n.textContent === '⚙ settings'), 'an inert settings button was rendered');
+});
+
+// ─── focus registry health ──────────────────────────────────────────────
+//
+// focusStale/focusUnmapped/focusSelections join the allowlist
+// as counts only. The allowlist IS the signature: a field reaching the
+// report at all is the claim that it is safe, so these three must never
+// carry anything but a number, and the label + value pinned below is what
+// would actually catch a regression — a bare /focus/i match would pass on
+// the section title alone even if the counts were wrong or missing.
+
+test('the report names the focus registry health with the numbers focusRegistry actually returns', () => {
+  const { exports: x } = loadUserscript();
+  const row = x.FOCUS_TAXONOMY[0];
+  const expectedStale = x.FOCUS_TAXONOMY.filter((r) => r.courseId === row.courseId).length;
+  // Every OTHER courseId the taxonomy references gets a course whose
+  // outcomes exactly match what is claimed for it, so it contributes zero to
+  // both counts — otherwise every taxonomy row whose course is simply absent
+  // from this small synthetic map would also read as stale, and the
+  // expected count above would not isolate the one row this test controls.
+  const outcomesByCourse = new Map();
+  for (const r of x.FOCUS_TAXONOMY) {
+    if (!outcomesByCourse.has(r.courseId)) outcomesByCourse.set(r.courseId, new Set());
+    outcomesByCourse.get(r.courseId).add(r.outcome);
+  }
+  const courses = new Map();
+  for (const [courseId, outcomeSet] of outcomesByCourse) {
+    courses.set(courseId, {
+      id: courseId, prefix: 'ZZ', name: 'Marker Course A', status: 'available', duration: 1,
+      // The chosen row's course loses its claimed outcomes entirely — every
+      // taxonomy row sharing its courseId goes stale.
+      learningOutcomes: courseId === row.courseId ? [] : Array.from(outcomeSet),
+    });
+  }
+  // This course has an outcome the taxonomy does not account for at all.
+  courses.set(999001, {
+    id: 999001, prefix: 'ZZ', name: 'Marker Course B', status: 'available', duration: 1,
+    learningOutcomes: ['A benefit the taxonomy has never heard of'],
+  });
+  const reg = x.focusRegistry(courses);
+  assert.strictEqual(reg.stale, expectedStale, 'test setup did not actually produce a stale row');
+  assert.strictEqual(reg.unmapped, 1, 'test setup did not actually produce an unmapped outcome');
+
+  const settings = x.freshSettings();
+  settings.focuses = x.normaliseFocuses([{ category: row.category, selection: row.selection }]);
+
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: true, source: 'fetch', data: { courses: courses, categories: [], reduction: { constant: true }, activeCourse: null } },
+    plan: { queue: [], collapsed: false },
+    settings: settings,
+  });
+  assert.strictEqual(ctx.focusStale, expectedStale);
+  assert.strictEqual(ctx.focusUnmapped, 1);
+  assert.strictEqual(ctx.focusSelections, 1);
+
+  const report = x.buildDebugReport(ctx);
+  assert.match(report, new RegExp(`Stale classifications: ${expectedStale}\\b`), 'the stale count is missing or wrong');
+  assert.match(report, /Unmapped outcomes: 1\b/, 'the unmapped count is missing or wrong');
+  assert.match(report, /Selections made: 1\b/, 'the selection count is missing or wrong');
+});
+
+test('the focus fields carry counts, never course names or outcome text', () => {
+  const { exports: x } = loadUserscript();
+  // The real fixture's learningOutcomes are riddled with taxonomy phrases
+  // ("passive bonus") and working-stat phrases ("upon completion"), and its
+  // courses carry real names ("Introduction to Biochemistry"). Running it
+  // straight through gatherDebugContext, with no smuggling required, is the
+  // adversarial case: if focusStale/focusUnmapped ever became strings built
+  // from this data instead of counts, one of these would leak.
+  const { exports: xu } = loadUserscript();
+  const data = xu.parsePayload(loadFixture());
+  const settings = xu.freshSettings();
+  const ctx = xu.gatherDebugContext({
+    fetchResult: { ok: true, source: 'fetch', data: data },
+    plan: { queue: [], collapsed: false },
+    settings: settings,
+  });
+  assert.strictEqual(typeof ctx.focusStale, 'number', 'focusStale was not a count');
+  assert.strictEqual(typeof ctx.focusUnmapped, 'number', 'focusUnmapped was not a count');
+  assert.strictEqual(typeof ctx.focusSelections, 'number', 'focusSelections was not a count');
+  const report = xu.buildDebugReport(ctx);
+  assert.ok(!/upon completion/.test(report), 'a working-stat outcome string reached the report');
+  assert.ok(!/passive bonus/i.test(report), 'a taxonomy outcome string reached the report');
+  assert.ok(!report.includes('Introduction to Biochemistry'), 'a course name reached the report via the focus fields');
+});
+
+test('a synthetic course name and outcome string smuggled onto the focus input never reach the report', () => {
+  const { exports: x } = loadUserscript();
+  const courses = new Map([
+    [1, {
+      id: 1, prefix: 'ZZ', name: 'SMUGGLED_COURSE_NAME_MARKER', status: 'available', duration: 1,
+      learningOutcomes: ['SMUGGLED_OUTCOME_MARKER upon completion'],
+    }],
+  ]);
+  const settings = x.freshSettings();
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: true, source: 'fetch', data: { courses: courses, categories: [], reduction: { constant: true }, activeCourse: null } },
+    plan: { queue: [], collapsed: false },
+    settings: settings,
+  });
+  const report = x.buildDebugReport(ctx);
+  assert.ok(!report.includes('SMUGGLED_COURSE_NAME_MARKER'), 'a course name reached the report');
+  assert.ok(!report.includes('SMUGGLED_OUTCOME_MARKER'), 'an outcome string reached the report');
+});
+
+test('absent focus data reads "not recorded" rather than undefined', () => {
+  const { exports: x } = loadUserscript();
+  const report = x.buildDebugReport({ scriptVersion: '0.2.0' });
+  assert.ok(!report.includes('undefined'), 'an absent field rendered as undefined');
+  assert.match(report, /Stale classifications: not recorded/);
+  assert.match(report, /Unmapped outcomes: not recorded/);
+  assert.match(report, /Selections made: not recorded/);
 });
 
 test('gatherDebugContext says so when the manager and browser cannot be read', () => {

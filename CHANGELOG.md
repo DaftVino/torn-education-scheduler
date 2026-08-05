@@ -4,6 +4,97 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-05
+
+There is no 0.3.0 release. This work carried that number while it was being
+built and went through eight rounds of browser QA before shipping; the version
+was bumped once, at the end, rather than tagging a number nobody ever ran.
+
+### Added
+
+- A Focus view: pick what you want out of education — a working stat, a battle
+  stat, weapon damage, or a specific unlock — and the queue re-sorts to deliver
+  it first. Ten categories, 82 selections — 79 built from a classification of
+  all 101 of Torn's `learningOutcomes` strings, plus Working Stats' own three.
+  Multiple focuses rank lexicographically by the priority you set, never
+  summed. Focus is the default Queue order; with nothing selected it orders
+  exactly as listed, so a fresh install's queue is unchanged.
+- A sorting basis toggle on the Focus view: **most per day** banks a stat
+  fastest in real time, **biggest total** finishes the largest single courses
+  first. The button names whichever is active, so the ordering is readable
+  before you click it.
+- **Job points now shorten the plan.** Each point removes 30 minutes of queued
+  course time, and points are spent before any Book of Carols — so the Book
+  figures on the schedule are what is left after them, including the ceiling
+  on how many Books the path can absorb.
+- Reset controls: `reset` on the schedule clears the queue, `reset` on Focus
+  clears your selections, `defaults` on Settings restores setting defaults —
+  each takes two clicks to arm and confirm, and each clears only what its own
+  page owns.
+
+### Changed
+
+- Finish times read `2026-08-04 · 21:00 TCT` — an ISO date, the time separate,
+  labelled Torn City Time (UTC).
+- Durations and counts abbreviate in dense readouts: `hrs`, `crs`, `fin`.
+- `⚙ settings` is now a permanent right-aligned landmark on every view.
+- `hide` is a real button; the header title no longer toggles the panel.
+- Queued courses show what they give on a second line.
+- The degrees grid's all-courses box became a full-width banner above the
+  grid, titled "all remaining courses", rather than a box that sorted last.
+- The panel adopts Torn Bookie Live Scores' default palette as design tokens
+  (colour, type scale, spacing scale), and gained a keyboard focus ring.
+- Planner destinations (`schedule`, `degrees`, `focus`) are fixed buttons in a
+  fixed order rather than toggles. `focus` is present unless you pick another
+  Queue order.
+- The Focus view's sections are outlined cards, collapsed by default. Each
+  header carries the category, the selection you chose in it, a right-aligned
+  `X rem /X total` count, and — in a fixed slot, so nothing shifts when you
+  choose something — that category's priority number, editable without opening
+  the section.
+- Completed selections gather into a collapsed `completed` group at the foot of
+  their category, and their checkboxes are disabled. A completed selection you
+  have chosen stays in the main list, so its checkbox is still reachable.
+- Job points moved back to Boosters, first in the section, so it reads top to
+  bottom in the order the arithmetic runs.
+- The queue summary's separator sits under the whole block, above the course
+  list, rather than between the perk reduction and the total.
+
+### Fixed
+
+- **Focus ordering reordered nothing for four of the ten categories.** Every
+  Unlocks & Abilities, Company Bonuses, Crime & Jail and Computing selection
+  scored zero, because the guard meant to catch a missing magnitude used the
+  global `isFinite`, which coerces `null` to `0` and returns true. Every such
+  focus was a provable identity permutation of the queue.
+- Courses that scored under a focus stayed pinned behind prerequisites that
+  scored nothing. A prerequisite now inherits the best score below it, for
+  count-style focuses only — magnitude focuses accumulate rather than route,
+  and propagating those would rank a zero-gain gate above a real gainer.
+- The per-day rank basis was specified and never implemented; ranking divided
+  by nothing, so long courses with large totals outranked short ones that paid
+  off sooner.
+- `defaults` on Settings cleared the perk fields and never refilled them, so
+  they stayed blank for the rest of the session while the note beside them
+  promised a refill.
+
+### Notes
+
+- **31 of 131 courses list no learning outcome at all.** Those rows show
+  `Bonus: not listed by Torn` rather than guessing at a benefit Torn does not
+  state.
+- **Bachelor courses are marked by colour, not a `[bachelor]` prefix.** On
+  macOS the OS draws the `<select>` menu itself and ignores option colour, so
+  macOS players see no marker at all. This is the one place a player on one
+  platform gets less than another — recorded here plainly, not as a bug to
+  chase.
+- `focusScores`' summing branch and `focusTotals`' by-course dedupe exist for
+  when the same course is reached twice under one `(category, selection)`
+  pair. No such duplicate exists in today's 120-row taxonomy, so neither
+  branch is exercised by real data; both are kept as defensive code, guarded
+  by a canary test (`tests/focus.test.js`) that fails the day a real duplicate
+  is added, rather than removed for looking like dead code.
+
 ## [0.2.0] - 2026-08-04
 
 ### Added

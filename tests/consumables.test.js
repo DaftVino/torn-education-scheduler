@@ -113,6 +113,95 @@ test('a short path cannot be reduced below zero', () => {
   assert.ok(out.plannedSeconds >= 0, 'the planned path went negative');
 });
 
+// ─── job points ─────────────────────────────────────────────────────
+//
+// The rate the owner stated: one point buys 30 minutes off a queued course.
+// Pinned as a constant rather than only through a derived figure, because
+// every assertion below is a multiple of it and a silent change to it would
+// move them all together without failing any of them.
+test('a job point is worth exactly 30 minutes', () => {
+  const { exports: x } = loadUserscript();
+  assert.strictEqual(x.SECONDS_PER_JOB_POINT, 30 * 60);
+});
+
+test('job points come off the path at 30 minutes each', () => {
+  const { exports: x } = loadUserscript();
+  const out = x.planConsumables({
+    baseSeconds: 197 * DAY, maxCooldownSeconds: 24 * HOUR,
+    booksOwned: 0, bookPrice: 1, jobPoints: 48,
+  });
+  // 48 points × 30 minutes = 24 hours, derived here rather than copied.
+  assert.strictEqual(out.jobPointSaving, 24 * HOUR);
+  assert.strictEqual(out.jobPointSeconds, 197 * DAY - 24 * HOUR);
+  assert.strictEqual(out.jobPoints, 48, 'the points the saving costs were miscounted');
+});
+
+// The test that discriminates. `ceiling` is a function of the path length, so
+// an implementation that priced the Books against the raw queue total and
+// subtracted the points afterwards produces the SAME floor seconds by
+// coincidence on an unclamped path — and a ceiling of 396 where the real one
+// is 391. That number is the only place the ordering shows.
+test('job points are spent before Books, so they lower the Books ceiling too', () => {
+  const { exports: x } = loadUserscript();
+  const opts = { baseSeconds: 197 * DAY, maxCooldownSeconds: 24 * HOUR, booksOwned: 0, bookPrice: 1 };
+  const none = x.planConsumables(opts);
+  const some = x.planConsumables({ ...opts, jobPoints: 100 });
+
+  // The oracle, computed from the stated mechanics rather than from the
+  // implementation: 100 points is 50 hours off the path, and the ceiling is
+  // the closed form applied to whatever is left.
+  const shortened = 197 * DAY - 100 * 30 * 60;
+  assert.strictEqual(some.jobPointSeconds, shortened);
+  assert.strictEqual(some.ceiling, Math.floor((shortened + 24 * HOUR) / (12 * HOUR)));
+
+  assert.strictEqual(none.ceiling, 396);
+  assert.strictEqual(some.ceiling, 391, 'the ceiling was priced against the path before the points were spent');
+  assert.strictEqual(some.floorSeconds, shortened - some.ceiling * 6 * HOUR);
+  assert.ok(some.floorSeconds < none.floorSeconds, 'spending points did not shorten the floor');
+});
+
+test('omitting job points leaves every Book figure exactly as it was', () => {
+  const { exports: x } = loadUserscript();
+  const opts = { baseSeconds: 197 * DAY, maxCooldownSeconds: 24 * HOUR, booksOwned: 20, bookPrice: 13500000 };
+  // The back-compat property: this function grew a fourth input, and every
+  // caller that does not pass one must get the answer it got before.
+  assert.deepStrictEqual(x.planConsumables(opts), x.planConsumables({ ...opts, jobPoints: 0 }));
+  const out = x.planConsumables(opts);
+  assert.strictEqual(out.jobPoints, 0);
+  assert.strictEqual(out.jobPointSaving, 0);
+  assert.strictEqual(out.jobPointSeconds, 197 * DAY);
+});
+
+test('more job points than queued time cannot drive the path below zero', () => {
+  const { exports: x } = loadUserscript();
+  const out = x.planConsumables({
+    baseSeconds: HOUR, maxCooldownSeconds: 24 * HOUR,
+    booksOwned: 0, bookPrice: 1, jobPoints: 1000000,
+  });
+  assert.strictEqual(out.jobPointSeconds, 0);
+  assert.strictEqual(out.jobPointSaving, HOUR);
+  // The points the saving actually costs, never the million the player holds —
+  // the same clamp plannedBooks draws, and for the same reason: a count quoted
+  // beside a clamped saving has to describe that saving. One hour is 2 points.
+  assert.strictEqual(out.jobPoints, 2, 'the panel counted points the path cannot absorb');
+  assert.strictEqual(out.floorSeconds, 0);
+  assert.strictEqual(out.plannedSeconds, 0);
+  assert.ok(out.floorSeconds >= 0 && out.plannedSeconds >= 0, 'the path went negative');
+});
+
+test('a nonsensical job-point figure is ignored rather than trusted', () => {
+  const { exports: x } = loadUserscript();
+  const clean = x.planConsumables({ baseSeconds: 197 * DAY, maxCooldownSeconds: 24 * HOUR, booksOwned: 0, bookPrice: 1 });
+  for (const bad of [-1, 1.5, NaN, Infinity, null, undefined, '48', {}]) {
+    const out = x.planConsumables({
+      baseSeconds: 197 * DAY, maxCooldownSeconds: 24 * HOUR,
+      booksOwned: 0, bookPrice: 1, jobPoints: bad,
+    });
+    assert.strictEqual(out.jobPointSaving, 0, `${String(bad)} was spent as job points`);
+    assert.strictEqual(out.floorSeconds, clean.floorSeconds, `${String(bad)} moved the floor`);
+  }
+});
+
 test('formatMoney reads the way players write money', () => {
   const { exports: x } = loadUserscript();
   assert.strictEqual(x.formatMoney(396 * 13500000), '$5.35b');
@@ -223,7 +312,7 @@ test('the schedule model carries the consumables block with both dates', () => {
   const c = model.consumables;
   assert.ok(c.ceiling > 0, 'the ceiling is zero on a 115-course queue');
   assert.strictEqual(c.floorBooks, c.ceiling);
-  assert.match(c.floorFinishLabel, /UTC/);
+  assert.match(c.floorFinishLabel, /TCT/);
   assert.match(c.floorCostLabel, /^\$/);
   // The floor is genuinely shorter than the unaided path, or the block says
   // nothing worth printing.
@@ -322,7 +411,7 @@ test('the clamped floor renders the Books it takes, not the Books the cooldown a
   const c = model.consumables;
   assert.strictEqual(c.ceiling, 738, 'the cooldown budget is not what this test was written against');
   assert.strictEqual(c.floorBooks, 17);
-  assert.strictEqual(c.floorDurationLabel, '0 hours');
+  assert.strictEqual(c.floorDurationLabel, '0 hrs');
 
   const line = floorLine(text);
   assert.ok(line.includes('(17 — $229.5m)'), `the floor line prices the ceiling rather than the path: ${line}`);
@@ -334,12 +423,62 @@ test('the clamped floor renders the Books it takes, not the Books the cooldown a
   const startsAt = exports.schedule({
     courses: data.courses, activeCourse: data.activeCourse, queue: [], now: NOW,
   }).startsAt;
-  assert.strictEqual(c.floorFinishLabel, exports.formatTimestamp(startsAt));
+  assert.strictEqual(c.floorFinishLabel, `${exports.formatDate(startsAt)} · ${exports.formatTime(startsAt)} TCT`);
   assert.ok(line.includes(c.floorFinishLabel), line);
 
   // Owning 500 Books cannot spend more than the path can absorb either.
   assert.strictEqual(c.plannedBooks, 17);
-  assert.match(text, /With 17 Books of Carols: .* \(0 hours\)/);
+  assert.match(text, /With 17 Books of Carols: .* \(0 hrs\)/);
+});
+
+// The defect this whole round exists to close: the field took a number, stored
+// it, shared it, and changed nothing on screen. So these read the DOM.
+test('entering job points changes what the schedule view shows', () => {
+  const none = schedulePanel({ settings: { jobPoints: 0 } });
+  const some = schedulePanel({ settings: { jobPoints: 200 } });
+
+  assert.ok(!/job point/.test(none.text), 'a zero-point plan rendered a job-point line');
+  assert.match(some.text, /With 200 job points \(30 mins each\): /);
+  // The figure moved, which is the report the owner filed: the field used to
+  // be inert, so this is the assertion that fails if it becomes inert again.
+  assert.notStrictEqual(
+    some.model.consumables.floorFinishLabel,
+    none.model.consumables.floorFinishLabel,
+    'spending 200 job points left the floor date exactly where it was',
+  );
+  assert.ok(some.model.consumables.ceiling < none.model.consumables.ceiling,
+    'the Books ceiling ignored the shortened path');
+});
+
+test('the job-point line renders above the Book lines, in calculation order', () => {
+  const { text } = schedulePanel({ settings: { jobPoints: 200, booksOwned: 20 } });
+  const lines = text.split('\n');
+  const at = (needle) => lines.findIndex((l) => l.includes(needle));
+  const points = at('job points (30 mins each)');
+  const planned = at('Books of Carols:');
+  const floor = at('Floor with maximum Books');
+
+  assert.ok(points !== -1 && planned !== -1 && floor !== -1, `a line is missing:\n${text}`);
+  // Not cosmetic: the Book figures are computed against the path the points
+  // leave behind, so printing them above would read as two independent
+  // savings off the same number.
+  assert.ok(points < planned, 'the job-point line rendered below the planned Books line');
+  assert.ok(points < floor, 'the job-point line rendered below the floor line');
+});
+
+test('the rendered panel says job points are spent before Books', () => {
+  const { text } = schedulePanel({ settings: { jobPoints: 200 } });
+  assert.match(text, /Job points are spent first, at 30 minutes each/);
+  assert.match(text, /Book figures above are what is left after them/);
+  // The claim that survived from before job points did anything, and still
+  // has to: neither consumable touches the course already running.
+  assert.match(text, /Time already running on your current course is not affected/);
+});
+
+test('one job point reads as singular', () => {
+  const { text } = schedulePanel({ settings: { jobPoints: 1 } });
+  assert.match(text, /With 1 job point \(30 mins each\): /);
+  assert.ok(!/1 job points/.test(text), text.split('\n').find((l) => l.includes('job point')));
 });
 
 test('a queue that cannot be followed gets no consumables block at all', () => {

@@ -21,6 +21,7 @@ test('a plan round-trips through encode and decode', () => {
   settings.perks.principal = true;
   settings.perks.wsuBlock = false;
   settings.orderMode = 'shortest-first';
+  settings.focusRankBasis = 'total';
 
   const text = x.encodePlan({ queue: [34, 38, 39] }, settings);
   assert.ok(text.indexOf('TES1|') === 0, `unexpected prefix in ${text}`);
@@ -36,6 +37,78 @@ test('a plan round-trips through encode and decode', () => {
   assert.strictEqual(out.settings.perks.principal, true);
   assert.strictEqual(out.settings.perks.wsuBlock, false);
   assert.strictEqual(out.settings.orderMode, 'shortest-first');
+  assert.strictEqual(out.settings.focusRankBasis, 'total');
+});
+
+test('focus rank basis round-trips and an unknown value falls back to per-day', () => {
+  const { x, courses } = load();
+  const text = x.encodePlan({ queue: [34] }, x.normaliseSettings({ focusRankBasis: 'total' }));
+  assert.match(text, /\|r=t(?:\||$)/);
+  assert.strictEqual(x.decodePlan(text, courses).settings.focusRankBasis, 'total');
+  assert.strictEqual(x.decodePlan('TES1|q=34|r=anything-else', courses).settings.focusRankBasis, 'per-day');
+});
+
+test('a focus set round-trips through the share string, in priority order', () => {
+  const { x, courses } = load();
+  const settings = x.normaliseSettings({ focuses: [
+    { category: 'Working Stats', selection: 'intelligence' },
+    { category: 'Passive Stat Bonus', selection: 'Speed' },
+  ] });
+  const text = x.encodePlan({ queue: [34] }, settings);
+  const got = x.decodePlan(text, courses);
+  assert.strictEqual(got.ok, true, got.detail);
+  // deepStrictEqual on the array checks order as well as membership, which is
+  // the point: priority IS the index, so a decoder that round-tripped the
+  // right two focuses in the wrong order would still be wrong.
+  assert.deepStrictEqual(got.settings.focuses, settings.focuses);
+  // And the reverse order is a different plan, not an equal one — guards
+  // against a comparison that only checked set membership.
+  assert.notDeepStrictEqual(got.settings.focuses, settings.focuses.slice().reverse());
+});
+
+test('an unknown selection refuses the whole import', () => {
+  const { x, courses } = load();
+  const text = x.encodePlan({ queue: [34] }, x.normaliseSettings(null)) + '|f=NopeNope';
+  const got = x.decodePlan(text, courses);
+  assert.strictEqual(got.ok, false);
+  assert.strictEqual(got.reason, 'unknown-focus');
+});
+
+test('a focus set with a genuine selection alongside an unknown one refuses too, not partially', () => {
+  const { x, courses } = load();
+  const text = x.encodePlan({ queue: [34] }, x.normaliseSettings(null)) + '|f=Working Statsintelligence,NopeNope';
+  const got = x.decodePlan(text, courses);
+  assert.strictEqual(got.ok, false, 'a mix of one good and one bad focus imported partially');
+});
+
+test('a share string with no focus field imports with an empty focus set', () => {
+  const { x, courses } = load();
+  const got = x.decodePlan(x.encodePlan({ queue: [34] }, x.normaliseSettings(null)), courses);
+  assert.strictEqual(got.ok, true);
+  assert.deepStrictEqual(got.settings.focuses, []);
+});
+
+test('a focus field full of separators never throws', () => {
+  const { x, courses } = load();
+  assert.doesNotThrow(() => x.decodePlan('TES1|q=34|f=,,,', courses));
+});
+
+test('FOCUS_CONCAT_INDEX has no collisions across the whole focus taxonomy', () => {
+  // decodePlan's f= field concatenates category and selection with no
+  // separator between them, and splits back only by matching the result
+  // against this index. If two distinct (category, selection) pairs ever
+  // concatenated to the same token, decodePlan would silently resolve one to
+  // the other and import a focus the player did not paste — computed here
+  // from FOCUS_TAXONOMY and WORKING_STATS rather than hardcoded, so this
+  // fails loudly on a genuine collision instead of drifting with the sheet.
+  const { x } = load();
+  const distinctPairs = new Set(x.FOCUS_TAXONOMY.map((row) => `${row.category} ${row.selection}`));
+  const expected = distinctPairs.size + x.WORKING_STATS.length;
+  assert.strictEqual(
+    x.FOCUS_CONCAT_INDEX.size,
+    expected,
+    'a (category, selection) pair collided with another once concatenated',
+  );
 });
 
 test('an empty queue round-trips', () => {
@@ -76,7 +149,7 @@ test('decodePlan treats untrusted settings as untrusted', () => {
   assert.strictEqual(out.ok, true);
   assert.strictEqual(out.settings.maxCooldownHours, 24);
   assert.strictEqual(out.settings.bookPrice, 13500000);
-  assert.strictEqual(out.settings.orderMode, 'as-listed');
+  assert.strictEqual(out.settings.orderMode, 'focus');
   assert.strictEqual(out.settings.perks.meritsPercent, null);
 });
 
@@ -125,7 +198,7 @@ test('the prefix alone is a valid, empty plan — and anything else without a de
   const bare = x.decodePlan('TES1', courses);
   assert.strictEqual(bare.ok, true, 'the prefix on its own is a plan with nothing in it');
   assert.deepStrictEqual(bare.queue, []);
-  assert.strictEqual(bare.settings.orderMode, 'as-listed');
+  assert.strictEqual(bare.settings.orderMode, 'focus');
   // No pipe and not the prefix: there is nothing here to parse.
   assert.strictEqual(x.decodePlan('hello', courses).reason, 'bad-prefix');
   assert.strictEqual(x.decodePlan('   ', courses).reason, 'bad-prefix');
@@ -224,11 +297,11 @@ test('unrecognised keys are ignored, never stored', () => {
   const { x, courses } = load();
   const out = x.decodePlan('TES1|q=34|zzz=hello|__proto__=polluted|perks=x|toString=x', courses);
   assert.strictEqual(out.ok, true, out.detail);
-  // The decoded settings are exactly normaliseSettings' six-key shape: nothing
+  // The decoded settings are exactly normaliseSettings' eight-key shape: nothing
   // from the string reached the object by name.
   assert.deepStrictEqual(
     Object.keys(out.settings).sort(),
-    ['bookPrice', 'booksOwned', 'jobPoints', 'maxCooldownHours', 'orderMode', 'perks'],
+    ['bookPrice', 'booksOwned', 'focusRankBasis', 'focuses', 'jobPoints', 'maxCooldownHours', 'orderMode', 'perks'],
   );
   assert.deepStrictEqual(Object.keys(out.settings.perks).sort(), ['meritsPercent', 'principal', 'wsuBlock']);
   assert.strictEqual({}.polluted, undefined, 'the prototype was polluted');
@@ -359,7 +432,7 @@ const importButton = (body) => descendants(body).find((el) => /import/i.test(el.
 
 function renderedQueueIds(doc) {
   return descendants(panelBody(doc))
-    .filter((el) => el.className === 'tes-row')
+    .filter((el) => el.className === 'tes-queue-row')
     .map((row) => (row.children || []).find((c) => c.dataset && c.dataset.courseId !== undefined))
     .filter(Boolean)
     .map((btn) => Number(btn.dataset.courseId));

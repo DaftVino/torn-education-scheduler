@@ -84,7 +84,10 @@ test('bachelor courses are marked in the addable list', () => {
   assert.strictEqual(tierThree.length, 12);
   assert.strictEqual(tierThree.filter((c) => c.status === 'completed').length, 1);
   for (const b of bachelors) {
-    assert.ok(b.label.indexOf('[bachelor] ') === 0, `${b.prefix} is not marked in its label`);
+    // No text prefix any more (owner decision): the marker is `isBachelor`,
+    // already asserted by the filter above, and the picker renderer turns it
+    // into a `.tes-option-bachelor` class rather than reassembling the label.
+    assert.ok(b.label.indexOf('[bachelor]') === -1, `${b.prefix} still carries the retired text prefix`);
   }
   const ordinary = model.addable.find((a) => a.prefix === 'BIO2380');
   assert.strictEqual(ordinary.isBachelor, false);
