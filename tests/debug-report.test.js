@@ -142,8 +142,12 @@ test('the report survives missing optional fields', () => {
 
 test('the contact line renders no URL while the placeholder is unresolved', () => {
   const { exports: x } = loadUserscript();
-  assert.strictEqual(x.GREASY_FORK_URL, null);
-  assert.strictEqual(x.FORUM_POST_URL, null);
+  // Both were `null` until § K1 put placeholders in. A placeholder is a
+  // non-empty string, so the property this test guards is now "unresolved",
+  // not "falsy" — and that distinction is the whole reason isResolvedUrl
+  // exists rather than every consumer testing truthiness.
+  assert.strictEqual(x.isResolvedUrl(x.GREASY_FORK_URL), false);
+  assert.strictEqual(x.isResolvedUrl(x.FORUM_POST_URL), false);
   const report = x.buildDebugReport(sampleInput(x));
   assert.ok(/greasy fork/i.test(report), 'the report does not say where to send it');
   assert.ok(!/https?:\/\//.test(report), 'the report contains a URL it cannot have');

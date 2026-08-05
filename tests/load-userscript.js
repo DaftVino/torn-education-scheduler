@@ -48,7 +48,7 @@ const EXPORT_NAMES = [
   // working stats
   'WORKING_STATS', 'WORKING_STAT_RE', 'workingStatsFor', 'bonusLabel',
   // focus scoring
-  'focusKey', 'focusScores', 'FOCUS_WORKING_STATS', 'focusTotals', 'FOCUS_UNSTATABLE',
+  'focusKey', 'focusScores', 'balancedScores', 'FOCUS_WORKING_STATS', 'focusTotals', 'FOCUS_UNSTATABLE',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
   // settings
@@ -80,7 +80,10 @@ const EXPORT_NAMES = [
   // navigation
   'unmountPanel', 'observeNavigation',
   // debug report and the (still unresolved) guide links
-  'GREASY_FORK_URL', 'FORUM_POST_URL', 'buildDebugReport', 'gatherDebugContext',
+  // isResolvedUrl sits with the two URLs it guards (§ K1): they are
+  // placeholders until launch, and every consumer gates on it rather than on
+  // a constant's truthiness.
+  'GREASY_FORK_URL', 'FORUM_POST_URL', 'isResolvedUrl', 'buildDebugReport', 'gatherDebugContext',
 ];
 
 function buildInstrumentedSource() {
