@@ -54,7 +54,8 @@ the suite.
 
 | # | Steps | Expected |
 |---|---|---|
-| C1 | Open the course picker | ~115 options. Tier-3 courses carry a `[bachelor]` prefix in their label. |
+| C1 | Open the course picker | ~115 options, no `[bachelor]` text anywhere. Tier-3 courses render in green (`#7ee081`, the same green as the finish-line total), not as plain text. |
+| C1a | Same picker, on macOS specifically | The OS draws the `<select>` menu itself and commonly ignores an option's colour, so bachelor courses show **no green marker at all** there — no prefix either, since none is kept as a fallback. This is expected on macOS, not a defect: confirm the picker still works (count, selection, add) even though the marker is invisible. On Windows/Linux Chrome or Firefox, confirm the green **is** visible — that is the platform the colour is for. |
 | C2 | Look at the picker's **first** option before touching anything | The "all remaining courses" sentinel must not be sitting there as the browser's default selection — a stray `add` click would queue everything with no bulk undo. This was a real bug; confirm the fix held in a real `<select>`. |
 | C3 | Add a single tier-1 course | Appears in the queue. A finish date and a total print. |
 | C4 | Sanity-check that date by hand against the course duration and your reduction | Agrees. |
