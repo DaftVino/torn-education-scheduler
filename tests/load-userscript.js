@@ -103,10 +103,15 @@ const RESOLVED_GREASY_FORK_URL = 'https://greasyfork.org/en/scripts/123456-torn-
 const RESOLVED_FORUM_POST_URL = 'https://www.torn.com/forums.php#/p=threads&f=61&t=16000000';
 
 function resolveLaunchUrls(source) {
+  // Either form: a template literal while the URL is a placeholder, or a plain
+  // quoted string once it has been resolved for real. Both are swapped, so a
+  // test that wants a known URL gets one whether or not launch has happened —
+  // otherwise these tests would start passing vacuously the moment a URL
+  // resolved, which is when they matter most.
   const swap = function (text, name, url) {
-    const pattern = new RegExp(`const ${name} = \`[^\`]*\`;`);
+    const pattern = new RegExp(`const ${name} = (?:\`[^\`]*\`|'[^']*'|"[^"]*");`);
     if (!pattern.test(text)) {
-      throw new Error(`${name} is no longer a template-literal placeholder — update resolveLaunchUrls`);
+      throw new Error(`${name} is not a simple string literal — update resolveLaunchUrls`);
     }
     return text.replace(pattern, `const ${name} = ${JSON.stringify(url)};`);
   };

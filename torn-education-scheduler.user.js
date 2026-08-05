@@ -5,6 +5,8 @@
 // @description  Turns Torn's education page into a live planner: queue courses, get the exact finish date.
 // @author       DaftVino
 // @license      MIT
+// @homepage     https://greasyfork.org/en/scripts/590070-torn-education-scheduler
+// @supportURL   https://greasyfork.org/en/scripts/590070-torn-education-scheduler/feedback
 // @match        https://www.torn.com/page.php*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -58,7 +60,12 @@
   // To resolve: replace the whole string. Do not edit around the token — the
   // guard test matches on it, and a half-edited URL would pass.
   const PLACEHOLDER_TOKEN = 'REPLACE_BEFORE_LAUNCH';
-  const GREASY_FORK_URL = `https://greasyfork.org/scripts/${PLACEHOLDER_TOKEN}`;
+  // Pass 1 is done: the script is listed, so this is the real page and the
+  // debug report's contact line now names where to send it. It matches the
+  // @homepage above deliberately — one address for the script, not two.
+  const GREASY_FORK_URL = 'https://greasyfork.org/en/scripts/590070-torn-education-scheduler';
+  // Pass 2 is not: the forum post is unwritten (docs/designs/forum-post-plan.md),
+  // so this stays a placeholder and every consumer keeps rendering nothing.
   const FORUM_POST_URL = `https://www.torn.com/forums.php#/${PLACEHOLDER_TOKEN}`;
 
   // Every consumer of the two constants above tests THIS, never the constant's

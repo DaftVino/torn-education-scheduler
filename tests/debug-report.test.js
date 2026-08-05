@@ -142,17 +142,23 @@ test('the report survives missing optional fields', () => {
   assert.ok(!report.includes('undefined'), 'an absent field rendered as undefined');
 });
 
-test('the contact line renders no URL while the placeholder is unresolved', () => {
+// § K1 resolves in two passes, and the project is now between them: the script
+// is listed on Greasy Fork, so GREASY_FORK_URL is real; the forum post is
+// unwritten, so FORUM_POST_URL is still a placeholder. This test pins that
+// split state rather than either extreme, because the mixed case is the one a
+// half-done resolution would break — and it is the state that ships today.
+test('the contact line carries the resolved Greasy Fork URL, and the guide URL stays unresolved', () => {
   const { exports: x } = loadUserscript();
-  // Both were `null` until § K1 put placeholders in. A placeholder is a
-  // non-empty string, so the property this test guards is now "unresolved",
-  // not "falsy" — and that distinction is the whole reason isResolvedUrl
-  // exists rather than every consumer testing truthiness.
-  assert.strictEqual(x.isResolvedUrl(x.GREASY_FORK_URL), false);
-  assert.strictEqual(x.isResolvedUrl(x.FORUM_POST_URL), false);
+  assert.strictEqual(x.isResolvedUrl(x.GREASY_FORK_URL), true, 'pass 1 has landed; this should be a real URL');
+  assert.strictEqual(x.isResolvedUrl(x.FORUM_POST_URL), false, 'pass 2 has not; the forum post is unwritten');
+
   const report = x.buildDebugReport(sampleInput(x));
   assert.ok(/greasy fork/i.test(report), 'the report does not say where to send it');
-  assert.ok(!/https?:\/\//.test(report), 'the report contains a URL it cannot have');
+  // The instruction was always useful without the URL — that was the point of
+  // naming Greasy Fork in prose either way. Now it carries the address too.
+  assert.ok(report.includes(x.GREASY_FORK_URL), 'the report names Greasy Fork but not where it is');
+  // And still nothing pointing at Torn: the endpoint and the session live there.
+  assert.ok(!/torn\.com/i.test(report), 'the report contains a URL it cannot have');
 });
 
 // The tests above smuggle secrets under the names a careless blocklist would
@@ -363,7 +369,15 @@ test('the panel builds a real report on demand and it still carries no secret', 
   assert.ok(!text.includes('abcdefghijklm'), 'the session token reached the rendered report');
   assert.ok(!text.includes('Introduction to Biochemistry'), 'payload content reached the rendered report');
   assert.ok(!/completedAt/i.test(text), 'active-course timing reached the rendered report');
-  assert.ok(!/https?:\/\//.test(text), 'a URL reached the rendered report');
+  // The Greasy Fork contact line is the ONE URL this report is meant to carry,
+  // and it only started appearing when § K1 pass 1 resolved GREASY_FORK_URL.
+  // A blanket "no https" was correct while that was a placeholder and would now
+  // forbid the line the report exists to end with — so the rule narrows to what
+  // was ever actually at risk: a torn.com address, which is where the session,
+  // the endpoint and the rfcv token live.
+  const urls = text.match(/https?:\/\/\S+/g) || [];
+  assert.deepStrictEqual(urls, [x.GREASY_FORK_URL], 'the report carries a URL other than its contact line');
+  assert.ok(!/torn\.com/i.test(text), 'a torn.com URL reached the rendered report');
 
   // Toggling it off puts it away again, copy button and all.
   click('hide debug report');
@@ -428,7 +442,9 @@ test('a player whose acquisition failed can build a report, and it carries a rea
   assert.match(text, /403/, 'the failing status did not reach the report');
   // And it is still the same allowlist.
   assert.ok(!text.includes('abcdefghijklm'), 'the session token reached the report');
-  assert.ok(!/https?:\/\//.test(text), 'a URL reached the report');
+  // Same narrowing as the test above, and for the same reason: the contact
+  // line is deliberate, a torn.com address never is.
+  assert.ok(!/torn\.com/i.test(text), 'a torn.com URL reached the report');
 });
 
 test('the perks note is reachable in the error state, so an unreadable page is still enterable', async () => {
