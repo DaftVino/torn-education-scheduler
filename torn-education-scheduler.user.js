@@ -1839,6 +1839,19 @@
     note: 'Your education data could not be read, so no perks can be inferred. Enter what you hold.',
   };
 
+  // In words, from focusTotals' shape. `unit: 'count'` never states a
+  // percentage — the whole reason FOCUS_UNSTATABLE and the Unlocks &
+  // Abilities category are folded into 'count' rather than left to show a
+  // magnitude nobody can stand behind.
+  function focusRemainingLabel(totals) {
+    if (totals.remaining <= 0) return 'complete';
+    if (totals.unit === 'percent') return `${totals.remaining}% left of ${totals.total}%`;
+    if (totals.unit === 'flat') return `${totals.remaining} left of ${totals.total}`;
+    return totals.statable
+      ? `${totals.remaining} of ${totals.total} left`
+      : `${totals.remaining} course${totals.remaining === 1 ? '' : 's'} left, no fixed total`;
+  }
+
   function buildPanelModel(state) {
     // Computed once, here, so nothing downstream depends on the caller having
     // normalised: panelSettings runs normaliseSettings, which turns anything —
@@ -1869,6 +1882,12 @@
       // There is no payload to derive degrees from, so the grid view says so
       // rather than drawing thirteen empty boxes.
       grid: null,
+      // Same reasoning as grid: no catalogue means no totals to state and no
+      // registry to check for staleness, so the focus view says so rather
+      // than drawing empty categories.
+      focusGroups: null,
+      focuses: null,
+      focusHealth: null,
       // Nothing to share: without a catalogue there is no queue this model can
       // vouch for, and a share string is a claim about a plan. Empty rather
       // than null, because the box renders either way and `null` in a textarea
@@ -1971,6 +1990,53 @@
       }),
     };
 
+    // The registry drives both what the focus view can offer and what it is
+    // honest about not knowing: a stale row lost its outcome match, an
+    // unmapped outcome has no row at all. Reported as counts only — never
+    // which course, which is what would make this a second copy of the
+    // taxonomy the view is not meant to be.
+    const focusReg = focusRegistry(data.courses);
+    const focusHealth = { stale: focusReg.stale, unmapped: focusReg.unmapped };
+
+    // Priority is settings.focuses' own array index, never a stored number —
+    // see toggleFocus/setFocusPriority. An unchosen selection gets null here,
+    // never 0: a number nobody set must not read as a number somebody set.
+    const focusPriorityByKey = new Map();
+    settings.focuses.forEach(function (f, i) { focusPriorityByKey.set(focusKey(f.category, f.selection), i + 1); });
+
+    const focusGroups = FOCUS_CATEGORIES.map(function (category) {
+      let selections;
+      if (category === FOCUS_WORKING_STATS) {
+        selections = WORKING_STATS.slice();
+      } else {
+        // First occurrence per selection: a selection can be reached by more
+        // than one taxonomy row (a split course), and the view offers it once.
+        const seen = new Set();
+        selections = [];
+        for (const row of FOCUS_TAXONOMY) {
+          if (row.category !== category || seen.has(row.selection)) continue;
+          seen.add(row.selection);
+          selections.push(row.selection);
+        }
+      }
+      return {
+        category: category,
+        selections: selections.map(function (selection) {
+          const totals = focusTotals({ category: category, selection: selection }, data.courses, data.completedIds);
+          const key = focusKey(category, selection);
+          return {
+            selection: selection,
+            unit: totals.unit,
+            total: totals.total,
+            remaining: totals.remaining,
+            statable: totals.statable,
+            remainingLabel: focusRemainingLabel(totals),
+            priority: focusPriorityByKey.has(key) ? focusPriorityByKey.get(key) : null,
+          };
+        }),
+      };
+    });
+
     // Same gate as finishLabel/totalLabel below, and for the same reason: a
     // queue with unmet prerequisites has no honest total, so it has nothing for
     // Books to reduce either. Reducing a fiction would produce a floor date
@@ -2067,6 +2133,9 @@
       orderModes: ORDER_MODE_LABELS,
       debugReport: state.debugReport || null,
       grid: grid,
+      focusGroups: focusGroups,
+      focuses: settings.focuses,
+      focusHealth: focusHealth,
       // Built from the pruned queue, in storage order — never the ordered
       // queue: ordering is a display preference, and storage keeps the raw
       // order. Sharing the ordered queue would silently rewrite a hand-built
@@ -2214,7 +2283,7 @@
 
   // The header names the view you are looking at, so a collapsed-then-reopened
   // panel is not ambiguous about what it is showing.
-  const VIEW_TITLES = { schedule: 'Education Scheduler', settings: 'Settings', grid: 'Degrees' };
+  const VIEW_TITLES = { schedule: 'Education Scheduler', settings: 'Settings', grid: 'Degrees', focus: 'Focus' };
 
   // The shell only: chrome, the failure line, the nav row, and the view
   // switch. Each view owns its own body content, so adding a view never grows
@@ -2276,12 +2345,31 @@
       if (handlers !== noopHandlers) {
         const nav = doc.createElement('div');
         nav.className = 'tes-nav';
-        for (const target of ['schedule', 'grid', 'settings']) {
+        for (const target of ['schedule', 'grid', 'focus', 'settings']) {
           if (target === view) continue;
           const btn = doc.createElement('button');
-          btn.textContent = target === 'settings' ? '⚙ settings' : target === 'grid' ? 'degrees' : 'schedule';
+          btn.textContent = target === 'settings' ? '⚙ settings' : target === 'grid' ? 'degrees' : target === 'focus' ? 'focus' : 'schedule';
+
+          // Focus mode has one switch — Queue order, in the settings view —
+          // and this is the same switch, not a second one. Disabled rather
+          // than absent: a missing button is a puzzle, a disabled one says
+          // the feature exists and that something turns it on. The title
+          // says what.
+          if (target === 'focus' && model.settings.orderMode !== 'focus') {
+            btn.disabled = true;
+            btn.setAttribute('title', 'Set Queue order to "My focus first" in settings to use this');
+          }
+
           if (btn.addEventListener && handlers.onViewChange) {
-            btn.addEventListener('click', function () { handlers.onViewChange(target); });
+            // Guarded explicitly on btn.disabled: some fake-document
+            // harnesses (and a native button carrying only the disabled
+            // attribute rather than the property) still dispatch a click
+            // event, and a disabled control must not act regardless of
+            // whether the host is a real browser suppressing it for us.
+            btn.addEventListener('click', function () {
+              if (btn.disabled) return;
+              handlers.onViewChange(target);
+            });
           }
           nav.appendChild(btn);
         }
@@ -2289,12 +2377,13 @@
       }
 
       // Settings renders in full either way — it reads nothing from the
-      // payload. Schedule and Degrees have nothing to draw without data, and
-      // the failure line above is the whole of what they have to say, so they
-      // are skipped rather than rendered empty.
+      // payload. Schedule, Degrees and Focus have nothing to draw without
+      // data, and the failure line above is the whole of what they have to
+      // say, so they are skipped rather than rendered empty.
       if (view === 'settings') renderSettingsView(doc, body, model, handlers);
       else if (model.status === 'error') { /* the failure line is the view */ }
       else if (view === 'grid') renderGridView(doc, body, model, handlers);
+      else if (view === 'focus') renderFocusView(doc, body, model, handlers);
       else renderScheduleView(doc, body, model, handlers);
 
       panel.appendChild(body);
@@ -2515,6 +2604,104 @@
       err.className = 'tes-save-error';
       err.textContent = model.importError;
       share.appendChild(err);
+    }
+  }
+
+  // One section per taxonomy category, each offering its selections as a
+  // checkbox plus what is left of it. The one control this view does NOT
+  // offer is Queue order itself — that lives in Settings, and is the single
+  // switch that turns this whole view on (see the nav row in renderPanel).
+  function renderFocusView(doc, body, model, handlers) {
+    // A guard on the model contract, not a state this panel produces:
+    // renderPanel reaches this renderer only on a non-error model, and every
+    // non-error model carries focusGroups. It is here, the same as
+    // renderGridView's equivalent guard, so a renderer handed a bare model
+    // never meets an undefined.
+    if (!model.focusGroups) {
+      const none = doc.createElement('div');
+      none.className = 'tes-summary';
+      none.textContent = 'No course data, so no focus figures.';
+      body.appendChild(none);
+      return;
+    }
+
+    // The one thing this view must not be left to imply — see the settings
+    // view's identical worry about Queue order in general. Focus reorders;
+    // it does not shorten or lengthen anything, because courses still run
+    // one at a time and the sum is order-independent.
+    const orderNote = doc.createElement('div');
+    orderNote.className = 'tes-note';
+    orderNote.textContent = 'Choosing a focus changes the order courses are queued in — it does not change the finish date. The total time is the same either way; a focus just moves the courses that earn it earlier, so that benefit starts paying off sooner.';
+    body.appendChild(orderNote);
+
+    // Torn does not attach a learningOutcomes entry to every course. Silence
+    // on 31 of them would read as "these have nothing," which is wrong for
+    // the ones whose only benefit is a working-stat gain — the one category
+    // this view computes rather than classifies.
+    const outcomeNote = doc.createElement('div');
+    outcomeNote.className = 'tes-note';
+    outcomeNote.textContent = '31 courses grant no learning outcome at all. Working Stats is the only focus category that can still reach them.';
+    body.appendChild(outcomeNote);
+
+    // A stale or unmapped count names a live disagreement between the
+    // taxonomy and today's payload — shown, never swallowed, because a silent
+    // zero here would rank a real benefit as worthless or trust a judgement
+    // that no longer applies.
+    if (model.focusHealth && (model.focusHealth.stale > 0 || model.focusHealth.unmapped > 0)) {
+      const healthNote = doc.createElement('div');
+      healthNote.className = 'tes-note';
+      healthNote.textContent = `Focus data health: ${model.focusHealth.stale} classification${model.focusHealth.stale === 1 ? '' : 's'} out of date, ${model.focusHealth.unmapped} outcome${model.focusHealth.unmapped === 1 ? '' : 's'} not yet classified.`;
+      body.appendChild(healthNote);
+    }
+
+    const toggle = handlers.onFocusToggle || function () {};
+    const reprioritise = handlers.onFocusPriority || function () {};
+
+    for (const group of model.focusGroups) {
+      const section = settingsSection(doc, body, group.category);
+      for (const sel of group.selections) {
+        const row = doc.createElement('div');
+        row.className = 'tes-row';
+
+        const box = doc.createElement('input');
+        box.setAttribute('type', 'checkbox');
+        // A single control either way: toggleFocus reads the player's
+        // current focuses to decide select, deselect or swap, so every
+        // checkbox — chosen or not — commits through the same call.
+        if (sel.priority !== null) box.checked = true;
+        if (box.addEventListener) {
+          box.addEventListener('change', function () { toggle(group.category, sel.selection); });
+        }
+        row.appendChild(box);
+
+        const label = doc.createElement('span');
+        label.textContent = sel.selection;
+        row.appendChild(label);
+
+        const remaining = doc.createElement('span');
+        remaining.textContent = sel.remainingLabel;
+        row.appendChild(remaining);
+
+        // Only once chosen: an unchosen selection has no number to change,
+        // and a renumbering control for something not on the list yet would
+        // invite a click that means nothing. Each chosen focus renders its
+        // own number beside it; there is no default and no greyed-out zero.
+        if (sel.priority !== null) {
+          const priorityInput = doc.createElement('input');
+          priorityInput.className = 'tes-focus-priority';
+          priorityInput.setAttribute('type', 'number');
+          priorityInput.setAttribute('min', '1');
+          priorityInput.value = String(sel.priority);
+          if (priorityInput.addEventListener) {
+            priorityInput.addEventListener('change', function () {
+              reprioritise(group.category, sel.selection, Number(priorityInput.value));
+            });
+          }
+          row.appendChild(priorityInput);
+        }
+
+        section.appendChild(row);
+      }
     }
   }
 
@@ -2851,6 +3038,10 @@
       // would draw an optionless dropdown if that ever changed, which is what
       // this whole field group is here to prevent.
       perkInference: NO_INFERENCE, orderModes: ORDER_MODE_LABELS, debugReport: null, grid: null,
+      // Same trio buildPanelModel's failure model carries, for the same
+      // reason: no catalogue means no registry to check and no totals to
+      // state.
+      focusGroups: null, focuses: null, focusHealth: null,
       consumables: null,
       // Same pair buildPanelModel carries, for the reason the comment above
       // gives: a renderer handed this model must not meet an undefined.
@@ -2864,6 +3055,11 @@
     onPickerChange: function () {}, onViewChange: function () {},
     onSettingChange: function () {},
     onToggleDebugReport: function () {}, onCopyDebugReport: function () {},
+    // renderFocusView (reachable only via renderPanel's view dispatch, which
+    // guards its own calls with `|| function(){}`) does not strictly need
+    // these to exist here — but every other handler renderSettingsView calls
+    // is kept for shape completeness, and these are the same kind of caller.
+    onFocusToggle: function () {}, onFocusPriority: function () {},
     // renderSettingsView (the only renderer that calls onImportPlan) is
     // unreachable through this handler set: both errorModel call sites pass
     // noopHandlers, errorModel hardcodes view: 'schedule', and renderPanel
@@ -3053,6 +3249,34 @@
             else next[field] = value;
             // normaliseSettings is the only writer of the canonical shape, so a
             // rejected value falls back to its default rather than being stored.
+            settings = normaliseSettings(next);
+            settingsSaveFailed = !saveSettings(settings);
+            // Queue order is the single switch the focus nav button reads.
+            // Turning it off while standing on the focus view would leave the
+            // player looking at a page whose own nav entry just went dark,
+            // with no route back except the settings page they came from —
+            // so this falls back to schedule instead. settings.focuses is
+            // left alone: this switch says which ordering applies, not what
+            // the player is building toward. view is closure state, never
+            // persisted, so this writes nothing to storage.
+            if (field === 'orderMode' && settings.orderMode !== 'focus' && view === 'focus') view = 'schedule';
+            draw(currentPlan, saveFailed === true);
+          },
+          // Both route through the same commit path onSettingChange uses —
+          // normalise, save, redraw — so a failed write surfaces as
+          // settingsSaveFailed rather than being lost, and priority stays in
+          // step with settings.focuses' own array order (see
+          // toggleFocus/setFocusPriority: priority IS the index).
+          onFocusToggle: function (category, selection) {
+            const next = JSON.parse(JSON.stringify(settings));
+            next.focuses = toggleFocus(settings.focuses, category, selection);
+            settings = normaliseSettings(next);
+            settingsSaveFailed = !saveSettings(settings);
+            draw(currentPlan, saveFailed === true);
+          },
+          onFocusPriority: function (category, selection, position) {
+            const next = JSON.parse(JSON.stringify(settings));
+            next.focuses = setFocusPriority(settings.focuses, category, selection, position);
             settings = normaliseSettings(next);
             settingsSaveFailed = !saveSettings(settings);
             draw(currentPlan, saveFailed === true);

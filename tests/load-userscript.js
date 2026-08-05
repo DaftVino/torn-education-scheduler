@@ -67,7 +67,7 @@ const EXPORT_NAMES = [
   // noopHandlers by identity, so a test asserting that needs the real object.
   'errorModel', 'noopHandlers',
   // views
-  'renderScheduleView', 'renderSettingsView', 'renderGridView',
+  'renderScheduleView', 'renderSettingsView', 'renderGridView', 'renderFocusView',
   // navigation
   'unmountPanel', 'observeNavigation',
   // debug report and the (still unresolved) guide links

@@ -214,6 +214,7 @@ test('the add button does not queue a course when the picker has no real selecti
     queue: [], addable: [], stale: [], problems: [],
     finishLabel: null, totalLabel: null, collapsed: false,
     saveError: false, selectedCourseId: null,
+    settings: { orderMode: 'as-listed' },
   };
   let added = null;
   const handlers = { onToggle() {}, onAdd: (id) => { added = id; }, onRemove() {}, onPickerChange() {} };
@@ -413,6 +414,7 @@ test('an empty addable list offers no all-remaining entry to click', () => {
     queue: [], addable: [], stale: [], problems: [],
     finishLabel: null, totalLabel: null, collapsed: false,
     saveError: false, selectedCourseId: null,
+    settings: { orderMode: 'as-listed' },
   };
   let addedAll = false;
   const handlers = {
@@ -541,7 +543,7 @@ function descendants(el) {
 
 const hasText = (el, text) => descendants(el).some((c) => c.textContent === text);
 
-test('the shell renders the requested view and offers nav to the other two', () => {
+test('the shell renders the requested view and offers nav to the other three', () => {
   const { exports, state } = okState([]);
   const doc = makeFakeDocument();
 
@@ -578,10 +580,18 @@ test('the shell renders the requested view and offers nav to the other two', () 
   assert.ok(hasText(grid.body, 'Biology (BIO3420)'), 'the grid view did not render its boxes');
   assert.ok(!hasText(grid.body, 'Education perks'), 'the grid view rendered settings content');
 
-  // The nav always offers exactly the two views you are not looking at, so
+  const focus = draw('focus');
+  assert.match(focus.panel.children[0].textContent, /^Focus/);
+  // Content only the focus view produces: a category from the taxonomy.
+  // tests/panel.test.js's own focus tests own the view's behaviour beyond
+  // this; this pins the dispatch.
+  assert.ok(hasText(focus.body, 'Working Stats'), 'the focus view did not render its categories');
+  assert.ok(!hasText(focus.body, 'Education perks'), 'the focus view rendered settings content');
+
+  // The nav always offers exactly the three views you are not looking at, so
   // there is no button that redraws the view already on screen.
-  for (const { nav } of [fallback, settings, grid]) {
-    assert.strictEqual(nav.children.length, 2);
+  for (const { nav } of [fallback, settings, grid, focus]) {
+    assert.strictEqual(nav.children.length, 3);
   }
   assert.ok(!fallback.nav.children.some((b) => b.textContent === 'schedule'), 'the current view is offered as a target');
 });
@@ -1012,4 +1022,264 @@ test('init() renders a draw() that threw inside the panel instead of blanking th
     !body.children.some((c) => c.className === 'tes-nav'),
     'the inert panel offered nav buttons nothing is listening to',
   );
+});
+
+// -----------------------------------------------------------------------
+// The focus view (Task 7).
+//
+// The task brief for this section assumed `load`/`makeDocument`/`state`/
+// `handlers` helpers already lived in this file, on the pattern
+// tests/share.test.js's and tests/ordering.test.js's own `load()`. They did
+// not exist here — this file's equivalent idioms are `okState`,
+// `makeFakeDocument` and a locally-built handler object per test — so they
+// are built fresh below rather than duplicated per test.
+//
+// The brief's own tests also assumed a browser-accurate `querySelectorAll`
+// and `dispatchEvent`; tests/fake-document.js implements neither (its
+// `querySelectorAll` always returns `[]`, and elements have no
+// `dispatchEvent` at all — see the file's own header comment on what it
+// deliberately does not model). Every test below is adapted to this file's
+// real idioms: `descendants()`, `body.children.find(...)` and the `fire()`
+// helper defined above.
+// -----------------------------------------------------------------------
+
+function load() {
+  const { exports: x } = loadUserscript();
+  return { x };
+}
+
+function makeDocument() { return makeFakeDocument(); }
+
+// A full ok-state buildPanelModel() input built from the real fixture.
+// `overrides.settings` is a partial settings object — normaliseSettings
+// fills in whatever it omits, so a test only has to name what it cares
+// about. `overrides.fetchFailed` swaps in a failure model instead.
+function state(overrides) {
+  const o = overrides || {};
+  const { exports: x } = loadUserscript();
+  const data = x.parsePayload(loadFixture());
+  return {
+    fetchResult: o.fetchFailed ? { ok: false, reason: 'network', detail: 'offline' } : { ok: true, data: data },
+    plan: { queue: [], collapsed: false },
+    now: NOW,
+    view: o.view,
+    settings: o.settings || {},
+  };
+}
+
+// A full, real handler set — deliberately NOT noopHandlers, whose identity
+// renderPanel tests for to suppress the whole .tes-nav row. These tests are
+// about the nav row, so they need a handler set renderPanel treats as live.
+function handlers() {
+  return {
+    onToggle() {}, onAdd() {}, onRemove() {}, onAddAll() {},
+    onPickerChange() {}, onViewChange() {},
+    onSettingChange() {}, onToggleDebugReport() {}, onCopyDebugReport() {},
+    onImportPlan() {},
+    onFocusToggle() {}, onFocusPriority() {},
+  };
+}
+
+// Every descendant's own textContent, joined. The fake document does not
+// implement a real browser's aggregating textContent, so a search across a
+// whole rendered panel has to walk descendants and join them itself.
+function allText(el) { return descendants(el).map((c) => c.textContent).join(' '); }
+
+function focusNavButton(panel) {
+  const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+  return nav ? nav.children.find((b) => /focus/i.test(b.textContent)) : undefined;
+}
+
+// Boots init() against the real fixture, seeding both storage keys before
+// the first draw. Delegates to initWithFixture (defined above) rather than
+// duplicating its setup, but takes its two arguments in plan-then-settings
+// order and returns the raw gmStore Map as `gmStore` — what the guard test
+// below needs, to re-read settings after a fallback-to-schedule fires.
+async function bootInit(seedPlan, seedSettings) {
+  const result = await initWithFixture(seedSettings, seedPlan);
+  return { x: result.exports, doc: result.doc, gmStore: result.gmStore };
+}
+
+test('the nav row offers the focus view and titles it', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state()), handlers());
+  const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+  const labels = nav.children.map((b) => b.textContent);
+  assert.ok(labels.some((l) => /focus/i.test(l)));
+});
+
+test('the focus button is disabled until Queue order selects focus', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ settings: { orderMode: 'shortest-first' } })), handlers());
+  const btn = focusNavButton(panel);
+  assert.ok(btn, 'the button must render, not vanish — a missing button is a puzzle');
+  assert.strictEqual(btn.disabled, true);
+});
+
+test('the disabled focus button names what turns it on', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ settings: { orderMode: 'as-listed' } })), handlers());
+  const title = focusNavButton(panel).attributes.title || '';
+  assert.ok(/queue order/i.test(title),
+    'the answer must travel with the question, not live in a changelog');
+});
+
+test('selecting focus in Queue order enables the button', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ settings: { orderMode: 'focus' } })), handlers());
+  assert.ok(!focusNavButton(panel).disabled);
+});
+
+test('a disabled focus button does not navigate when clicked', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const seen = [];
+  const h = Object.assign({}, handlers(), { onViewChange: (v) => seen.push(v) });
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ settings: { orderMode: 'as-listed' } })), h);
+  // dispatchEvent does not exist on the fake DOM; fire() calls the
+  // registered listener directly, which is exactly the case this guard
+  // exists for — "some fake-document harnesses dispatch regardless of
+  // disabled" (task brief). The guard lives inside the listener itself.
+  fire(focusNavButton(panel), 'click');
+  assert.deepStrictEqual(seen, [], 'a disabled control must not act');
+});
+
+// The brief's version of this test looked up the Queue-order <select> AFTER
+// navigating to the focus view — but that control lives on the settings
+// view alone, so it can never be found there, in a real browser or this
+// harness (querySelectorAll is a stub here regardless). Rewritten: capture
+// the select from the settings view first, THEN navigate to focus (Queue
+// order really is 'focus', so its nav entry really is enabled), and fire
+// the now-detached select's own change listener. That listener closes over
+// init()'s shared `view` variable rather than a per-render copy, so it
+// still reads 'focus' at the moment it fires — the exact combination the
+// guard exists for, and the only way to reach it without two panels open
+// at once.
+test('leaving focus mode while on the focus view returns to the schedule', async () => {
+  const { x, doc, gmStore } = await bootInit(
+    { queue: [34] },
+    { orderMode: 'focus', focuses: [{ category: 'Working Stats', selection: 'intelligence' }] },
+  );
+
+  function navTo(pattern) {
+    const nav = descendants(doc.querySelector('#tes-panel')).find((c) => c.className === 'tes-nav');
+    const btn = nav.children.find((b) => pattern.test(b.textContent));
+    assert.ok(btn, `no nav button matching ${pattern}`);
+    fire(btn, 'click');
+  }
+
+  navTo(/settings/i);
+  const orderSelect = fieldFor(doc.querySelector('#tes-panel').children[1], 'Queue order');
+  assert.strictEqual(orderSelect.value, 'focus');
+
+  navTo(/focus/i);
+  assert.match(doc.querySelector('#tes-panel').children[0].textContent, /^Focus/, 'did not actually land on the focus view');
+
+  orderSelect.value = 'shortest-first';
+  fire(orderSelect, 'change');
+
+  const header = doc.querySelector('#tes-panel').children[0].textContent;
+  assert.ok(/^Education Scheduler/.test(header),
+    'the player must not be stranded on a view whose nav entry is now disabled');
+  assert.deepStrictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).focuses.length, 1,
+    'leaving focus mode says nothing about what the player is building toward');
+});
+
+test('the focus view names each category and its selections', () => {
+  const { x } = load();
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const text = allText(panel);
+  assert.ok(text.includes('Working Stats'));
+  assert.ok(text.includes('Passive Stat Bonus'));
+  assert.ok(text.includes('Gym Gain Bonus'));
+});
+
+test('a selection shows what is left, and unlocks show a count not a percentage', () => {
+  const { x } = load();
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  const unlock = model.focusGroups.find((g) => g.category === 'Unlocks & Abilities');
+  assert.ok(unlock.selections.every((s) => s.unit === 'count'));
+  assert.ok(unlock.selections.every((s) => !/%/.test(s.remainingLabel)));
+});
+
+test('the focus view says ordering does not change the finish date', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: 'focus' })), handlers());
+  assert.ok(/finish date/i.test(allText(panel)),
+    'the one thing this control must not be left to imply');
+});
+
+test('an unchosen selection shows no number at all', () => {
+  const { x } = load();
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  const chosen = new Set(model.focuses.map((f) => `${f.category} ${f.selection}`));
+  for (const group of model.focusGroups) {
+    for (const s of group.selections) {
+      if (!chosen.has(`${group.category} ${s.selection}`)) {
+        assert.strictEqual(s.priority, null,
+          'a number nobody set reads as a number somebody set');
+      }
+    }
+  }
+});
+
+test('chosen focuses are numbered 1..n with no gaps and no repeats', () => {
+  const { x } = load();
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [
+      { category: 'Working Stats', selection: 'intelligence' },
+      { category: 'Passive Stat Bonus', selection: 'Speed' },
+    ] },
+  }));
+  const nums = [];
+  for (const group of model.focusGroups) {
+    for (const s of group.selections) if (s.priority !== null) nums.push(s.priority);
+  }
+  assert.deepStrictEqual(nums.slice().sort((a, b) => a - b), [1, 2]);
+});
+
+test('the priority control commits through the handler and changes nothing by itself', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const calls = [];
+  const h = Object.assign({}, handlers(), {
+    onFocusPriority: (c, s, p) => calls.push([c, s, p]),
+  });
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [{ category: 'Working Stats', selection: 'intelligence' }] },
+  }));
+  const panel = x.renderPanel(doc, doc.body, model, h);
+  const input = descendants(panel).find((c) => c.className === 'tes-focus-priority');
+  assert.ok(input, 'a chosen focus must offer a way to change its number');
+  input.value = '1';
+  fire(input, 'change');
+  assert.strictEqual(calls.length, 1);
+});
+
+test('a stale or unmapped count is shown rather than hidden', () => {
+  const { x } = load();
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  assert.strictEqual(typeof model.focusHealth.stale, 'number');
+  assert.strictEqual(typeof model.focusHealth.unmapped, 'number');
+});
+
+test('the focus view renders without a payload and withholds totals', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const model = x.buildPanelModel(state({ view: 'focus', fetchFailed: true }));
+  assert.doesNotThrow(() => x.renderPanel(doc, doc.body, model, handlers()));
+  assert.strictEqual(model.focusGroups, null);
 });
