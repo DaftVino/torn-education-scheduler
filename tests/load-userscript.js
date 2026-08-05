@@ -40,7 +40,7 @@ const EXPORT_NAMES = [
   // queue ordering
   'ORDER_MODE_LABELS', 'orderQueue', 'dependentCount', 'upstreamOf',
   // focus taxonomy
-  'FOCUS_TAXONOMY', 'focusRegistry',
+  'FOCUS_TAXONOMY', 'focusRegistry', 'FOCUS_CATEGORIES',
   // working stats
   'WORKING_STATS', 'WORKING_STAT_RE', 'workingStatsFor',
   // focus scoring
@@ -49,6 +49,7 @@ const EXPORT_NAMES = [
   'freshPlan', 'loadPlan', 'savePlan',
   // settings
   'SETTINGS_KEY', 'normaliseSettings', 'freshSettings', 'loadSettings', 'saveSettings',
+  'normaliseFocuses', 'toggleFocus', 'setFocusPriority',
   // perks
   'inferPerks',
   // the share string — the only input this script parses from outside the
