@@ -2052,6 +2052,7 @@
       focuses: null,
       focusHealth: null,
       focusOpenCategories: [],
+      focusOpenCompletedCategories: [],
       // Nothing to share: without a catalogue there is no queue this model can
       // vouch for, and a share string is a claim about a plan. Empty rather
       // than null, because the box renders either way and `null` in a textarea
@@ -2319,6 +2320,9 @@
       focuses: settings.focuses, // not read by any renderer; kept for tests/panel.test.js — see code-map
       focusHealth: focusHealth,
       focusOpenCategories: Array.isArray(state.focusOpenCategories) ? state.focusOpenCategories : [],
+      focusOpenCompletedCategories: Array.isArray(state.focusOpenCompletedCategories)
+        ? state.focusOpenCompletedCategories
+        : [],
       // Built from the pruned queue, in storage order — never the ordered
       // queue: ordering is a display preference, and storage keeps the raw
       // order. Sharing the ordered queue would silently rewrite a hand-built
@@ -2526,6 +2530,9 @@
       '#tes-panel .tes-focus-row { display: grid; grid-template-columns: 1.5em 1fr auto; align-items: center; gap: 8px; padding: 2px 0; }',
       '#tes-panel .tes-focus-row input[type="checkbox"] { width: auto; }',
       '#tes-panel .tes-focus-row[data-disabled="true"] { color: var(--tm-muted); }',
+      '#tes-panel .tes-focus-completed { border-top: 1px solid var(--tm-border-2); margin-top: var(--tes-gap-sm); padding-top: 6px; }',
+      '#tes-panel .tes-focus-completed-title { width: 100%; text-align: left; color: var(--tm-muted);',
+      '  background: var(--tm-bg-3); font-size: var(--tes-text-sm); }',
       '#tes-panel .tes-focus-remaining { justify-self: end; text-align: right; }',
       '#tes-panel .tes-focus-priority { box-sizing: border-box; width: 2.5em; }',
       '#tes-panel .tes-note { color: var(--tm-muted); margin-bottom: var(--tes-gap-sm); font-size: var(--tes-text-sm); }',
@@ -3067,9 +3074,51 @@
     const toggle = handlers.onFocusToggle || function () {};
     const reprioritise = handlers.onFocusPriority || function () {};
     const toggleSection = handlers.onFocusSectionToggle || function () {};
+    const toggleCompleted = handlers.onFocusCompletedToggle || function () {};
     const openCategories = Array.isArray(model.focusOpenCategories)
       ? model.focusOpenCategories
       : [];
+    const openCompletedCategories = Array.isArray(model.focusOpenCompletedCategories)
+      ? model.focusOpenCompletedCategories
+      : [];
+
+    function isCompletedUnchosen(sel) {
+      return sel.remainingLabel === 'complete' && sel.priority === null;
+    }
+
+    function appendSelectionRow(parent, category, sel) {
+      const row = doc.createElement('div');
+      row.className = 'tes-focus-row';
+      const completedUnchosen = isCompletedUnchosen(sel);
+      if (completedUnchosen) {
+        row.setAttribute('data-disabled', 'true');
+        row.setAttribute('title', 'This focus is already complete and cannot be selected.');
+      }
+
+      const box = doc.createElement('input');
+      box.setAttribute('type', 'checkbox');
+      // A single control either way: toggleFocus reads the player's current
+      // focuses to decide select, deselect or swap, so every checkbox that is
+      // still actionable commits through the same call.
+      if (sel.priority !== null) box.checked = true;
+      if (completedUnchosen) box.disabled = true;
+      if (!completedUnchosen && box.addEventListener) {
+        box.addEventListener('change', function () { toggle(category, sel.selection); });
+      }
+      row.appendChild(box);
+
+      const label = doc.createElement('span');
+      label.className = 'tes-focus-name';
+      label.textContent = sel.selection;
+      row.appendChild(label);
+
+      const remaining = doc.createElement('span');
+      remaining.className = 'tes-focus-remaining';
+      remaining.textContent = sel.remainingLabel;
+      row.appendChild(remaining);
+
+      parent.appendChild(row);
+    }
 
     for (const group of model.focusGroups) {
       const expanded = openCategories.indexOf(group.category) !== -1;
@@ -3082,38 +3131,34 @@
         reprioritise(group.category, selection, position);
       });
       if (!expanded) continue;
-      for (const sel of group.selections) {
-        const row = doc.createElement('div');
-        row.className = 'tes-focus-row';
-        const completedUnchosen = sel.remainingLabel === 'complete' && sel.priority === null;
-        if (completedUnchosen) {
-          row.setAttribute('data-disabled', 'true');
-          row.setAttribute('title', 'This focus is already complete and cannot be selected.');
+      const completed = group.selections.filter(isCompletedUnchosen);
+      // A completed chosen focus stays in the main list: it is the category's
+      // active plan, the header names it, and its live checkbox is the only
+      // control that can untick it. Hiding that control behind a disclosure
+      // the player has no reason to open would make the choice look permanent.
+      const remaining = group.selections.filter(function (sel) {
+        return !isCompletedUnchosen(sel);
+      });
+      for (const sel of remaining) appendSelectionRow(section, group.category, sel);
+
+      // No empty disclosure: a button that opens onto nothing promises an
+      // action it cannot perform.
+      if (completed.length > 0) {
+        const completedExpanded = openCompletedCategories.indexOf(group.category) !== -1;
+        const completedGroup = doc.createElement('div');
+        completedGroup.className = 'tes-focus-completed';
+        const completedHeading = doc.createElement('button');
+        completedHeading.className = 'tes-focus-completed-title';
+        completedHeading.textContent = `completed (${completed.length})`;
+        completedHeading.setAttribute('aria-expanded', completedExpanded ? 'true' : 'false');
+        if (completedHeading.addEventListener) {
+          completedHeading.addEventListener('click', function () { toggleCompleted(group.category); });
         }
-
-        const box = doc.createElement('input');
-        box.setAttribute('type', 'checkbox');
-        // A single control either way: toggleFocus reads the player's
-        // current focuses to decide select, deselect or swap, so every
-        // checkbox — chosen or not — commits through the same call.
-        if (sel.priority !== null) box.checked = true;
-        if (completedUnchosen) box.disabled = true;
-        if (!completedUnchosen && box.addEventListener) {
-          box.addEventListener('change', function () { toggle(group.category, sel.selection); });
+        completedGroup.appendChild(completedHeading);
+        if (completedExpanded) {
+          for (const sel of completed) appendSelectionRow(completedGroup, group.category, sel);
         }
-        row.appendChild(box);
-
-        const label = doc.createElement('span');
-        label.className = 'tes-focus-name';
-        label.textContent = sel.selection;
-        row.appendChild(label);
-
-        const remaining = doc.createElement('span');
-        remaining.className = 'tes-focus-remaining';
-        remaining.textContent = sel.remainingLabel;
-        row.appendChild(remaining);
-
-        section.appendChild(row);
+        section.appendChild(completedGroup);
       }
     }
   }
@@ -3525,6 +3570,7 @@
       // reason: no catalogue means no registry to check and no totals to
       // state.
       focusGroups: null, focuses: null, focusHealth: null, focusOpenCategories: [],
+      focusOpenCompletedCategories: [],
       consumables: null,
       // Same pair buildPanelModel carries, for the reason the comment above
       // gives: a renderer handed this model must not meet an undefined.
@@ -3543,6 +3589,7 @@
     // these to exist here — but every other handler renderSettingsView calls
     // is kept for shape completeness, and these are the same kind of caller.
     onFocusToggle: function () {}, onFocusPriority: function () {}, onFocusSectionToggle: function () {},
+    onFocusCompletedToggle: function () {},
     onFocusRankToggle: function () {},
     // renderSettingsView (the only renderer that calls onImportPlan) is
     // unreachable through this handler set: both errorModel call sites pass
@@ -3639,6 +3686,9 @@
     // closed every time, while an in-view heading click redraws just its own
     // category open or closed without writing either storage key.
     let focusOpenCategories = [];
+    // Nested completed groups use the same transient lifetime as their parent
+    // categories. They reset on every entry to Focus and are never persisted.
+    let focusOpenCompletedCategories = [];
     // Cleared by the next successful import, never persisted: it describes one
     // paste, and a stale reason beside a plan that imported fine is a lie.
     let importError = null;
@@ -3668,6 +3718,7 @@
           importError: importError,
           resetArmed: resetArmed,
           focusOpenCategories: focusOpenCategories,
+          focusOpenCompletedCategories: focusOpenCompletedCategories,
         });
 
         function commit(next) {
@@ -3739,7 +3790,10 @@
             // can still invoke this route directly. Keep that route from
             // stranding the panel on a view whose entry is unavailable.
             const nextView = next === 'focus' && settings.orderMode !== 'focus' ? 'schedule' : next;
-            if (nextView === 'focus' && view !== 'focus') focusOpenCategories = [];
+            if (nextView === 'focus' && view !== 'focus') {
+              focusOpenCategories = [];
+              focusOpenCompletedCategories = [];
+            }
             view = nextView;
             draw(currentPlan, saveFailed === true);
           },
@@ -3805,6 +3859,14 @@
             focusOpenCategories = index === -1
               ? focusOpenCategories.concat(category)
               : focusOpenCategories.filter(function (openCategory) { return openCategory !== category; });
+            draw(currentPlan, saveFailed === true);
+          },
+          onFocusCompletedToggle: function (category) {
+            resetArmed = false;
+            const index = focusOpenCompletedCategories.indexOf(category);
+            focusOpenCompletedCategories = index === -1
+              ? focusOpenCompletedCategories.concat(category)
+              : focusOpenCompletedCategories.filter(function (openCategory) { return openCategory !== category; });
             draw(currentPlan, saveFailed === true);
           },
           onToggleDebugReport: function () {
