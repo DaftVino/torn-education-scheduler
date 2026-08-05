@@ -5,6 +5,15 @@ Queue the courses you intend to take and it tells you the exact date and time
 you finish — reading your own progress and perk reduction straight from the
 page. No API key.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/scheduler.png" alt="Education Scheduler queue" width="24%">
+  <img src="docs/images/degrees-summary.png" alt="Degree completion summary" width="24%">
+  <img src="docs/images/focus-ordering.png" alt="Focus ordering controls" width="24%">
+  <img src="docs/images/settings.png" alt="Scheduler settings" width="24%">
+</p>
+
 ## Install
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/).

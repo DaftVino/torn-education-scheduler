@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-05
+
+**First public release.** The version is 1.0.0 because the repository went
+public here, not because the code changed shape — everything below is the work
+that was already on `main`, plus the layout pass. Nothing about the panel's
+arithmetic changed at 1.0.
+
 ### Added
 
 - **A balanced default ordering**, used when Queue order is "My focus first"
