@@ -1211,7 +1211,7 @@ function handlers() {
     onPickerChange() {}, onViewChange() {},
     onSettingChange() {}, onToggleDebugReport() {}, onCopyDebugReport() {},
     onImportPlan() {},
-    onFocusToggle() {}, onFocusPriority() {},
+    onFocusToggle() {}, onFocusPriority() {}, onFocusSectionToggle() {},
     onResetArm() {}, onResetConfirm() {},
   };
 }
@@ -1328,15 +1328,65 @@ test('leaving focus mode while on the focus view returns to the schedule', async
     'leaving focus mode says nothing about what the player is building toward');
 });
 
-test('the focus view names each category and its selections', () => {
+test('focus categories stay named while collapsed and reveal selections only when opened', () => {
   const { x } = load();
   const model = x.buildPanelModel(state({ view: 'focus' }));
   const doc = makeDocument();
-  const panel = x.renderPanel(doc, doc.body, model, handlers());
-  const text = allText(panel);
+  const closedSelection = model.focusGroups.find((group) => group.category !== 'Working Stats').selections[0].selection;
+  let opened = [];
+  const h = Object.assign({}, handlers(), {
+    onFocusSectionToggle: (category) => { opened = [category]; },
+  });
+  let panel = x.renderPanel(doc, doc.body, model, h);
+  let text = allText(panel);
   assert.ok(text.includes('Working Stats'));
   assert.ok(text.includes('Passive Stat Bonus'));
-  assert.ok(text.includes('Gym Gain Bonus'));
+  assert.ok(!text.includes('intelligence'), 'collapsed sections must withhold their selections');
+
+  fire(descendants(panel).find((c) => c.className === 'tes-focus-section-title'), 'click');
+  model.focusOpenCategories = opened;
+  panel = x.renderPanel(doc, doc.body, model, h);
+  text = allText(panel);
+  assert.ok(text.includes('intelligence'));
+  assert.ok(!text.includes(closedSelection), 'opening one section must leave the others closed');
+});
+
+test('focus section headings are buttons with matching expanded state', () => {
+  const { x } = load();
+  const model = x.buildPanelModel(state({ view: 'focus' }));
+  const doc = makeDocument();
+  let panel = x.renderPanel(doc, doc.body, model, handlers());
+  let heading = descendants(panel).find((c) => c.className === 'tes-focus-section-title');
+  assert.strictEqual(heading.tagName, 'button');
+  assert.strictEqual(heading['aria-expanded'], 'false');
+
+  model.focusOpenCategories = ['Working Stats'];
+  panel = x.renderPanel(doc, doc.body, model, handlers());
+  heading = descendants(panel).find((c) => c.className === 'tes-focus-section-title');
+  assert.strictEqual(heading['aria-expanded'], 'true');
+});
+
+test('every open focus row reserves its priority slot before the checkbox', () => {
+  const { x } = load();
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [
+      { category: 'Working Stats', selection: 'intelligence' },
+      { category: 'Passive Stat Bonus', selection: 'Speed' },
+    ] },
+  }));
+  model.focusOpenCategories = model.focusGroups.map((group) => group.category);
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const rows = descendants(panel).filter((c) => c.className === 'tes-focus-row');
+  const slots = descendants(panel).filter((c) => c.className === 'tes-focus-priority-slot');
+  const inputs = descendants(panel).filter((c) => c.className === 'tes-focus-priority');
+  assert.strictEqual(slots.length, rows.length);
+  assert.strictEqual(inputs.length, 2);
+  const chosenRow = rows.find((row) => row.children[0].children.length === 1);
+  assert.strictEqual(chosenRow.children[0].className, 'tes-focus-priority-slot');
+  assert.strictEqual(chosenRow.children[0].children[0].className, 'tes-focus-priority');
+  assert.strictEqual(chosenRow.children[1].type, 'checkbox');
 });
 
 test('a selection shows what is left, and unlocks show a count not a percentage', () => {
@@ -1396,6 +1446,7 @@ test('the priority control commits through the handler and changes nothing by it
     view: 'focus',
     settings: { focuses: [{ category: 'Working Stats', selection: 'intelligence' }] },
   }));
+  model.focusOpenCategories = ['Working Stats'];
   const panel = x.renderPanel(doc, doc.body, model, h);
   const input = descendants(panel).find((c) => c.className === 'tes-focus-priority');
   assert.ok(input, 'a chosen focus must offer a way to change its number');
@@ -1940,6 +1991,13 @@ test('the focus view resets its selections and nothing else', async () => {
     return nav.children.find((b) => pattern.test(b.textContent));
   };
   fire(findNavBtn(/focus/i), 'click');
+  const focusHeading = descendants(panelEl()).find((c) => c.className === 'tes-focus-section-title'
+    && c.children[0].textContent === 'Working Stats');
+  fire(focusHeading, 'click');
+  assert.strictEqual(
+    descendants(panelEl()).filter((c) => c.className === 'tes-focus-priority').length,
+    1,
+    'the chosen number must be visible before reset removes it');
   const findReset = () => descendants(panelEl()).find((c) => /tes-reset/.test(c.className));
   fire(findReset(), 'click');
   fire(findReset(), 'click');
@@ -1959,6 +2017,13 @@ test('every focus number is gone after a focus reset, not just the selections', 
     return nav.children.find((b) => pattern.test(b.textContent));
   };
   fire(findNavBtn(/focus/i), 'click');
+  const focusHeading = descendants(panelEl()).find((c) => c.className === 'tes-focus-section-title'
+    && c.children[0].textContent === 'Working Stats');
+  fire(focusHeading, 'click');
+  assert.strictEqual(
+    descendants(panelEl()).filter((c) => c.className === 'tes-focus-priority').length,
+    1,
+    'the chosen number must be visible before reset removes it');
   const findReset = () => descendants(panelEl()).find((c) => /tes-reset/.test(c.className));
   fire(findReset(), 'click');
   fire(findReset(), 'click');
