@@ -17,7 +17,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-process.env.TZ = 'UTC';
+// Default to UTC so every test sees the same clock — but let a test that is
+// specifically about timezone handling pin its own. tests/timezone.test.js
+// exists to catch a local-getter regression, which is invisible on a UTC
+// machine, including CI.
+process.env.TZ = process.env.TZ || 'UTC';
 
 const SOURCE_PATH = path.join(__dirname, '..', 'torn-education-scheduler.user.js');
 
@@ -39,28 +43,40 @@ const EXPORT_NAMES = [
   'schedule', 'buildDegreeGrid',
   // queue ordering
   'ORDER_MODE_LABELS', 'orderQueue', 'dependentCount', 'upstreamOf',
+  // focus taxonomy
+  'FOCUS_TAXONOMY', 'focusRegistry', 'FOCUS_CATEGORIES',
+  // working stats
+  'WORKING_STATS', 'WORKING_STAT_RE', 'workingStatsFor', 'bonusLabel',
+  // focus scoring
+  'focusKey', 'focusScores', 'FOCUS_WORKING_STATS', 'focusTotals', 'FOCUS_UNSTATABLE',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
   // settings
-  'SETTINGS_KEY', 'normaliseSettings', 'freshSettings', 'loadSettings', 'saveSettings',
+  'SETTINGS_KEY', 'normaliseSettings', 'settingsDefaults', 'freshSettings', 'loadSettings', 'saveSettings',
+  'normaliseFocuses', 'toggleFocus', 'setFocusPriority',
   // perks
   'inferPerks',
   // the share string — the only input this script parses from outside the
   // player's own browser
-  'SHARE_PREFIX', 'encodePlan', 'decodePlan',
+  'SHARE_PREFIX', 'encodePlan', 'decodePlan', 'FOCUS_CONCAT_INDEX',
   // consumables: the Books ceiling, the floor date, and what it costs
-  'SECONDS_PER_BOOK', 'booksCeiling', 'planConsumables', 'formatMoney',
+  'SECONDS_PER_BOOK', 'SECONDS_PER_JOB_POINT', 'booksCeiling', 'planConsumables', 'formatMoney',
   // adapter
   'fetchEducationData',
   // acquisition
   'looksLikePayload', 'searchForPayload', 'newWalkState', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
-  'formatTimestamp', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
+  'formatDate', 'formatTime', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
+  // panel stylesheet — test-only, so a rule's colour can be asserted without
+  // a DOM to read the injected <style> element back out of
+  'panelStyleText',
   // errorModel/noopHandlers are exported as a pair: the render path treats
   // noopHandlers by identity, so a test asserting that needs the real object.
   'errorModel', 'noopHandlers',
   // views
-  'renderScheduleView', 'renderSettingsView', 'renderGridView',
+  'renderScheduleView', 'renderSettingsView', 'renderGridView', 'renderFocusView',
+  // reset control (arm/confirm), wired into schedule/focus/settings' nav row
+  'resetButton',
   // navigation
   'unmountPanel', 'observeNavigation',
   // debug report and the (still unresolved) guide links

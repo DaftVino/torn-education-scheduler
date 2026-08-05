@@ -19,6 +19,23 @@ test('@version matches SCRIPT_VERSION and package.json', () => {
   assert.strictEqual(meta[1], require('../package.json').version);
 });
 
+// CLAUDE.md repo-specific constraint 3: "@version, the newest CHANGELOG.md
+// heading, and the git tag move together in one commit." The first two thirds
+// of that rule were described and not enforced until this release, which is
+// how 0.3.0 came to sit in the changelog under a version that was never
+// tagged. The tag itself cannot be checked here — it does not exist until the
+// merge commit lands — but the pair that ships inside the file can be.
+test('the newest CHANGELOG heading is the version being shipped', () => {
+  const changelog = fs.readFileSync(new URL('../CHANGELOG.md', `file://${__dirname}/`), 'utf8');
+  // [Unreleased] is a standing heading, not a release, so the newest RELEASE
+  // heading is the first one carrying a version number.
+  const newest = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m);
+  assert.ok(newest, 'no released version heading found in CHANGELOG.md');
+  const { exports } = loadUserscript();
+  assert.strictEqual(newest[1], exports.SCRIPT_VERSION,
+    'the newest CHANGELOG heading and @version disagree — a bumped script ships invisibly');
+});
+
 test('@match and @grant are exactly the declared security surface', () => {
   const src = fs.readFileSync(SOURCE_PATH, 'utf8');
   const matches = [...src.matchAll(/^\/\/ @match\s+(\S+)$/gm)].map((m) => m[1]);

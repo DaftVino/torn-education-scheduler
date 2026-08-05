@@ -239,14 +239,14 @@ test('an unknown mode falls back to as-listed rather than throwing', () => {
   assert.deepStrictEqual(x.orderQueue(queue, undefined, data.courses), queue);
 });
 
-test('the shipped mode list is exactly the three, and days-per-bonus is not among them', () => {
+test('the shipped mode list is exactly the four, and days-per-bonus is not among them', () => {
   const { x } = load();
   // days-per-bonus is parked (v0.2.0-scope § H2): the payload offers two
   // incompatible definitions of "bonus", and they sort the catalogue
   // differently. A mode that means one of two things is worse than no mode.
   // Array.from, because a non-function export is handed back with the vm
   // realm's Array prototype and deepStrictEqual compares prototypes.
-  assert.deepStrictEqual(Array.from(x.ORDER_MODE_LABELS, (m) => m.id), MODES);
+  assert.deepStrictEqual(Array.from(x.ORDER_MODE_LABELS, (m) => m.id), MODES.concat(['focus']));
   for (const mode of x.ORDER_MODE_LABELS) {
     assert.strictEqual(typeof mode.label, 'string');
     assert.ok(mode.label.length > 0, `${mode.id} has no label`);
@@ -404,4 +404,256 @@ test('a queued id missing from the catalogue is carried through rather than thro
     assert.strictEqual(ordered.length, 2, `${mode} dropped a course it could not read`);
     assert.deepStrictEqual(new Set(ordered), new Set([1, 404]));
   }
+});
+
+// ── focus mode ──────────────────────────────────────────────────────────────
+
+test('focus rank defaults to the shipped per-day order on the real fixture queue', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const scores = x.focusScores(
+    [{ category: 'Working Stats', selection: 'manual labor' }], data.courses);
+  const omitted = x.orderQueue(queue, 'focus', data.courses, scores);
+  const perDay = x.orderQueue(queue, 'focus', data.courses, scores, 'per-day');
+
+  assert.strictEqual(x.normaliseSettings(null).focusRankBasis, 'per-day');
+  assert.deepStrictEqual(omitted, perDay, 'omitting the new argument changed the shipped order');
+  assert.deepStrictEqual(omitted.slice(0, 12).map((id) => data.courses.get(id).prefix), [
+    'HAF1103', 'HAF2106', 'CBT1780', 'DEF1700', 'HAF2108', 'DEF2750',
+    'HAF2107', 'HAF2109', 'DEF2720', 'DEF2740', 'DEF2760', 'HAF2104',
+  ]);
+});
+
+test('switching a real Working Stats queue to total changes it and per-day restores it', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const scores = x.focusScores(
+    [{ category: 'Working Stats', selection: 'manual labor' }], data.courses);
+  const original = x.orderQueue(queue, 'focus', data.courses, scores, 'per-day');
+  const total = x.orderQueue(queue, 'focus', data.courses, scores, 'total');
+  const restored = x.orderQueue(queue, 'focus', data.courses, scores, 'per-day');
+
+  assert.notDeepStrictEqual(total, original, 'the basis changed but the fixture order did not');
+  assert.deepStrictEqual(restored, original, 'switching back did not reproduce the original order');
+});
+
+test('total ranks DEF2750 above HAF1103 when both real fixture courses are ready', () => {
+  const { x, data } = load();
+  const byPrefix = (prefix) => [...data.courses.values()].find((course) => course.prefix === prefix).id;
+  const def2750 = byPrefix('DEF2750');
+  const haf1103 = byPrefix('HAF1103');
+  const queue = [def2750, haf1103];
+  const scores = x.focusScores(
+    [{ category: 'Working Stats', selection: 'manual labor' }], data.courses);
+
+  // DEF2750's prerequisite is outside this two-course queue, so both entries
+  // are ready in the same Kahn step and only the selected rank basis decides.
+  assert.deepStrictEqual(x.orderQueue(queue, 'focus', data.courses, scores, 'total'), [def2750, haf1103]);
+  assert.deepStrictEqual(x.orderQueue(queue, 'focus', data.courses, scores, 'per-day'), [haf1103, def2750]);
+});
+
+test('both focus rank bases leave the fixture finish date and total byte-identical', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const makeModel = (focusRankBasis) => x.buildPanelModel({
+    fetchResult: { ok: true, data: data },
+    plan: { queue: queue, collapsed: false },
+    now: 1767225600,
+    view: 'schedule',
+    settings: {
+      orderMode: 'focus', focusRankBasis: focusRankBasis,
+      focuses: [{ category: 'Working Stats', selection: 'manual labor' }],
+    },
+  });
+  const perDay = makeModel('per-day');
+  const total = makeModel('total');
+  const resultBytes = (model) => JSON.stringify({
+    finishLabel: model.finishLabel,
+    totalLabel: model.totalLabel,
+  });
+
+  assert.notDeepStrictEqual(total.queue.map((row) => row.courseId), perDay.queue.map((row) => row.courseId));
+  assert.strictEqual(resultBytes(total), resultBytes(perDay));
+});
+
+test('focus ordering never changes the finish date', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const scores = x.focusScores([{ category: 'Unlocks & Abilities', selection: 'Museum Access' }], data.courses);
+  const now = 1767225600;
+
+  const asListed = x.schedule({
+    courses: data.courses, activeCourse: data.activeCourse,
+    queue: x.orderQueue(queue, 'as-listed', data.courses), now,
+  });
+  const focused = x.schedule({
+    courses: data.courses, activeCourse: data.activeCourse,
+    queue: x.orderQueue(queue, 'focus', data.courses, scores), now,
+  });
+  assert.deepStrictEqual(
+    { finishesAt: focused.finishesAt, totalSeconds: focused.totalSeconds },
+    { finishesAt: asListed.finishesAt, totalSeconds: asListed.totalSeconds },
+  );
+});
+
+test('real unlock, company, and crime focuses each change the fixture queue', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const cases = [
+    { category: 'Unlocks & Abilities', selection: 'Museum Access', courseId: 21 },
+    { category: 'Company Bonuses', selection: 'Advertising Effectiveness', courseId: 100 },
+    { category: 'Crime & Jail Bonuses', selection: 'Bail Cost Discount', courseId: 102 },
+  ];
+  for (const focus of cases) {
+    const scoreMaps = x.focusScores([focus], data.courses);
+    const focused = x.orderQueue(queue, 'focus', data.courses, scoreMaps);
+    assert.ok(scoreMaps[0].get(focus.courseId) > 0,
+      `${focus.selection} must give its real target a positive score`);
+    assert.notDeepStrictEqual(focused, queue, `${focus.selection} must change the fixture order`);
+    if (focus.category === 'Unlocks & Abilities') {
+      assert.ok(focused.indexOf(focus.courseId) < queue.indexOf(focus.courseId),
+        `${focus.selection} routing target ${focus.courseId} must move toward the front`);
+    }
+  }
+});
+
+test('an unlock focus hoists its complete prerequisite chain toward the front', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const target = 21; // Museum Access, a tier-3 course.
+  const scoreMaps = x.focusScores(
+    [{ category: 'Unlocks & Abilities', selection: 'Museum Access' }], data.courses);
+  const focused = x.orderQueue(queue, 'focus', data.courses, scoreMaps);
+  const chain = [...x.upstreamOf(target, data.courses, new Map()), target]
+    .filter((id) => queue.indexOf(id) !== -1);
+  assert.ok(chain.length > 2, 'Museum Access must keep a non-trivial queued prerequisite chain');
+  for (const id of chain) {
+    assert.strictEqual(scoreMaps[0].get(id), 1,
+      `count-focus routing must propagate the target score to prerequisite ${id}`);
+    assert.ok(focused.indexOf(id) < queue.indexOf(id), `prerequisite ${id} must move toward the front`);
+  }
+});
+
+test('focus ranks benefit per day, not raw magnitude', () => {
+  const { x } = load();
+  const courses = makeCourses([
+    { id: 1, duration: 10 * 86400 }, // raw 50, five per day
+    { id: 2, duration: 86400 }, // raw 10, ten per day
+  ]);
+  const ordered = x.orderQueue([1, 2], 'focus', courses, [new Map([[1, 50], [2, 10]])]);
+  assert.deepStrictEqual(ordered, [2, 1]);
+});
+
+test('focus ranks remain finite when duration is zero or missing', () => {
+  const { x } = load();
+  const courses = makeCourses([{ id: 1, duration: 0 }, { id: 2 }]);
+  delete courses.get(2).duration;
+  const scoreMap = new Map([[1, 2], [2, 1]]);
+  // Infinity / Infinity is NaN, which makes the comparator silently fall
+  // through to this reversed player order. A finite fallback must still rank
+  // the higher score first.
+  const ordered = x.orderQueue([2, 1], 'focus', courses, [scoreMap]);
+  assert.deepStrictEqual(ordered, [1, 2]);
+});
+
+test('focus ordering still places prerequisites before dependants', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 30);
+  const scores = x.focusScores([{ category: 'Working Stats', selection: 'intelligence' }], data.courses);
+  const ordered = x.orderQueue(queue, 'focus', data.courses, scores);
+  const seen = new Set();
+  for (const id of ordered) {
+    for (const up of x.upstreamOf(id, data.courses, new Map())) {
+      if (ordered.indexOf(up) !== -1) {
+        assert.ok(seen.has(up), `course ${id} placed before its prerequisite ${up}`);
+      }
+    }
+    seen.add(id);
+  }
+});
+
+// The brief's original version of this test compared every pair in the
+// output and excused a pair only when one course was a direct prerequisite of
+// the other. That is not enough: a course can also be delayed because of a
+// prerequisite of its OWN that has nothing to do with the other course in the
+// pair (course 78 loses early tiebreaks and so keeps its high-primary child
+// 81 waiting), and the unrestricted check flags that legitimate delay as a
+// "secondary outranked the primary" failure — it fails against a correct
+// lexicographic implementation on this fixture (verified by hand). Restricting
+// the check to courses with no prerequisite anywhere in the queue removes the
+// confound: a root is ready from the first step and stays ready until it is
+// picked, so nothing but rank can explain which of two roots is placed first.
+test('a second focus breaks ties without being summed into the first', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 25);
+  const queueSet = new Set(queue);
+  const two = x.orderQueue(queue, 'focus', data.courses,
+    x.focusScores([
+      { category: 'Working Stats', selection: 'intelligence' },
+      { category: 'Passive Stat Bonus', selection: 'Speed' },
+    ], data.courses));
+
+  const primary = x.focusScores([{ category: 'Working Stats', selection: 'intelligence' }], data.courses)[0];
+  const isRoot = (id) => {
+    for (const up of x.upstreamOf(id, data.courses, new Map())) {
+      if (queueSet.has(up)) return false;
+    }
+    return true;
+  };
+  const roots = two.filter(isRoot);
+  assert.ok(roots.length >= 2, 'need at least two root courses to prove anything here');
+  for (let i = 0; i < roots.length; i += 1) {
+    for (let j = i + 1; j < roots.length; j += 1) {
+      const a = (primary.get(roots[i]) || 0) / (data.courses.get(roots[i]).duration / 86400);
+      const b = (primary.get(roots[j]) || 0) / (data.courses.get(roots[j]).duration / 86400);
+      if (a !== b) {
+        assert.ok(a >= b, `${roots[i]} (primary ${a}) placed before ${roots[j]} (primary ${b})`);
+      }
+    }
+  }
+});
+
+// The test above only proves the fixture never happens to disagree with a
+// summed score — the fixture's magnitudes are not picked to make summing and
+// lexicographic ranking diverge, so it would pass even against a summed
+// implementation on unlucky data. This one is built specifically so the two
+// policies produce provably different orders, and pins the lexicographic one.
+test('lexicographic ranking, not summed: a big secondary score cannot buy a place ahead of a better primary', () => {
+  const { x } = load();
+  // No prerequisite relationships at all, so the tiebreak is the only thing
+  // choosing and every course is ready from the start.
+  const courses = makeCourses([
+    { id: 1, duration: 100 }, // primary 10, secondary 0
+    { id: 2, duration: 100 }, // primary 9,  secondary 100 — huge secondary, weaker primary
+    { id: 3, duration: 100 }, // primary 1,  secondary 0
+    { id: 4, duration: 100 }, // primary 0,  secondary 0
+  ]);
+  const primaryMap = new Map([[1, 10], [2, 9], [3, 1], [4, 0]]);
+  const secondaryMap = new Map([[1, 0], [2, 100], [3, 0], [4, 0]]);
+
+  // Lexicographic: sort by primary alone since no two primaries tie -> 1,2,3,4.
+  // Summed: -(10+0), -(9+100), -(1+0), -(0+0) = -10, -109, -1, 0, sorted
+  // ascending gives 2,1,3,4 — course 2 jumps to first on the strength of a
+  // secondary focus alone. If this ever comes back [2, 1, 3, 4] the
+  // implementation is summing rather than ranking lexicographically.
+  const ordered = x.orderQueue([4, 3, 2, 1], 'focus', courses, [primaryMap, secondaryMap]);
+  assert.deepStrictEqual(ordered, [1, 2, 3, 4]);
+});
+
+test('focus mode with no scores degrades to the queue as given', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 10);
+  assert.deepStrictEqual(x.orderQueue(queue, 'focus', data.courses, []), x.orderQueue(queue, 'as-listed', data.courses));
+});
+
+test('focus is a Queue order option, because that select is what switches it on', () => {
+  const { x } = load();
+  const ids = x.ORDER_MODE_LABELS.map((m) => m.id);
+  assert.ok(ids.includes('focus'), 'the focus view is gated on this option existing');
+  assert.strictEqual(ids.length, 4);
+});
+
+test('a stored orderMode of focus survives normalisation', () => {
+  const { x } = load();
+  assert.strictEqual(x.normaliseSettings({ orderMode: 'focus' }).orderMode, 'focus');
 });

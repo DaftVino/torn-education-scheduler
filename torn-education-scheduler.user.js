@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Education Scheduler
 // @namespace    https://github.com/DaftVino/torn-education-scheduler
-// @version      0.2.0
+// @version      0.4.0
 // @description  Turns Torn's education page into a live planner: queue courses, get the exact finish date.
 // @author       DaftVino
 // @match        https://www.torn.com/page.php*
@@ -17,7 +17,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.2.0';
+  const SCRIPT_VERSION = '0.4.0';
   const EDU_ENDPOINT = '/page.php?sid=educationInitData';
   const STORAGE_KEY = 'tes:plan';
   const SETTINGS_KEY = 'tes:settings';
@@ -111,6 +111,8 @@
       baseCost: raw.originCost,
       cost: raw.actualCost,
       parentId: raw.parentId,
+      learningOutcomes: Array.isArray(raw.learningOutcomes) ? raw.learningOutcomes : [],
+      workingStatsGain: Array.isArray(raw.workingStatsGain) ? raw.workingStatsGain : [],
     };
   }
 
@@ -360,7 +362,327 @@
     { id: 'as-listed', label: 'As listed' },
     { id: 'shortest-first', label: 'Shortest first' },
     { id: 'unlocks-first', label: 'Unlocks the most first' },
+    { id: 'focus', label: 'My focus first' },
   ];
+  // One source for both the stored vocabulary and the Focus-view button copy.
+  // The button states what is active, so the ordering is readable before the
+  // player clicks it.
+  const FOCUS_RANK_BASIS_LABELS = [
+    { id: 'per-day', label: 'most per day' },
+    { id: 'total', label: 'biggest total' },
+  ];
+
+  // The focus taxonomy: which courses deliver which player-facing benefit.
+  //
+  // Static rather than parsed, because 101 learningOutcomes strings carry 88
+  // distinct forms — a classification is a human judgement, not a regex. Each
+  // row records the outcome string it was classified FROM, so focusRegistry
+  // can tell a live payload that the judgement no longer applies.
+  //
+  // Keyed by (category, selection): `Strength` exists under both
+  // `Passive Stat Bonus` and `Gym Gain Bonus`, and they are different
+  // quantities that must never merge.
+  const FOCUS_TAXONOMY = Object.freeze([
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Amulet Finding", unit: "none", magnitude: null, courseId: 20, outcome: "Gain the ability to find Senet board pieces and amulets" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Anonymous Cash Transfers", unit: "none", magnitude: null, courseId: 62, outcome: "Gain the ability to send mails and cash anonymously" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Anonymous Mail", unit: "none", magnitude: null, courseId: 62, outcome: "Gain the ability to send mails and cash anonymously" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Armored Virus Coding", unit: "none", magnitude: null, courseId: 56, outcome: "Gain the ability to code Armored, Stealth, and Firewalk viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Asian Sculpture Finding", unit: "none", magnitude: null, courseId: 19, outcome: "Gain the ability to find Asian sculptures and Companion pages" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Bail Others", unit: "none", magnitude: null, courseId: 90, outcome: "Gain the ability to buy yourself and others out of jail while you are in jail yourself" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Bail Self", unit: "none", magnitude: null, courseId: 90, outcome: "Gain the ability to buy yourself and others out of jail while you are in jail yourself" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Blood Delivery", unit: "none", magnitude: null, courseId: 127, outcome: "Ability to withdraw and deliver blood" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Blood Withdrawal", unit: "none", magnitude: null, courseId: 127, outcome: "Ability to withdraw and deliver blood" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Bootlegging Website Creation", unit: "none", magnitude: null, courseId: 23, outcome: "Unlock the ability to create websites for use in Bootlegging and Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Companion Page Finding", unit: "none", magnitude: null, courseId: 19, outcome: "Gain the ability to find Asian sculptures and Companion pages" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Company Size Upgrades", unit: "none", magnitude: null, courseId: 13, outcome: "Unlock new size, storage size & staff room upgrades for your company" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Company Staff Room Upgrades", unit: "none", magnitude: null, courseId: 13, outcome: "Unlock new size, storage size & staff room upgrades for your company" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Company Storage Upgrades", unit: "none", magnitude: null, courseId: 13, outcome: "Unlock new size, storage size & staff room upgrades for your company" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Cracking Crime", unit: "none", magnitude: null, courseId: 52, outcome: "Unlock the Cracking crime" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Driving Crimes", unit: "none", magnitude: null, courseId: 113, outcome: "Unlock driving related crimes (Crimes 1.0)" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Firewalk Virus Coding", unit: "none", magnitude: null, courseId: 56, outcome: "Gain the ability to code Armored, Stealth, and Firewalk viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Hacking Crimes (Crimes 1.0)", unit: "none", magnitude: null, courseId: 54, outcome: "Unlock hacking crimes (Crimes 1.0)" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Jail Escape Evasion", unit: "none", magnitude: null, courseId: 89, outcome: "Reduce the chance of being caught when trying to escape from jail" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Jail Escape Nerve Use", unit: "none", magnitude: null, courseId: 99, outcome: "Use less nerve when trying to escape from jail" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Kick Attack", unit: "none", magnitude: null, courseId: 72, outcome: "Unlock kick attack when in a battle" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Medieval Coin Finding", unit: "none", magnitude: null, courseId: 18, outcome: "Gain the ability to find medieval coins" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Museum Access", unit: "none", magnitude: null, courseId: 21, outcome: "Unlock the museum, sets of artifacts and other collectibles can be exchanged here for points" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Needle Equipment", unit: "none", magnitude: null, courseId: 42, outcome: "Gain the ability to equip needles in your temporary slot" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Polymorphic Virus Coding", unit: "none", magnitude: null, courseId: 53, outcome: "Gain the ability to code Polymorphic and Tunneling viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Scamming Email Extraction", unit: "none", magnitude: null, courseId: 130, outcome: "Unlock the extraction of email addresses through data breaches in Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Scamming Email Extraction", unit: "none", magnitude: null, courseId: 131, outcome: "Unlock the development of scrapers to extract email addresses from websites for use in Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Scamming Response Range Indicators", unit: "none", magnitude: null, courseId: 132, outcome: "Unlock response range indicators in Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Scamming Website Creation", unit: "none", magnitude: null, courseId: 23, outcome: "Unlock the ability to create websites for use in Bootlegging and Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Senet Board Piece Finding", unit: "none", magnitude: null, courseId: 20, outcome: "Gain the ability to find Senet board pieces and amulets" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Simple Virus Coding", unit: "none", magnitude: null, courseId: 52, outcome: "Gain the ability to code Simple viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Sports Shop Access", unit: "none", magnitude: null, courseId: 126, outcome: "Unlock the sports shop" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Stealth Virus Coding", unit: "none", magnitude: null, courseId: 56, outcome: "Gain the ability to code Armored, Stealth, and Firewalk viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Tunneling Virus Coding", unit: "none", magnitude: null, courseId: 53, outcome: "Gain the ability to code Polymorphic and Tunneling viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Weapon Experience Accuracy", unit: "none", magnitude: null, courseId: 87, outcome: "Start gaining weapon experience, specializing in individual weapons for increased damage and accuracy" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Weapon Experience Damage", unit: "none", magnitude: null, courseId: 87, outcome: "Start gaining weapon experience, specializing in individual weapons for increased damage and accuracy" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 1, courseId: 71, outcome: "Gain a 1% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 2, courseId: 73, outcome: "Gain a 2% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 3, courseId: 74, outcome: "Gain a 3% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 1, courseId: 26, outcome: "Gain a 1% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 2, courseId: 32, outcome: "Gain a 2% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 2, courseId: 50, outcome: "Gain a 2% passive bonus to defense and dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 104, outcome: "Gain a 1% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 108, outcome: "Gain a 1% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 64, outcome: "Gain a 1% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 2, courseId: 65, outcome: "Gain a 2% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 4, courseId: 66, outcome: "Gain a 4% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 8, courseId: 67, outcome: "Gain an 8% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 2, courseId: 50, outcome: "Gain a 2% passive bonus to defense and dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 79, outcome: "Gain a 1% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 2, courseId: 75, outcome: "Gain a 2% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 3, courseId: 76, outcome: "Gain a 3% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 105, outcome: "Gain a 1% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 3, courseId: 109, outcome: "Gain a 3% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 24, outcome: "Gain a 1% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 25, outcome: "Gain a 1% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 2, courseId: 49, outcome: "Gain a 2% passive bonus to speed and strength" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Strength", unit: "percent", magnitude: 1, courseId: 106, outcome: "Gain a 1% passive bonus to strength" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Strength", unit: "percent", magnitude: 2, courseId: 107, outcome: "Gain a 2% passive bonus to strength" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Strength", unit: "percent", magnitude: 2, courseId: 49, outcome: "Gain a 2% passive bonus to speed and strength" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "All Melee Damage", unit: "percent", magnitude: 2, courseId: 17, outcome: "Gain a 2% bonus to all melee damage" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "All Weapon Damage", unit: "percent", magnitude: 1, courseId: 35, outcome: "Gain a 1% damage bonus to all weapons" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Ammo Conservation", unit: "percent", magnitude: 5, courseId: 31, outcome: "Gain a 5% bonus to ammo conservation" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Ammo Conservation", unit: "percent", magnitude: 20, courseId: 33, outcome: "Gain a 20% bonus to ammo conservation" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Critical Hit Chance", unit: "percent", magnitude: 3, courseId: 41, outcome: "Gain a 3% chance increase of achieving a critical hit" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Escape Prevention Speed", unit: "percent", magnitude: 25, courseId: 111, outcome: "Gain a 25% increase in speed during an opponent's escape attempt" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Heavy Artillery Accuracy", unit: "flat", magnitude: 1, courseId: 86, outcome: "Gain a +1.00 accuracy increase with Heavy Artillery" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Japanese Blade Damage", unit: "percent", magnitude: 10, courseId: 16, outcome: "Gain a 10% damage increase with Japanese blade weapons" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Machine Gun Accuracy", unit: "flat", magnitude: 1, courseId: 82, outcome: "Gain a +1.00 accuracy increase with Machine Guns" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Opponent Stealth Reduction", unit: "flat", magnitude: 0.5, courseId: 40, outcome: "Decrease an opponent's stealthiness by 0.5" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Pistol Accuracy", unit: "flat", magnitude: 1, courseId: 84, outcome: "Gain a +1.00 accuracy increase with Pistols" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Rifle Accuracy", unit: "flat", magnitude: 1, courseId: 85, outcome: "Gain a +1.00 accuracy increase with Rifles" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Shotgun Accuracy", unit: "flat", magnitude: 1, courseId: 125, outcome: "Gain a +1.00 accuracy increase with Shotguns" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Submachine Gun Accuracy", unit: "flat", magnitude: 1, courseId: 83, outcome: "Gain a +1.00 accuracy increase with Submachine guns" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Temporary Weapon Accuracy", unit: "flat", magnitude: 1, courseId: 116, outcome: "Gain a +1.00 accuracy increase with Temporary weapons" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Temporary Weapon Damage", unit: "percent", magnitude: 5, courseId: 119, outcome: "Gain a 5% damage increase with Temporary weapons" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Throat Hit Damage", unit: "percent", magnitude: 10, courseId: 38, outcome: "Gain a 10% damage increase when hitting an opponent's throat" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Unarmed Damage", unit: "percent", magnitude: 100, courseId: 77, outcome: "Gain a 100% increase in damage dealt when using fists alone" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Advertising Effectiveness", unit: "percent", magnitude: 3, courseId: 4, outcome: "Gain a 3% increase in advertising effectiveness for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Advertising Effectiveness", unit: "percent", magnitude: 3, courseId: 100, outcome: "Gain a 3% increase in advertising effectiveness for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 10, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 12, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 2, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 5, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 8, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 1, courseId: 28, outcome: "Gain 1% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Employee Effectiveness", unit: "flat", magnitude: 5, courseId: 3, outcome: "Gain 5 effectiveness for the employees in your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Employee Effectiveness", unit: "flat", magnitude: 7, courseId: 6, outcome: "Gain 7 effectiveness for the employees in your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Employee Working Stats", unit: "percent", magnitude: 20, courseId: 11, outcome: "Gain a 20% passive bonus to employee working stats in your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Perceived Product Value", unit: "percent", magnitude: 10, courseId: 7, outcome: "Gain 10% perceived product value for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Perceived Product Value", unit: "percent", magnitude: 5, courseId: 9, outcome: "Gain 5% perceived product value for your company" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Bail Cost Discount", unit: "percent", magnitude: 5, courseId: 93, outcome: "Gain a 5% discount when buying people out of jail" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Bail Cost Discount", unit: "percent", magnitude: 10, courseId: 98, outcome: "Gain a 10% discount when buying people out of jail" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Bail Cost Discount", unit: "percent", magnitude: 50, courseId: 102, outcome: "Gain two bonuses: Busting is 50% easier and bailing is 50% cheaper" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Busting", unit: "percent", magnitude: 5, courseId: 92, outcome: "Gain a 5% bonus to your skill in busting" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Busting", unit: "percent", magnitude: 10, courseId: 97, outcome: "Gain a 10% bonus to your skill in busting" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Busting", unit: "percent", magnitude: 50, courseId: 102, outcome: "Gain two bonuses: Busting is 50% easier and bailing is 50% cheaper" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Crime Experience Gain", unit: "percent", magnitude: 10, courseId: 69, outcome: "Gain a 10% increase to crime exp & skill progression" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Crime Skill Progression", unit: "percent", magnitude: 10, courseId: 69, outcome: "Gain a 10% increase to crime exp & skill progression" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Hacking Crime Success Rate", unit: "percent", magnitude: 10, courseId: 61, outcome: "Gain a 10% increase in hacking crime success rate (Crimes 1.0)" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Property Purchase Discount", unit: "percent", magnitude: 5, courseId: 91, outcome: "Gain a 5% discount when buying properties from the estate agents" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Defense", unit: "percent", magnitude: 1, courseId: 46, outcome: "Gain a 1% bonus to defense gains in the gym" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Defense", unit: "percent", magnitude: 1, courseId: 51, outcome: "Gain a further 1% boost in all gym gains" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 47, outcome: "Gain a 1% bonus to dexterity gains in the gym" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 51, outcome: "Gain a further 1% boost in all gym gains" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 45, outcome: "Gain a 1% bonus to speed gains in the gym" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 51, outcome: "Gain a further 1% boost in all gym gains" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Strength", unit: "percent", magnitude: 1, courseId: 44, outcome: "Gain a 1% bonus to strength gains in the gym" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Strength", unit: "percent", magnitude: 1, courseId: 51, outcome: "Gain a further 1% boost in all gym gains" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Rig Component Heat Reduction", unit: "percent", magnitude: 25, courseId: 57, outcome: "Gain a 25% reduction in heat generated by rig components" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Rig Overclocking Limit", unit: "percent", magnitude: 30, courseId: 128, outcome: "Unlock rig overclocking up to 30%" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Rig Overclocking Limit", unit: "percent", magnitude: 50, courseId: 129, outcome: "Unlock rig overclocking up to 50%" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Virus Coding Time Reduction", unit: "percent", magnitude: 20, courseId: 58, outcome: "Gain a 20% decrease in virus coding times" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Virus Coding Time Reduction", unit: "percent", magnitude: 10, courseId: 60, outcome: "Gain a 10% decrease in virus coding times" }),
+    Object.freeze({ category: "General Progression Bonuses", selection: "Awareness", unit: "percent", magnitude: 10, courseId: 68, outcome: "Gain a 10% increase to awareness" }),
+    Object.freeze({ category: "General Progression Bonuses", selection: "Education Working Stat Rewards", unit: "percent", magnitude: 10, courseId: 121, outcome: "Gain a 10% working stat increase bonus for all future educations that are completed" }),
+    Object.freeze({ category: "General Progression Bonuses", selection: "Hunting Bonus", unit: "percent", magnitude: 15, courseId: 120, outcome: "Gain a 15% hunting bonus" }),
+    Object.freeze({ category: "Medical Effectiveness", selection: "Medical Item Effectiveness", unit: "percent", magnitude: 10, courseId: 36, outcome: "Gain a bonus of 10% to medical item effectiveness" }),
+    Object.freeze({ category: "Medical Effectiveness", selection: "Medical Item Effectiveness", unit: "percent", magnitude: 10, courseId: 37, outcome: "Gain a further 10% bonus to medical item effectiveness" }),
+    Object.freeze({ category: "Medical Effectiveness", selection: "Needle Effectiveness", unit: "percent", magnitude: 10, courseId: 48, outcome: "Gain a 10% increase in needle effectiveness" }),
+  ]);
+
+  // A course in the catalogue whose outcome strings the taxonomy does not
+  // account for. Reported, never guessed at: a silent zero here would rank a
+  // real benefit as worthless.
+  function focusRegistry(courses) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const entries = [];
+    let stale = 0;
+    const claimed = new Map();   // courseId -> Set of outcome strings the taxonomy claims
+
+    for (const row of FOCUS_TAXONOMY) {
+      const course = map.get(row.courseId);
+      const outcomes = (course && Array.isArray(course.learningOutcomes)) ? course.learningOutcomes : null;
+      if (!outcomes || outcomes.indexOf(row.outcome) === -1) { stale += 1; continue; }
+      entries.push(row);
+      if (!claimed.has(row.courseId)) claimed.set(row.courseId, new Set());
+      claimed.get(row.courseId).add(row.outcome);
+    }
+
+    let unmapped = 0;
+    for (const course of map.values()) {
+      const outcomes = Array.isArray(course.learningOutcomes) ? course.learningOutcomes : [];
+      const known = claimed.get(course.id);
+      for (const o of outcomes) {
+        if (!known || !known.has(o)) unmapped += 1;
+      }
+    }
+
+    return { entries, stale, unmapped, unclassified: 0 };
+  }
+
+  // Working stats are the one benefit Torn states in a machine-readable form:
+  // 294 lines across all 131 courses, 100% parse against this shape. Unlike
+  // learningOutcomes they need no taxonomy, which is why they are computed
+  // rather than classified.
+  const WORKING_STATS = Object.freeze(['intelligence', 'endurance', 'manual labor']);
+  const WORKING_STAT_RE = /^Gain ([\d,.]+) (.+?) upon completion$/;
+
+  function workingStatsFor(course) {
+    const out = new Map();
+    const gains = (course && Array.isArray(course.workingStatsGain)) ? course.workingStatsGain : [];
+    for (const line of gains) {
+      if (typeof line !== 'string') continue;
+      const m = WORKING_STAT_RE.exec(line);
+      if (!m) continue;
+      const n = Number(m[1].replace(/,/g, ''));
+      if (!isFinite(n)) continue;
+      const stat = m[2];
+      if (WORKING_STATS.indexOf(stat) === -1) continue;
+      out.set(stat, (out.get(stat) || 0) + n);
+    }
+    return out;
+  }
+
+  // What a course actually gives, from the two payload fields that say so.
+  // Never inferred from a name: 31 of 131 courses list no outcome at all, and
+  // "Bonus: not listed by Torn" is the honest answer for them — the same
+  // trade the panel makes with a withheld finish date rather than a guessed
+  // one.
+  function bonusLabel(course) {
+    const stats = workingStatsFor(course);
+    const parts = [];
+    for (const [stat, n] of stats) parts.push(`${n} ${stat}`);
+    const outcomes = (course && Array.isArray(course.learningOutcomes)) ? course.learningOutcomes : [];
+    for (const o of outcomes) if (typeof o === 'string') parts.push(o);
+    if (parts.length === 0) return 'Bonus: not listed by Torn';
+    if (outcomes.length === 0) return `${parts.join(', ')} · other bonus not listed by Torn`;
+    return parts.join(' · ');
+  }
+
+  const FOCUS_WORKING_STATS = 'Working Stats';
+
+  // (category, selection), never selection alone — see FOCUS_TAXONOMY's note.
+  function focusKey(category, selection) { return `${category} ${selection}`; }
+
+  // One Map per focus rather than one combined score: combining is exactly the
+  // invented exchange rate this feature exists to avoid. The caller ranks
+  // lexicographically over the array.
+  //
+  // Keyed by course id, so a course reached by two rows of the same selection
+  // is one entry carrying the summed magnitude — a split course is one course.
+  function focusScores(focuses, courses) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const reg = focusRegistry(map);
+    const byKey = new Map(), countKeys = new Set();
+    for (const row of reg.entries) {
+      const k = focusKey(row.category, row.selection);
+      if (row.unit === 'none' || FOCUS_UNSTATABLE.indexOf(row.selection) !== -1) countKeys.add(k);
+      if (!byKey.has(k)) byKey.set(k, new Map());
+      const scores = byKey.get(k);
+      // Number.isFinite deliberately does not coerce null: unlock rows have no
+      // magnitude, and each one still means one course worth routing toward.
+      const n = (row.unit === 'none' || !Number.isFinite(row.magnitude)) ? 1 : row.magnitude;
+      scores.set(row.courseId, (scores.get(row.courseId) || 0) + n);
+    }
+    const list = Array.isArray(focuses) ? focuses : [];
+    return list.map(function (f) {
+      const category = f && f.category;
+      const selection = f && f.selection;
+      if (category === FOCUS_WORKING_STATS) {
+        const out = new Map();
+        for (const course of map.values()) {
+          const n = workingStatsFor(course).get(selection);
+          if (n) out.set(course.id, n);
+        }
+        return out;
+      }
+      const k = focusKey(category, selection);
+      const scores = byKey.get(k) || new Map();
+      return countKeys.has(k) ? propagateFocusScore(scores) : new Map(scores);
+    });
+    // Count focuses are routing requests. Magnitude focuses are accumulation
+    // requests: Kahn readiness already puts gates before dependants, and routing
+    // would only prioritize zero-gain gates over unrelated real gainers. Use the
+    // same closure as orderQueue, and maximum so a shared gate cannot outrank its target.
+    function propagateFocusScore(scores) {
+      const routed = new Map(scores);
+      const upstream = new Map();
+      for (const [courseId, score] of scores) {
+        for (const ancestorId of upstreamOf(courseId, map, upstream)) {
+          const inherited = routed.get(ancestorId) || 0;
+          if (score > inherited) routed.set(ancestorId, score);
+        }
+      }
+      return routed;
+    }
+  }
+
+  // Selections whose catalogue total cannot honestly be stated. Each is a
+  // property of Torn's own wording, recorded here rather than inferred:
+  // weapon experience has no ceiling, overclocking values are successive
+  // limits rather than additive bonuses, and a "further" bonus may be
+  // cumulative in a way its magnitude alone does not say.
+  const FOCUS_UNSTATABLE = Object.freeze(['Weapon Experience Damage', 'Weapon Experience Accuracy', 'Rig Overclocking Limit']);
+  // What a focus still has left, out of its catalogue total — per selection,
+  // never summed across selections (a percent row and a flat-stat row are
+  // incomparable units, the same defect focusScores exists to avoid).
+  // `completedIds` is the "already banked" set, deliberately not
+  // `plannedCompletions`: this states what has actually been earned, not what
+  // will have been earned once a plan starts.
+  function focusTotals(focus, courses, completedIds) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const done = (completedIds instanceof Set) ? completedIds : new Set();
+    const category = focus && focus.category;
+    const selection = focus && focus.selection;
+
+    if (category === FOCUS_WORKING_STATS) {
+      let total = 0;
+      let remaining = 0;
+      for (const course of map.values()) {
+        const n = workingStatsFor(course).get(selection) || 0;
+        total += n;
+        if (!done.has(course.id)) remaining += n;
+      }
+      return { unit: 'flat', total, remaining, statable: true };
+    }
+
+    const rows = focusRegistry(map).entries.filter(function (r) {
+      return r.category === category && r.selection === selection;
+    });
+    const statable = FOCUS_UNSTATABLE.indexOf(selection) === -1;
+    const unit = (!statable || rows.some(function (r) { return r.unit === 'none'; })) ? 'count' : (rows[0] ? rows[0].unit : 'count');
+
+    // By course, not by row: a course reached twice by one selection is one
+    // course, and counting its magnitude twice would overstate the total.
+    const byCourse = new Map();
+    for (const r of rows) {
+      byCourse.set(r.courseId, (byCourse.get(r.courseId) || 0) + (Number.isFinite(r.magnitude) ? r.magnitude : 0));
+    }
+
+    let total = 0;
+    let remaining = 0;
+    for (const [id, magnitude] of byCourse) {
+      const value = (unit === 'count') ? 1 : magnitude;
+      total += value;
+      if (!done.has(id)) remaining += value;
+    }
+    return { unit, total, remaining, statable };
+  }
 
   // Everything that has to be done before this course can be: the parentId
   // chain, plus the one rule the payload does not carry in parentId — a tier-3
@@ -437,7 +759,7 @@
   // algorithm rather than a sort-then-repair, so the result is followable by
   // construction and an unsatisfiable queue degrades to appending the
   // remainder rather than looping.
-  function orderQueue(queue, mode, courses) {
+  function orderQueue(queue, mode, courses, scoreMaps, focusRankBasis) {
     const chosen = ORDER_MODE_LABELS.some(function (m) { return m.id === mode; }) ? mode : 'as-listed';
     if (chosen === 'as-listed') return queue.slice();
 
@@ -447,11 +769,26 @@
     // queued course over a cold cache would walk the same chains 115 times.
     const upstream = new Map();
 
+    // focus reads scoreMaps only when the mode is actually focus, so a caller
+    // that forgets the fourth argument (or every other mode, which does not
+    // take one) degrades to an empty vector rather than throwing.
+    const maps = (chosen === 'focus' && Array.isArray(scoreMaps)) ? scoreMaps : [];
+    // The fifth argument was added after focus ordering shipped. Omitting it
+    // must preserve that shipped most-per-day behaviour for every caller.
+    const basis = FOCUS_RANK_BASES.indexOf(focusRankBasis) !== -1
+      ? focusRankBasis
+      : 'per-day';
+
     // A course is ready when every prerequisite of it that is also in this
     // queue has already been placed. Both this and the rank read the same
     // closure, so readiness and "unlocks the most" cannot describe different
     // graphs.
     const rank = new Map();
+    // A vector, not a number: lexicographic comparison is the only way to use
+    // two focuses without inventing an exchange rate between them. Negated so
+    // that "more of what you asked for" sorts first, matching shortest-first's
+    // existing convention of a smaller rank winning.
+    const rankVector = new Map();
     const prerequisitesIn = new Map();
     for (const id of queue) {
       const needed = [];
@@ -459,10 +796,26 @@
         if (inQueue.has(up)) needed.push(up);
       }
       prerequisitesIn.set(id, needed);
-      const course = courses.get(id);
-      rank.set(id, chosen === 'shortest-first'
-        ? (course ? course.duration : 0)
-        : -dependentCount(id, courses, upstream));
+      if (chosen === 'focus') {
+        // dependentCount is O(catalogue) per call; focus has its own
+        // ranking and never reads `rank`, so it must not pay for it.
+        const course = courses.get(id);
+        // Treat an absent or zero duration as one day: a malformed catalogue
+        // must keep a finite, useful rank instead of leaking NaN/Infinity into
+        // the comparator, while scored courses still sort ahead of zeroes.
+        const durationDays = (course && Number.isFinite(course.duration) && course.duration > 0)
+          ? course.duration / 86400
+          : 1;
+        rankVector.set(id, maps.map(function (m) {
+          const score = (m instanceof Map && Number.isFinite(m.get(id))) ? m.get(id) : 0;
+          return basis === 'total' ? -score : -(score / durationDays);
+        }));
+      } else {
+        const course = courses.get(id);
+        rank.set(id, chosen === 'shortest-first'
+          ? (course ? course.duration : 0)
+          : -dependentCount(id, courses, upstream));
+      }
     }
 
     const placed = new Set();
@@ -487,6 +840,18 @@
       }
 
       ready.sort(function (a, b) {
+        if (chosen === 'focus') {
+          // Lexicographic: compare the first focus, and only on a tie fall to
+          // the next. Never summed — summing would invent an exchange rate
+          // between two focuses that answer different questions, which is the
+          // exact defect this feature exists to avoid.
+          const va = rankVector.get(queue[a]);
+          const vb = rankVector.get(queue[b]);
+          for (let i = 0; i < va.length; i += 1) {
+            if (va[i] !== vb[i]) return va[i] - vb[i];
+          }
+          return a - b;
+        }
         const byRank = rank.get(queue[a]) - rank.get(queue[b]);
         if (byRank !== 0) return byRank;
         // The player's own ordering breaks a rank tie, so a queue whose courses
@@ -641,10 +1006,9 @@
     }
 
     const everything = allRemainingCourses(completedIds, courses, activeCourse);
-    const allBox = boxFor('all', 'All courses', null, everything);
-    boxes.push(allBox);
+    const allBox = boxFor('all', 'all remaining courses', null, everything);
 
-    return { boxes: boxes, sumsDiffer: summedCount > allBox.courseCount };
+    return { boxes: boxes, allBox: allBox, sumsDiffer: summedCount > allBox.courseCount };
   }
 
   // Torn's own React tree carries the same education payload the endpoint
@@ -732,12 +1096,17 @@
   // into a mode the player can pick and normaliseSettings then silently
   // refuses. ORDER_MODE_LABELS is the source.
   const ORDER_MODES = ORDER_MODE_LABELS.map(function (m) { return m.id; });
+  const FOCUS_RANK_BASES = FOCUS_RANK_BASIS_LABELS.map(function (b) { return b.id; });
   const SETTINGS_DEFAULTS = {
     maxCooldownHours: 24,
     booksOwned: 0,
     bookPrice: 13500000,
     jobPoints: 0,
-    orderMode: 'as-listed',
+    // Focus is the default so its view is available out of the box. With no
+    // focuses selected, focus ordering deliberately degrades to as-listed,
+    // so a fresh install's queue is unchanged; only the nav entry appears.
+    orderMode: 'focus',
+    focusRankBasis: 'per-day',
   };
   // Generous ceilings, present only to reject nonsense — a negative price or a
   // cooldown of a million hours is a typo, not a preference.
@@ -753,6 +1122,69 @@
     if (!isInt(value)) return SETTINGS_DEFAULTS[field];
     if (value < bounds.min || value > bounds.max) return SETTINGS_DEFAULTS[field];
     return value;
+  }
+
+  // Validated against the taxonomy itself rather than a separate list, so a
+  // selection cannot be storable and unrankable at the same time. One per
+  // category: two focuses in one category would be a tiebreak against itself.
+  const FOCUS_CATEGORIES = Object.freeze(
+    [FOCUS_WORKING_STATS].concat(FOCUS_TAXONOMY.map(function (r) { return r.category; }))
+      .filter(function (c, i, a) { return a.indexOf(c) === i; })
+  );
+
+  function normaliseFocuses(raw) {
+    if (!Array.isArray(raw)) return [];
+    const known = new Set(FOCUS_TAXONOMY.map(function (r) { return focusKey(r.category, r.selection); }));
+    for (const stat of WORKING_STATS) known.add(focusKey(FOCUS_WORKING_STATS, stat));
+
+    const out = [];
+    const seenCategory = new Set();
+    for (const f of raw) {
+      if (!f || typeof f !== 'object') continue;
+      const category = f.category;
+      const selection = f.selection;
+      if (typeof category !== 'string' || typeof selection !== 'string') continue;
+      if (!known.has(focusKey(category, selection))) continue;
+      if (seenCategory.has(category)) continue;
+      seenCategory.add(category);
+      out.push({ category, selection });
+    }
+    return out;
+  }
+
+  // Priority is position, not a stored number. Keeping them as one thing is
+  // what makes it impossible for the number beside a focus to disagree with
+  // the order the queue is actually sorted in.
+  //
+  // A category holds one slot. Picking a different selection in a category the
+  // player already chose swaps what fills the slot and leaves its number alone
+  // — re-picking is a change of mind about the what, not about the how much.
+  function toggleFocus(focuses, category, selection) {
+    const list = Array.isArray(focuses) ? focuses.slice() : [];
+    const at = list.findIndex(function (f) { return f.category === category; });
+    if (at === -1) return list.concat([{ category, selection }]);
+    if (list[at].selection === selection) {
+      list.splice(at, 1);          // deselect; the splice is what closes the gap
+      return list;
+    }
+    list[at] = { category, selection };
+    return list;
+  }
+
+  // Move to a 1-based position, the way a numbered list reorders: pull it out,
+  // put it back at the clamped index, everything else shifts around it. An
+  // unknown focus is returned untouched rather than appended — a renumber is
+  // not a way to select something.
+  function setFocusPriority(focuses, category, selection, position) {
+    const list = Array.isArray(focuses) ? focuses.slice() : [];
+    const at = list.findIndex(function (f) {
+      return f.category === category && f.selection === selection;
+    });
+    if (at === -1) return list;
+    const target = isInt(position) ? Math.min(Math.max(position, 1), list.length) : 1;
+    const [moved] = list.splice(at, 1);
+    list.splice(target - 1, 0, moved);
+    return list;
   }
 
   // Validated per field, never per object. A player who spent time entering
@@ -778,7 +1210,22 @@
         wsuBlock: typeof rawPerks.wsuBlock === 'boolean' ? rawPerks.wsuBlock : null,
       },
       orderMode: ORDER_MODES.indexOf(source.orderMode) !== -1 ? source.orderMode : SETTINGS_DEFAULTS.orderMode,
+      focusRankBasis: FOCUS_RANK_BASES.indexOf(source.focusRankBasis) !== -1
+        ? source.focusRankBasis
+        : SETTINGS_DEFAULTS.focusRankBasis,
+      focuses: normaliseFocuses(source.focuses),
     };
+  }
+
+  // Everything the settings page owns, back to default — and focuses left
+  // exactly as they were. Focuses live in this object for storage reasons, not
+  // because the settings page owns them; the focus view has its own control.
+  // Written as an explicit carry rather than a spread of the old object so that
+  // a field added later defaults rather than silently surviving a reset.
+  function settingsDefaults(current) {
+    const fresh = normaliseSettings(null);
+    fresh.focuses = normaliseSettings(current).focuses;
+    return fresh;
   }
 
   const SECONDS_PER_BOOK = 21600;       // a Book of Carols removes 6 hours of course time
@@ -787,6 +1234,13 @@
   // the two, and writing 43200 with a "6 + 6" comment beside it would leave the
   // relationship described rather than enforced.
   const BOOK_FIXED_POINT_SECONDS = SECONDS_PER_BOOK + BOOK_COOLDOWN_SECONDS;
+  // A job point buys 30 minutes off a course. Spent per course in the game,
+  // but the panel is costing a whole path, and over a path the only thing
+  // that matters is the total: N points remove N × 30 minutes from it.
+  //
+  // Unlike a Book, a point carries no cooldown, so there is no fixed point to
+  // solve and no ceiling beyond the path itself.
+  const SECONDS_PER_JOB_POINT = 1800;
 
   // Cooldown decays in real time, so over a long path the ceiling is set by the
   // total cooldown budget rather than by a single sitting:
@@ -809,16 +1263,38 @@
   // and the floor from maximum possible use. The floor is NOT the planned date
   // minus leftovers, and it ships with its cost because "98 days for 5.35b" is
   // actionable where "98 days" is not.
+  //
+  // Job points are applied before either, and the ordering is load-bearing
+  // rather than cosmetic — see the comment on `boosted` below.
   function planConsumables(options) {
     const opts = options || {};
     const base = isInt(opts.baseSeconds) && opts.baseSeconds >= 0 ? opts.baseSeconds : 0;
     const owned = isInt(opts.booksOwned) && opts.booksOwned >= 0 ? opts.booksOwned : 0;
     const price = isInt(opts.bookPrice) && opts.bookPrice >= 0 ? opts.bookPrice : 0;
-    const ceiling = booksCeiling({ baseSeconds: base, maxCooldownSeconds: opts.maxCooldownSeconds });
+    const points = isInt(opts.jobPoints) && opts.jobPoints >= 0 ? opts.jobPoints : 0;
+
+    // Clamped to the path, exactly as every Book saving below is: a player
+    // holding more points than they have queued time cannot drive the path
+    // past zero.
+    const jobPointSaving = Math.min(points * SECONDS_PER_JOB_POINT, base);
+    // The points the saving actually costs, never the points the player holds.
+    // Same distinction plannedBooks draws below and for the same reason: a
+    // clamped saving quoted beside an unclamped count describes nothing.
+    // Math.ceil, because a half-spent point is spent.
+    const jobPointsUsed = Math.ceil(jobPointSaving / SECONDS_PER_JOB_POINT);
+    // Every Book figure below is computed against THIS, not against `base`.
+    // The ordering is not presentational: `ceiling` is a function of the path
+    // length, so points shorten the path AND lower the number of Books it can
+    // absorb. Costing the Books first would price a ceiling for a path that
+    // no longer exists — the same class of error as pricing the floor at the
+    // cooldown ceiling, which this function already refuses to do.
+    const boosted = base - jobPointSaving;
+
+    const ceiling = booksCeiling({ baseSeconds: boosted, maxCooldownSeconds: opts.maxCooldownSeconds });
 
     const usable = Math.min(owned, ceiling);
-    const plannedSaving = Math.min(usable * SECONDS_PER_BOOK, base);
-    const floorSaving = Math.min(ceiling * SECONDS_PER_BOOK, base);
+    const plannedSaving = Math.min(usable * SECONDS_PER_BOOK, boosted);
+    const floorSaving = Math.min(ceiling * SECONDS_PER_BOOK, boosted);
 
     // Count and price the Books that actually buy the saving, never the ones
     // the cooldown budget would merely allow. The two diverge whenever the
@@ -831,13 +1307,20 @@
     const floorBooks = Math.ceil(floorSaving / SECONDS_PER_BOOK);
 
     return {
+      // Points, then the path they leave behind for the Books to work on.
+      // jobPointSeconds is what every figure below was computed against, so a
+      // consumer that wants to show the ordering has the intermediate value
+      // rather than having to re-derive it from a saving.
+      jobPoints: jobPointsUsed,
+      jobPointSaving: jobPointSaving,
+      jobPointSeconds: boosted,
       ceiling: ceiling,
       plannedBooks: plannedBooks,
       plannedSaving: plannedSaving,
-      plannedSeconds: base - plannedSaving,
+      plannedSeconds: boosted - plannedSaving,
       floorBooks: floorBooks,
       floorSaving: floorSaving,
-      floorSeconds: base - floorSaving,
+      floorSeconds: boosted - floorSaving,
       floorCost: floorBooks * price,
       // A price of zero is not a price. SETTINGS_BOUNDS.bookPrice.min is 0, so
       // a player who TYPES 0 gets there and it survives normalisation — the
@@ -986,12 +1469,20 @@
       `  Principal rank: ${show(perks.principal)}`,
       `  WSU stock block: ${show(perks.wsuBlock)}`,
       `  Queue order: ${show(settings && settings.orderMode)}`,
+      `  Focus rank basis: ${show(settings && settings.focusRankBasis)}`,
       '',
       'Queue',
       `  Length: ${show(src.queueLength)}`,
       // Joined with a space, not a comma, so no run of ids can be mistaken
       // for the completed-course set this report deliberately withholds.
       `  Courses: ${Array.isArray(src.queueCodes) && src.queueCodes.length > 0 ? src.queueCodes.join(' ') : 'none'}`,
+      '',
+      // Counts only, straight off focusRegistry and settings.focuses' own
+      // length — never a selection's course list, never an outcome string.
+      'Focus',
+      `  Stale classifications: ${show(src.focusStale)}`,
+      `  Unmapped outcomes: ${show(src.focusUnmapped)}`,
+      `  Selections made: ${show(src.focusSelections)}`,
       '',
       // GREASY_FORK_URL's one consumer. Named in prose either way, because
       // the instruction is useful without the URL; the URL is appended only
@@ -1022,7 +1513,11 @@
       `p=${s.bookPrice}`,
       `j=${s.jobPoints}`,
       `o=${s.orderMode}`,
+      `r=${s.focusRankBasis === 'total' ? 't' : 'p'}`,
     ];
+    if (s.focuses.length > 0) {
+      parts.push(`f=${s.focuses.map(function (f) { return `${f.category}${f.selection}`; }).join(',')}`);
+    }
     if (s.perks.meritsPercent !== null) parts.push(`m=${s.perks.meritsPercent}`);
     if (s.perks.principal !== null) parts.push(`pr=${s.perks.principal ? 1 : 0}`);
     if (s.perks.wsuBlock !== null) parts.push(`w=${s.perks.wsuBlock ? 1 : 0}`);
@@ -1050,6 +1545,24 @@
       ? `"${safe}"`
       : `"${safe.slice(0, MAX_TOKEN_CHARS)}…" (truncated, ${safe.length} chars)`;
   }
+
+  // encodePlan concatenates category and selection with no separator between
+  // them (see its comment above the `f=` push), so the only way back is to
+  // match a token against every known (category, selection) pair — the same
+  // set normaliseFocuses validates against — and split there. Built once from
+  // fixed data; a token that matches no pair maps to a sentinel {category:
+  // null, ...} that normaliseFocuses is guaranteed to drop, which is what lets
+  // decodePlan detect the loss below rather than silently swallow it.
+  const FOCUS_CONCAT_INDEX = (function () {
+    const map = new Map();
+    for (const row of FOCUS_TAXONOMY) {
+      map.set(`${row.category}${row.selection}`, { category: row.category, selection: row.selection });
+    }
+    for (const stat of WORKING_STATS) {
+      map.set(`${FOCUS_WORKING_STATS}${stat}`, { category: FOCUS_WORKING_STATS, selection: stat });
+    }
+    return map;
+  }());
 
   // Untrusted input, treated as such: every id is checked against the live
   // catalogue and an unknown one is rejected by name, unrecognised keys are
@@ -1100,6 +1613,20 @@
       }
     }
 
+    // A field that parses (a comma-separated list of tokens) but loses
+    // entries once run through normaliseFocuses — an unrecognised token, or a
+    // second selection in a category already claimed — is a refusal, not a
+    // silent drop: matching how an unknown course id above refuses by name
+    // rather than dropping the id and keeping the rest of the queue.
+    const rawFocus = typeof fields.f === 'string' ? fields.f : '';
+    const focusTokens = rawFocus.length > 0 ? rawFocus.split(',') : [];
+    let firstBadFocusToken = null;
+    const focusCandidates = focusTokens.map(function (token) {
+      const match = FOCUS_CONCAT_INDEX.get(token);
+      if (!match && firstBadFocusToken === null) firstBadFocusToken = token;
+      return match || { category: null, selection: null };
+    });
+
     // normaliseSettings is the only writer of the canonical shape, so every
     // hostile or nonsensical value below falls back to its default.
     const toInt = function (v) { return /^-?\d+$/.test(v || '') ? Number(v) : undefined; };
@@ -1110,12 +1637,24 @@
       bookPrice: toInt(fields.p),
       jobPoints: toInt(fields.j),
       orderMode: fields.o,
+      focusRankBasis: fields.r === 't' ? 'total' : fields.r === 'p' ? 'per-day' : fields.r,
+      focuses: focusCandidates,
       perks: {
         meritsPercent: toInt(fields.m),
         principal: toBool(fields.pr),
         wsuBlock: toBool(fields.w),
       },
     });
+
+    if (settings.focuses.length !== focusCandidates.length) {
+      return {
+        ok: false,
+        reason: 'unknown-focus',
+        detail: firstBadFocusToken !== null
+          ? `${quoteToken(firstBadFocusToken)} is not a focus selection`
+          : 'a focus selection conflicts with another and cannot be kept',
+      };
+    }
 
     return { ok: true, queue: queue, settings: settings };
   }
@@ -1423,17 +1962,46 @@
       && /(\?|&)sid=education(&|$)/.test(location.search || '');
   }
 
-  function formatTimestamp(seconds) {
-    return new Date(seconds * 1000).toUTCString().replace(/GMT$/, 'UTC');
+  // Torn City Time is UTC+0, so these are the UTC getters and the instant is
+  // unchanged from the old toUTCString(). What changed is that the date and the
+  // time are separate values and the label says TCT — which is what the rest of
+  // the player's screen says while they read this.
+  //
+  // NEVER the local getters. A player on UTC+10 reading a bare local 21:00
+  // would be eleven hours wrong about when to log in, and the bug is invisible
+  // on any machine already set to UTC, including CI. tests/timezone.test.js pins
+  // a non-UTC TZ for exactly that reason.
+  function pad2(n) { return n < 10 ? `0${n}` : String(n); }
+
+  function formatDate(seconds) {
+    const d = new Date(seconds * 1000);
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
   }
 
+  // No seconds: a finish estimate derived from course durations is not accurate
+  // to the second, and a ":00" that never varies claims precision it lacks.
+  function formatTime(seconds) {
+    const d = new Date(seconds * 1000);
+    return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+  }
+
+  // Abbreviation rule (do not re-litigate without updating this comment):
+  // abbreviate in dense readouts where the word sits beside a number and
+  // space is scarce — "6 crs", "84 days", "12 hrs" (the grid cell, the
+  // queue row, this function). Keep the full word in prose, where it reads
+  // as a sentence rather than a measurement — the picker's own
+  // `— all remaining courses (115) —` at ~2980 is the deliberate exception:
+  // "all remaining crs (115)" reads badly in a full-width dropdown with no
+  // space pressure, and the all-remaining banner (a later task in this
+  // plan) titles itself "all remaining courses" too, so the picker matches
+  // the banner rather than the grid.
   function formatDuration(seconds) {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const parts = [];
     if (days > 0) parts.push(days === 1 ? '1 day' : `${days} days`);
-    if (hours > 0) parts.push(hours === 1 ? '1 hour' : `${hours} hours`);
-    if (parts.length === 0) return '0 hours';
+    if (hours > 0) parts.push(`${hours} hrs`);
+    if (parts.length === 0) return '0 hrs';
     return parts.join(' ');
   }
 
@@ -1466,6 +2034,19 @@
     note: 'Your education data could not be read, so no perks can be inferred. Enter what you hold.',
   };
 
+  // In words, from focusTotals' shape. `unit: 'count'` never states a
+  // percentage — the whole reason FOCUS_UNSTATABLE and the Unlocks &
+  // Abilities category are folded into 'count' rather than left to show a
+  // magnitude nobody can stand behind.
+  function focusRemainingLabel(totals) {
+    if (totals.remaining <= 0) return 'complete';
+    if (totals.unit === 'percent') return `${totals.remaining}% left of ${totals.total}%`;
+    if (totals.unit === 'flat') return `${totals.remaining} left of ${totals.total}`;
+    return totals.statable
+      ? `${totals.remaining} of ${totals.total} left`
+      : `${totals.remaining} course${totals.remaining === 1 ? '' : 's'} left, no fixed total`;
+  }
+
   function buildPanelModel(state) {
     // Computed once, here, so nothing downstream depends on the caller having
     // normalised: panelSettings runs normaliseSettings, which turns anything —
@@ -1478,6 +2059,10 @@
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
+      // Lives in init()'s closure, never in storage — see resetButton. Read
+      // once per draw like every other flag on this model; false here means
+      // a fetch failure never reaches the panel with an armed reset control.
+      resetArmed: state.resetArmed === true,
       settings: settings,
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: NO_INFERENCE,
@@ -1496,6 +2081,14 @@
       // There is no payload to derive degrees from, so the grid view says so
       // rather than drawing thirteen empty boxes.
       grid: null,
+      // Same reasoning as grid: no catalogue means no totals to state and no
+      // registry to check for staleness, so the focus view says so rather
+      // than drawing empty categories.
+      focusGroups: null,
+      focuses: null,
+      focusHealth: null,
+      focusOpenCategories: [],
+      focusOpenCompletedCategories: [],
       // Nothing to share: without a catalogue there is no queue this model can
       // vouch for, and a share string is a claim about a plan. Empty rather
       // than null, because the box renders either way and `null` in a textarea
@@ -1524,12 +2117,20 @@
       if (course.status === 'inProgress') { stale.push({ courseId: id, prefix: course.prefix, why: 'currently in progress' }); return false; }
       return true;
     });
+    // The scores the player asked for, handed to the sort that uses them.
+    // orderQueue treats a missing fourth argument as "no focus", which is why
+    // omitting this made 'My focus first' silently behave as 'as-listed'.
+    // Computed only in focus mode: focusScores walks the registry, and the
+    // other three modes have no use for the result.
+    const scoreMaps = settings.orderMode === 'focus'
+      ? focusScores(settings.focuses, data.courses)
+      : null;
     // The player's chosen ordering is applied once, here, and everything
     // downstream — schedule, validateQueue, finishById, the rendered rows —
     // reads the ordered queue. It cannot move the finish date (a sum does not
     // care about order); it moves which course finishes when, which is the
     // whole point of offering the choice.
-    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses);
+    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses, scoreMaps, settings.focusRankBasis);
     const result = schedule({
       courses: data.courses, activeCourse: data.activeCourse, queue: queue, now: state.now,
     });
@@ -1559,9 +2160,11 @@
     for (const course of data.courses.values()) {
       if (course.status === 'completed' || course.status === 'inProgress') continue;
       if (queued.has(course.id)) continue;
-      // Tier-3 courses unlock things and gate on an entire degree, so they have
-      // to stand out among ~115 entries. Styling an <option> is unreliable
-      // across browsers; a text marker in the label is the portable answer.
+      // Tier-3 courses unlock things and gate on an entire degree, so they
+      // have to stand out among ~115 entries. Carried here as `isBachelor`
+      // only — the picker renderer turns it into a `.tes-option-bachelor`
+      // class rather than a text prefix (owner decision: see the CSS rule in
+      // injectStyleOnce/panelStyleText for why, and why there is no fallback).
       const isBachelor = course.tier === 3;
       addable.push({
         courseId: course.id,
@@ -1569,7 +2172,7 @@
         name: course.name,
         isBachelor: isBachelor,
         durationLabel: formatDuration(course.duration),
-        label: `${isBachelor ? '[bachelor] ' : ''}${course.prefix} ${course.name} (${formatDuration(course.duration)})`,
+        label: `${course.prefix} ${course.name} (${formatDuration(course.duration)})`,
       });
     }
     addable.sort(function (a, b) { return a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0; });
@@ -1580,23 +2183,72 @@
     // their account.
     // The grid is independent of the player's queue: each box starts from now
     // and answers its own question. Labels are built here rather than in the
-    // view, because formatDuration/formatTimestamp are runtime while
+    // view, because formatDuration/formatDate/formatTime are runtime while
     // buildDegreeGrid is engine.
     const rawGrid = buildDegreeGrid({
       courses: data.courses, categories: data.categories, completedIds: data.completedIds,
       activeCourse: data.activeCourse, now: state.now,
     });
+    const labelBox = function (b) {
+      return {
+        key: b.key, name: b.name, bachelorPrefix: b.bachelorPrefix,
+        courseCount: b.courseCount, totalSeconds: b.totalSeconds, finishesAt: b.finishesAt,
+        durationLabel: formatDuration(b.totalSeconds),
+        finishLabel: `${formatDate(b.finishesAt)} · ${formatTime(b.finishesAt)} TCT`,
+      };
+    };
     const grid = {
       sumsDiffer: rawGrid.sumsDiffer,
-      boxes: rawGrid.boxes.map(function (b) {
-        return {
-          key: b.key, name: b.name, bachelorPrefix: b.bachelorPrefix,
-          courseCount: b.courseCount, totalSeconds: b.totalSeconds, finishesAt: b.finishesAt,
-          durationLabel: formatDuration(b.totalSeconds),
-          finishLabel: formatTimestamp(b.finishesAt),
-        };
-      }),
+      boxes: rawGrid.boxes.map(labelBox),
+      allBox: labelBox(rawGrid.allBox),
     };
+
+    // The registry drives both what the focus view can offer and what it is
+    // honest about not knowing: a stale row lost its outcome match, an
+    // unmapped outcome has no row at all. Reported as counts only — never
+    // which course, which is what would make this a second copy of the
+    // taxonomy the view is not meant to be.
+    const focusReg = focusRegistry(data.courses);
+    const focusHealth = { stale: focusReg.stale, unmapped: focusReg.unmapped };
+
+    // Priority is settings.focuses' own array index, never a stored number —
+    // see toggleFocus/setFocusPriority. An unchosen selection gets null here,
+    // never 0: a number nobody set must not read as a number somebody set.
+    const focusPriorityByKey = new Map();
+    settings.focuses.forEach(function (f, i) { focusPriorityByKey.set(focusKey(f.category, f.selection), i + 1); });
+
+    const focusGroups = FOCUS_CATEGORIES.map(function (category) {
+      let selections;
+      if (category === FOCUS_WORKING_STATS) {
+        selections = WORKING_STATS.slice();
+      } else {
+        // First occurrence per selection: a selection can be reached by more
+        // than one taxonomy row (a split course), and the view offers it once.
+        const seen = new Set();
+        selections = [];
+        for (const row of FOCUS_TAXONOMY) {
+          if (row.category !== category || seen.has(row.selection)) continue;
+          seen.add(row.selection);
+          selections.push(row.selection);
+        }
+      }
+      return {
+        category: category,
+        selections: selections.map(function (selection) {
+          const totals = focusTotals({ category: category, selection: selection }, data.courses, data.completedIds);
+          const key = focusKey(category, selection);
+          return {
+            selection: selection,
+            unit: totals.unit,
+            total: totals.total,
+            remaining: totals.remaining,
+            statable: totals.statable,
+            remainingLabel: focusRemainingLabel(totals),
+            priority: focusPriorityByKey.has(key) ? focusPriorityByKey.get(key) : null,
+          };
+        }),
+      };
+    });
 
     // Same gate as finishLabel/totalLabel below, and for the same reason: a
     // queue with unmet prerequisites has no honest total, so it has nothing for
@@ -1612,18 +2264,24 @@
           maxCooldownSeconds: settings.maxCooldownHours * 3600,
           booksOwned: settings.booksOwned,
           bookPrice: settings.bookPrice,
+          jobPoints: settings.jobPoints,
         })
       : null;
     // startsAt + seconds, not finishesAt - saving: the queue begins when the
     // active course ends, and that anchor is the only fixed point either date
     // can be measured from.
     const consumablesModel = consumables ? {
+      // The job-point line is the path the Books then work on, so it renders
+      // above them — the view's line order is the calculation's order.
+      jobPoints: consumables.jobPoints,
+      jobPointFinishLabel: `${formatDate(result.startsAt + consumables.jobPointSeconds)} · ${formatTime(result.startsAt + consumables.jobPointSeconds)} TCT`,
+      jobPointDurationLabel: formatDuration(consumables.jobPointSeconds),
       ceiling: consumables.ceiling,
       plannedBooks: consumables.plannedBooks,
-      plannedFinishLabel: formatTimestamp(result.startsAt + consumables.plannedSeconds),
+      plannedFinishLabel: `${formatDate(result.startsAt + consumables.plannedSeconds)} · ${formatTime(result.startsAt + consumables.plannedSeconds)} TCT`,
       plannedDurationLabel: formatDuration(consumables.plannedSeconds),
       floorBooks: consumables.floorBooks,
-      floorFinishLabel: formatTimestamp(result.startsAt + consumables.floorSeconds),
+      floorFinishLabel: `${formatDate(result.startsAt + consumables.floorSeconds)} · ${formatTime(result.startsAt + consumables.floorSeconds)} TCT`,
       floorDurationLabel: formatDuration(consumables.floorSeconds),
       // Withheld rather than rendered as "$0" when no price is set. The rule
       // this feature turns on is that the floor date never appears without its
@@ -1672,7 +2330,8 @@
           duration: course.duration,
           durationLabel: formatDuration(course.duration),
           finishesAt: finishById.get(id),
-          finishLabel: formatTimestamp(finishById.get(id)),
+          finishLabel: `${formatDate(finishById.get(id))} · ${formatTime(finishById.get(id))} TCT`,
+          bonusLabel: bonusLabel(course),
         };
       }),
       problems: problems,
@@ -1681,12 +2340,17 @@
       // follow in order, so schedule()'s sum describes a fiction — withhold it
       // rather than print it. The problems list itself (rendered above) already
       // names what is missing.
-      finishLabel: (queue.length > 0 && problems.length === 0) ? formatTimestamp(result.finishesAt) : null,
+      finishLabel: (queue.length > 0 && problems.length === 0)
+        ? `${formatDate(result.finishesAt)} · ${formatTime(result.finishesAt)} TCT`
+        : null,
       totalLabel: (queue.length > 0 && problems.length === 0) ? formatDuration(result.totalSeconds) : null,
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
+      // See the same field on the failure model above: it is read here, not
+      // stored — a redraw for any other reason is what disarms it.
+      resetArmed: state.resetArmed === true,
       settings: settings,
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: perkInference,
@@ -1694,6 +2358,13 @@
       orderModes: ORDER_MODE_LABELS,
       debugReport: state.debugReport || null,
       grid: grid,
+      focusGroups: focusGroups,
+      focuses: settings.focuses, // not read by any renderer; kept for tests/panel.test.js — see code-map
+      focusHealth: focusHealth,
+      focusOpenCategories: Array.isArray(state.focusOpenCategories) ? state.focusOpenCategories : [],
+      focusOpenCompletedCategories: Array.isArray(state.focusOpenCompletedCategories)
+        ? state.focusOpenCompletedCategories
+        : [],
       // Built from the pruned queue, in storage order — never the ordered
       // queue: ordering is a display preference, and storage keeps the raw
       // order. Sharing the ordered queue would silently rewrite a hand-built
@@ -1734,6 +2405,10 @@
     const nav = (typeof navigator !== 'undefined') ? navigator : null;
     const data = (state.fetchResult && state.fetchResult.ok) ? state.fetchResult.data : null;
     const queue = (state.plan && Array.isArray(state.plan.queue)) ? state.plan.queue : [];
+    // Counts only — never a selection's course list, never an outcome
+    // string. focusRegistry needs real course data to say anything, so both
+    // are null on a failed acquisition.
+    const focusReg = data ? focusRegistry(data.courses) : null;
     return {
       scriptVersion: SCRIPT_VERSION,
       userAgent: nav && typeof nav.userAgent === 'string' ? nav.userAgent : null,
@@ -1757,6 +2432,13 @@
         return (c && typeof c.prefix === 'string') ? c.prefix : String(id);
       }) : [],
       settings: state.settings || null,
+      focusStale: focusReg ? focusReg.stale : null,
+      focusUnmapped: focusReg ? focusReg.unmapped : null,
+      // settings.focuses' own length, not a stored count — present whenever
+      // settings are, independent of whether acquisition succeeded.
+      focusSelections: (state.settings && Array.isArray(state.settings.focuses))
+        ? state.settings.focuses.length
+        : null,
     };
   }
 
@@ -1791,47 +2473,146 @@
     try { return doc.querySelector(selector); } catch (e) { return null; }
   }
 
-  function injectStyleOnce(doc) {
-    if (queryOne(doc, '#tes-style')) return;
-    const style = doc.createElement('style');
-    style.id = 'tes-style';
-    style.textContent = [
-      '#tes-panel { border: 1px solid #4a4a4a; background: #1c1c1c; color: #e6e6e6;',
-      '  padding: 12px 14px; margin: 12px 0; border-radius: 6px; font-size: 13px; line-height: 1.5; }',
-      '#tes-panel .tes-header { font-weight: bold; cursor: pointer; margin-bottom: 8px; }',
-      '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: 8px; }',
-      '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
-      '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
-      '#tes-panel .tes-error { color: #ff8080; margin-bottom: 8px; }',
-      '#tes-panel .tes-summary { white-space: pre-line; margin-bottom: 8px; }',
+  // The exact string injected into the page's <style id="tes-style"> tag.
+  // Pulled out of injectStyleOnce so a test can assert on a rule (e.g. the
+  // bachelor colour below) without a DOM to read the <style> element back
+  // out of. A later design-tokens pass also depends on this returning the
+  // literal emitted text, not a summary of it.
+  function panelStyleText() {
+    return [
+      // Colour values are Bookie's default scheme, panel-root block
+      // (Torn_Bookie_Live_Scores.js:8244). NOT .tm-theme-default, which is a
+      // nested component's local palette and disagrees with this one — see the
+      // spec's table. Type, spacing and focus are local, hence --tes-*: the
+      // --tm-* prefix means "matches Bookie", and these do not.
+      //
+      // No --tm-font. The panel inherits Torn's font, which is what makes it
+      // look like part of the page rather than bolted on.
+      '#tes-panel {',
+      '  --tm-bg: #1f1f1f; --tm-bg-3: #111111; --tm-hover: #292929;',
+      '  --tm-border-2: #555555; --tm-text: #ffffff; --tm-muted: #b8b8b8; --tm-meta: #cfcfcf;',
+      // Bookie's raw --tm-good/--tm-bad fills (#2a6b3a/#aa3333) are deliberately
+      // not carried over: nothing below needs a green or red FILL, only their
+      // -text variants, because --tm-good measures 2.56:1 as text on --tm-bg
+      // and fails AA — the panel's existing green and red already clear AA at
+      // 10.44:1 and 7.02:1, so only those two survive. A token nothing
+      // references is dead weight (same reasoning as the spec's "Not adopted"
+      // list, applied to Task 1's leftovers): --tm-bg-2 and --tm-border went
+      // for the same reason — no rule below ever needed a second background or
+      // border shade.
+      '  --tm-good-text: #7ee081; --tm-bad-text: #ff8080;',
+      '  --tes-text-sm: 12px; --tes-text: 14px; --tes-text-lg: 1.25em;',
+      '  --tes-gap-xs: 4px; --tes-gap-sm: 6px; --tes-gap: 8px; --tes-gap-lg: 14px;',
+      '  --tes-focus-ring: 2px solid var(--tm-good-text);',
+      '}',
+      '#tes-panel { border: 1px solid var(--tm-border-2); background: var(--tm-bg); color: var(--tm-text);',
+      // No 4px/8px step sums to 12px, so the outer margin is the one place a
+      // token is a sum rather than a single step — this keeps the panel's
+      // distance from the rest of the page pixel-identical to before, rather
+      // than snapping to the nearest single gap and shifting it either way.
+      '  padding: 12px 14px; margin: calc(var(--tes-gap) + var(--tes-gap-xs)) 0; border-radius: 6px;',
+      '  font-size: var(--tes-text); line-height: 1.5; }',
+      '#tes-panel .tes-header { font-weight: bold; margin-bottom: var(--tes-gap);',
+      '  display: flex; align-items: center; justify-content: space-between; gap: 8px; }',
+      '#tes-panel .tes-header-toggle { font-weight: normal; }',
+      '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: var(--tes-gap); }',
+      '#tes-panel .tes-nav .tes-settings { margin-left: auto; }',
+      '#tes-panel .tes-reset-armed { border-color: var(--tm-bad-text); color: var(--tm-bad-text); }',
+      '#tes-panel .tes-finish { font-size: var(--tes-text-lg); font-weight: bold; color: var(--tm-good-text); margin-bottom: var(--tes-gap); }',
+      '#tes-panel .tes-save-error { color: var(--tm-bad-text); font-weight: bold; margin-bottom: var(--tes-gap); }',
+      '#tes-panel .tes-error { color: var(--tm-bad-text); margin-bottom: var(--tes-gap); }',
+      '#tes-panel .tes-summary { margin-bottom: var(--tes-gap); }',
+      // The separator divides the whole summary from the queue rows below it,
+      // not one line of the summary from another. Owner decision at the v0.3.0
+      // QA gate: a top border on .tes-summary-result drew the line between
+      // "Perk reduction" and the total, which read as though the total belonged
+      // with the queue rather than with the assumptions above it.
+      //
+      // It is on the container, not a bottom border on .tes-summary-result,
+      // because .tes-summary-diagnostics renders AFTER the result whenever a
+      // stale entry was dropped or a prerequisite is missing — a bottom border
+      // on the result line would land mid-summary in exactly the case where the
+      // summary has the most to say.
+      //
+      // .tes-summary-queue, not .tes-summary: that class is shared with the
+      // Books block above and with the grid and focus views' no-data messages,
+      // and none of those wants a rule underneath it.
+      '#tes-panel .tes-summary-queue { border-bottom: 1px solid var(--tm-border-2); padding-bottom: 6px; }',
+      '#tes-panel .tes-summary-result { margin-top: var(--tes-gap-sm); }',
+      '#tes-panel .tes-summary-diagnostics { white-space: pre-line; margin-top: var(--tes-gap-sm); }',
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
-      '#tes-panel button, #tes-panel select { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
-      '  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: inherit; }',
-      '#tes-panel button:hover { border-color: #7ee081; }',
-      '#tes-panel .tes-section { margin-bottom: 10px; }',
-      '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: 4px; opacity: 0.85; }',
-      '#tes-panel .tes-note { opacity: 0.75; margin-bottom: 6px; }',
-      '#tes-panel input { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
+      // A queue row is its own grid, not .tes-row (other views still use the
+      // flex layout): two lines in column 1, the remove button spanning both
+      // in column 2, so the button never doubles or drifts from the row it
+      // belongs to.
+      '#tes-panel .tes-queue-row { display: grid; grid-template-columns: 1fr auto;',
+      '  align-items: center; gap: 2px 8px; padding: 4px 0; }',
+      '#tes-panel .tes-queue-bonus { grid-column: 1; padding-left: 12px; font-size: var(--tes-text-sm); }',
+      '#tes-panel .tes-queue-row button { grid-column: 2; grid-row: 1 / span 2; }',
+      // padding, not font-size, carries the button to a 44px touch target —
+      // density (font-size, line-height) is unchanged by this pass.
+      '#tes-panel button, #tes-panel select { color: var(--tm-text); background: var(--tm-hover); border: 1px solid var(--tm-border-2);',
+      '  border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: inherit; }',
+      '#tes-panel button:hover { border-color: var(--tm-good-text); }',
+      // The focus ring belongs to this pass, not a later one: --tes-focus-ring
+      // is declared above, and a design-token block that declares a token no
+      // rule consumes is exactly the dead weight this refactor exists to
+      // remove. focus-visible, not focus, so a mouse click leaves no ring
+      // behind — before this rule, tabbing through the settings form gave no
+      // indication of position at all.
+      '#tes-panel button:focus-visible, #tes-panel select:focus-visible,',
+      '#tes-panel input:focus-visible, #tes-panel textarea:focus-visible {',
+      '  outline: var(--tes-focus-ring); outline-offset: 2px; }',
+      '#tes-panel .tes-section { margin-bottom: var(--tes-gap-lg); }',
+      '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); color: var(--tm-meta); }',
+      '#tes-panel .tes-focus-section { border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; margin-bottom: var(--tes-gap-lg); }',
+      '#tes-panel .tes-focus-section-header { display: grid; grid-template-columns: 2.5em 1fr auto; align-items: center; gap: 8px; }',
+      '#tes-panel .tes-focus-section-title { width: 100%; text-align: left; }',
+      '#tes-panel .tes-focus-section-count { justify-self: end; color: var(--tm-muted); font-size: var(--tes-text-sm); white-space: nowrap; }',
+      '#tes-panel .tes-focus-priority-slot { width: 2.5em; }',
+      '#tes-panel .tes-focus-row { display: grid; grid-template-columns: 1.5em 1fr auto; align-items: center; gap: 8px; padding: 2px 0; }',
+      '#tes-panel .tes-focus-row input[type="checkbox"] { width: auto; }',
+      '#tes-panel .tes-focus-row[data-disabled="true"] { color: var(--tm-muted); }',
+      '#tes-panel .tes-focus-completed { border-top: 1px solid var(--tm-border-2); margin-top: var(--tes-gap-sm); padding-top: 6px; }',
+      '#tes-panel .tes-focus-completed-title { width: 100%; text-align: left; color: var(--tm-muted);',
+      '  background: var(--tm-bg-3); font-size: var(--tes-text-sm); }',
+      '#tes-panel .tes-focus-remaining { justify-self: end; text-align: right; }',
+      '#tes-panel .tes-focus-priority { box-sizing: border-box; width: 2.5em; }',
+      '#tes-panel .tes-note { color: var(--tm-muted); margin-bottom: var(--tes-gap-sm); font-size: var(--tes-text-sm); }',
+      '#tes-panel input { color: var(--tm-text); background: var(--tm-hover); border: 1px solid var(--tm-border-2);',
       '  border-radius: 4px; padding: 3px 6px; font-size: inherit; width: 10em; }',
       // The report is shown before it can be copied, so it needs to be
       // readable in place: wrapped, scrollable, and visibly a block of text
       // the player is about to hand to someone else.
-      '#tes-panel .tes-report { white-space: pre-wrap; word-break: break-word; background: #111;',
-      '  border: 1px solid #4a4a4a; border-radius: 4px; padding: 8px; margin: 8px 0; max-height: 240px; overflow: auto; }',
+      '#tes-panel .tes-report { white-space: pre-wrap; word-break: break-word; background: var(--tm-bg-3);',
+      '  border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; margin: var(--tes-gap) 0; max-height: 240px; overflow: auto; }',
       // auto-fill rather than a fixed column count: the panel sits inside
       // Torn's own column, whose width the script does not control.
-      '#tes-panel .tes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: 8px 0; }',
-      '#tes-panel .tes-cell { border: 1px solid #4a4a4a; border-radius: 4px; padding: 8px; }',
-      '#tes-panel .tes-cell-all { border-color: #7ee081; }',
-      '#tes-panel .tes-cell-title { font-weight: bold; margin-bottom: 4px; }',
+      '#tes-panel .tes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: var(--tes-gap) 0; }',
+      '#tes-panel .tes-cell { border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; }',
+      '#tes-panel .tes-all-banner { border: 1px solid var(--tm-good-text); border-radius: 4px;',
+      '  padding: 8px; margin: var(--tes-gap) 0; }',
+      '#tes-panel .tes-cell-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); }',
       // pre-line, because the detail carries a newline between the duration
       // and the finish date rather than two elements.
-      '#tes-panel .tes-cell-detail { white-space: pre-line; opacity: 0.85; }',
-      '#tes-panel .tes-share { width: 100%; box-sizing: border-box; color: #e6e6e6; background: #2e2e2e;',
-      '  border: 1px solid #4a4a4a; border-radius: 4px; padding: 6px; font-family: monospace; font-size: 0.95em; }',
-      '#tes-panel .tes-foot { margin-top: 8px; opacity: 0.7; font-size: 0.95em; }',
-      '#tes-panel a { color: #7ee081; }',
+      '#tes-panel .tes-cell-detail { white-space: pre-line; color: var(--tm-meta); font-size: var(--tes-text-sm); }',
+      '#tes-panel .tes-share { width: 100%; box-sizing: border-box; color: var(--tm-text); background: var(--tm-hover);',
+      '  border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 6px; font-family: monospace; font-size: 0.95em; }',
+      '#tes-panel .tes-foot { margin-top: var(--tes-gap); color: var(--tm-muted); font-size: var(--tes-text-sm); }',
+      '#tes-panel a { color: var(--tm-good-text); }',
+      // Best-effort by nature: Chrome and Firefox on Windows and Linux honour a
+      // colour on an <option>; macOS draws the menu itself and commonly ignores
+      // it, so those players see no marker. Accepted trade — no fallback prefix,
+      // since one would reinstate for some users what removing it was for.
+      '#tes-panel .tes-option-bachelor { color: var(--tm-good-text); }',
     ].join('\n');
+  }
+
+  function injectStyleOnce(doc) {
+    if (queryOne(doc, '#tes-style')) return;
+    const style = doc.createElement('style');
+    style.id = 'tes-style';
+    style.textContent = panelStyleText();
     // Reading head/body is a property access on a document we do not own; a
     // page that throws here must still get its panel.
     let parent = null;
@@ -1841,7 +2622,21 @@
 
   // The header names the view you are looking at, so a collapsed-then-reopened
   // panel is not ambiguous about what it is showing.
-  const VIEW_TITLES = { schedule: 'Education Scheduler', settings: 'Settings', grid: 'Degrees' };
+  const VIEW_TITLES = { schedule: 'Education Scheduler', settings: 'Settings', grid: 'Degrees', focus: 'Focus' };
+
+  // One nav button: label and click wiring, shared by every button the nav
+  // row renders. Callers set `className`/`aria-current` themselves — this
+  // only owns what every button has in common.
+  function navButton(doc, target, label, handlers) {
+    const btn = doc.createElement('button');
+    btn.textContent = label;
+    if (btn.addEventListener && handlers.onViewChange) {
+      btn.addEventListener('click', function () {
+        handlers.onViewChange(target);
+      });
+    }
+    return btn;
+  }
 
   // The shell only: chrome, the failure line, the nav row, and the view
   // switch. Each view owns its own body content, so adding a view never grows
@@ -1868,10 +2663,24 @@
 
     const view = model.view || 'schedule';
 
+    // Two elements, not one clickable div. The title names the view; the button
+    // is a real button that looks like every other button in the panel, and it
+    // is the only thing that toggles. `justify-content: space-between` on
+    // `.tes-header` puts it right, not a margin on the button itself.
     const header = doc.createElement('div');
     header.className = 'tes-header';
-    header.textContent = `${VIEW_TITLES[view] || VIEW_TITLES.schedule} — ${model.collapsed ? 'show' : 'hide'}`;
-    if (header.addEventListener) header.addEventListener('click', handlers.onToggle);
+
+    const title = doc.createElement('span');
+    title.className = 'tes-header-title';
+    title.textContent = VIEW_TITLES[view] || VIEW_TITLES.schedule;
+    header.appendChild(title);
+
+    const toggle = doc.createElement('button');
+    toggle.className = 'tes-header-toggle';
+    toggle.textContent = model.collapsed ? 'show' : 'hide';
+    if (toggle.addEventListener) toggle.addEventListener('click', handlers.onToggle);
+    header.appendChild(toggle);
+
     panel.appendChild(header);
 
     if (!model.collapsed) {
@@ -1903,25 +2712,58 @@
       if (handlers !== noopHandlers) {
         const nav = doc.createElement('div');
         nav.className = 'tes-nav';
-        for (const target of ['schedule', 'grid', 'settings']) {
-          if (target === view) continue;
-          const btn = doc.createElement('button');
-          btn.textContent = target === 'settings' ? '⚙ settings' : target === 'grid' ? 'degrees' : 'schedule';
-          if (btn.addEventListener && handlers.onViewChange) {
-            btn.addEventListener('click', function () { handlers.onViewChange(target); });
-          }
+
+        // Planner destinations are fixed controls, including the current
+        // view. Focus is normally present because it is the default Queue
+        // order; an empty focus list still orders as listed, so a new player
+        // sees the same queue. It disappears only after a player deliberately
+        // selects another ordering, when they already know the feature exists.
+        for (const target of ['schedule', 'grid', 'focus']) {
+          if (target === 'focus' && model.settings.orderMode !== 'focus') continue;
+          const label = target === 'grid' ? 'degrees' : target === 'focus' ? 'focus' : 'schedule';
+          const btn = navButton(doc, target, label, handlers);
+          if (target === view) btn.setAttribute('aria-current', 'page');
           nav.appendChild(btn);
         }
+
+        // Settings is a fixed landmark, not a fourth toggle target: it
+        // renders on every view, identically, always enabled — a landmark
+        // that greys out or moves when you land on it is not a landmark.
+        // `.tes-settings { margin-left: auto }` (CSS) pins it to the right
+        // of the row regardless of how many buttons sit to its left, so it
+        // does not shift as the planner group grows from one button to two.
+        // A reset button appends here too, AFTER this one, and inherits the
+        // same right-hand group without needing its own margin-left: auto —
+        // a second auto margin on the same flex row would do nothing useful.
+        const gear = navButton(doc, 'settings', '⚙ settings', handlers);
+        gear.className = 'tes-settings';
+        // Idempotent when already on settings — cheaper than a disabled
+        // state that would make the button look different on one view out
+        // of four.
+        if (view === 'settings') gear.setAttribute('aria-current', 'page');
+        nav.appendChild(gear);
+
+        // Right-aligned by margin-left:auto, so it must stay last in this
+        // row. Degrees owns no player data and gets nothing; the enclosing
+        // `handlers !== noopHandlers` guard above already covers the panel
+        // that cannot respond, and a collapsed panel renders no nav row at
+        // all.
+        if (view === 'schedule' || view === 'focus' || view === 'settings') {
+          resetButton(doc, nav, view === 'settings' ? 'defaults' : 'reset',
+            model.resetArmed === true, handlers.onResetArm, handlers.onResetConfirm);
+        }
+
         body.appendChild(nav);
       }
 
       // Settings renders in full either way — it reads nothing from the
-      // payload. Schedule and Degrees have nothing to draw without data, and
-      // the failure line above is the whole of what they have to say, so they
-      // are skipped rather than rendered empty.
+      // payload. Schedule, Degrees and Focus have nothing to draw without
+      // data, and the failure line above is the whole of what they have to
+      // say, so they are skipped rather than rendered empty.
       if (view === 'settings') renderSettingsView(doc, body, model, handlers);
       else if (model.status === 'error') { /* the failure line is the view */ }
       else if (view === 'grid') renderGridView(doc, body, model, handlers);
+      else if (view === 'focus') renderFocusView(doc, body, model, handlers);
       else renderScheduleView(doc, body, model, handlers);
 
       panel.appendChild(body);
@@ -1932,9 +2774,9 @@
   }
 
   // Which settings paths carry a number, so onSettingChange knows what to
-  // coerce. orderMode is a string enum: running it through Number() would make
-  // every choice NaN, and normaliseSettings would quietly restore the default
-  // — a preference that silently refuses to change.
+  // coerce. orderMode and focusRankBasis are string enums: running either
+  // through Number() would make every choice NaN, and normaliseSettings would
+  // quietly restore the default — a preference that silently refuses to change.
   const NUMERIC_SETTING_FIELDS = [
     'maxCooldownHours', 'booksOwned', 'bookPrice', 'jobPoints', 'perks.meritsPercent',
   ];
@@ -1950,6 +2792,74 @@
     section.appendChild(heading);
     body.appendChild(section);
     return section;
+  }
+
+  // Focus categories are collapsed independently and are deliberately not
+  // settings sections: their heading is a control, while settings headings
+  // must remain inert labels with the exact shape their callers expect.
+  function focusSection(doc, body, title, selections, chosen, expanded, onToggle, onPriority) {
+    const section = doc.createElement('div');
+    section.className = 'tes-focus-section';
+    const header = doc.createElement('div');
+    header.className = 'tes-focus-section-header';
+    const prioritySlot = doc.createElement('span');
+    prioritySlot.className = 'tes-focus-priority-slot';
+    // This header renders even while its section is collapsed, so the whole
+    // focus list stays visible and editable without opening any section.
+    if (chosen) {
+      const priorityInput = doc.createElement('input');
+      priorityInput.className = 'tes-focus-priority';
+      priorityInput.setAttribute('type', 'number');
+      priorityInput.setAttribute('min', '1');
+      priorityInput.value = String(chosen.priority);
+      if (priorityInput.addEventListener) {
+        priorityInput.addEventListener('change', function () {
+          onPriority(chosen.selection, Number(priorityInput.value));
+        });
+      }
+      prioritySlot.appendChild(priorityInput);
+    }
+    header.appendChild(prioritySlot);
+    const heading = doc.createElement('button');
+    heading.className = 'tes-focus-section-title';
+    heading.textContent = chosen ? `${title} — ${chosen.selection}` : title;
+    heading.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (heading.addEventListener) heading.addEventListener('click', onToggle);
+    header.appendChild(heading);
+    const total = selections.length;
+    const complete = selections.filter(function (selection) { return selection.remainingLabel === 'complete'; }).length;
+    const count = doc.createElement('span');
+    count.className = 'tes-focus-section-count';
+    count.textContent = `${total - complete} rem /${total} total`;
+    header.appendChild(count);
+    section.appendChild(header);
+    body.appendChild(section);
+    return section;
+  }
+
+  // Two clicks, because a queue is a plan built by hand and there is no undo
+  // anywhere in this panel. It shares a row with four buttons that only change
+  // what you are looking at, which makes a misclick MORE likely than it would
+  // be alone, not less — hence the arm, and hence the colour change so the two
+  // states cannot be confused at a glance.
+  //
+  // The armed state is the caller's, not this function's: it belongs to
+  // init()'s closure so that a redraw for any other reason disarms it, and so
+  // it can never be written to storage.
+  //
+  // The label changes rather than a dialog appearing — a confirm() would be a
+  // modal on someone else's page, and this panel does not own the tab.
+  function resetButton(doc, nav, label, armed, onArm, onConfirm) {
+    const btn = doc.createElement('button');
+    btn.className = armed ? 'tes-reset tes-reset-armed' : 'tes-reset';
+    btn.textContent = armed ? `${label} — sure?` : label;
+    if (btn.addEventListener) {
+      btn.addEventListener('click', function () {
+        if (armed) onConfirm(); else onArm();
+      });
+    }
+    nav.appendChild(btn);
+    return btn;
   }
 
   function numberField(doc, section, label, value, onCommit) {
@@ -2023,29 +2933,26 @@
     }
 
     const boosters = settingsSection(doc, body, 'Boosters');
+    // First in the section because it is first in the arithmetic
+    // (planConsumables): points come off the path, and the Book figures are
+    // computed against what they leave behind. Reading the section top to
+    // bottom is reading the calculation in order.
+    numberField(doc, boosters, 'Job points available', s.jobPoints, function (v) { set('jobPoints', v); });
+    const jobPointNote = doc.createElement('div');
+    jobPointNote.className = 'tes-note';
+    jobPointNote.textContent = 'Each job point removes 30 minutes from a queued course, and points are spent before any Book of Carols — so the Book figures on the schedule are what is left after them. Time already running on your current course is not affected.';
+    boosters.appendChild(jobPointNote);
     numberField(doc, boosters, 'Max booster cooldown (hours)', s.maxCooldownHours, function (v) { set('maxCooldownHours', v); });
     numberField(doc, boosters, 'Books of Carols owned', s.booksOwned, function (v) { set('booksOwned', v); });
     numberField(doc, boosters, 'Book of Carols price', s.bookPrice, function (v) { set('bookPrice', v); });
-    numberField(doc, boosters, 'Job points available', s.jobPoints, function (v) { set('jobPoints', v); });
-    // Torn already applies job points to the course in progress, so
-    // activeCourse.completedAt already reflects them — there is nothing here
-    // for this field to correct. It is recorded only so it travels with a
-    // shared plan string and a debug report.
-    const jobPointsNote = doc.createElement('div');
-    jobPointsNote.className = 'tes-note';
-    jobPointsNote.textContent = 'Job points need no entry for the dates shown here — Torn already applies them to the course in progress.';
-    boosters.appendChild(jobPointsNote);
 
-    const perks = settingsSection(doc, body, 'Education perks');
-    // The note carries the honesty: it names the inference as an inference, so
-    // a prefilled field is never mistaken for something we read off the account.
-    const note = doc.createElement('div');
-    note.className = 'tes-note';
-    note.textContent = model.perkInference.note;
-    perks.appendChild(note);
-    numberField(doc, perks, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
-    triStateField(doc, perks, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
-    triStateField(doc, perks, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
+    // What the defaults button (below, in the nav row) is about to do to this
+    // whole form — stated once, beside the section a player opening Settings
+    // sees first, rather than only beside the button itself.
+    const resetNote = doc.createElement('div');
+    resetNote.className = 'tes-note';
+    resetNote.textContent = 'Resetting to defaults clears what you typed. The perk fields will refill with what the panel inferred from your reduction — typing over them is what makes a value yours.';
+    boosters.appendChild(resetNote);
 
     const planning = settingsSection(doc, body, 'Planning');
     const modeRow = doc.createElement('div');
@@ -2117,6 +3024,21 @@
       help.appendChild(copy);
     }
 
+    const recorded = settingsSection(doc, body, 'Recorded with this plan — not calculated');
+    const recordedNote = doc.createElement('div');
+    recordedNote.className = 'tes-note';
+    recordedNote.textContent = 'These fields do not change any date the panel shows: Torn has already applied your education perks to the course durations it sends, so the panel reads those durations rather than rebuilding them from these values. They are kept so they travel with a shared plan and a debug report. Job points are not among them — they are spent by you, on courses you have not started yet, so they live in Boosters and do move the dates.';
+    recorded.appendChild(recordedNote);
+    // The note carries the honesty: it names the inference as an inference, so
+    // a prefilled field is never mistaken for something we read off the account.
+    const note = doc.createElement('div');
+    note.className = 'tes-note';
+    note.textContent = model.perkInference.note;
+    recorded.appendChild(note);
+    numberField(doc, recorded, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
+    triStateField(doc, recorded, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
+    triStateField(doc, recorded, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
+
     // The one place in this script that takes text from outside the player's
     // own browser. Everything it can produce is data: the box is a textarea
     // written through `.value`, the error below it goes in through
@@ -2145,9 +3067,161 @@
     }
   }
 
-  // One box per degree plus one for everything, each answering the same
-  // question independently: if I did only this, starting now, when would it
-  // finish? Every name here is Torn's, so every one goes in through
+  // One section per taxonomy category, each offering its selections as a
+  // checkbox plus what is left of it. The one control this view does NOT
+  // offer is Queue order itself — that lives in Settings, and is the single
+  // switch that turns this whole view on (see the nav row in renderPanel).
+  function renderFocusView(doc, body, model, handlers) {
+    // A guard on the model contract, not a state this panel produces:
+    // renderPanel reaches this renderer only on a non-error model, and every
+    // non-error model carries focusGroups. It is here, the same as
+    // renderGridView's equivalent guard, so a renderer handed a bare model
+    // never meets an undefined.
+    if (!model.focusGroups) {
+      const none = doc.createElement('div');
+      none.className = 'tes-summary';
+      none.textContent = 'No course data, so no focus figures.';
+      body.appendChild(none);
+      return;
+    }
+
+    const rankBasis = FOCUS_RANK_BASIS_LABELS.find(function (basis) {
+      return basis.id === model.settings.focusRankBasis;
+    }) || FOCUS_RANK_BASIS_LABELS[0];
+    const rankToggle = handlers.onFocusRankToggle || function () {};
+    const rankButton = doc.createElement('button');
+    rankButton.className = 'tes-focus-rank-toggle';
+    rankButton.textContent = `sorting: ${rankBasis.label}`;
+    if (rankButton.addEventListener) rankButton.addEventListener('click', rankToggle);
+    body.appendChild(rankButton);
+
+    // The one thing this view must not be left to imply — see the settings
+    // view's identical worry about Queue order in general. Focus reorders;
+    // it does not shorten or lengthen anything, because courses still run
+    // one at a time and the sum is order-independent.
+    const orderNote = doc.createElement('div');
+    orderNote.className = 'tes-note';
+    orderNote.textContent = 'Choosing a focus changes the order courses are queued in — it does not change the finish date. The total time is the same either way; a focus just moves the courses that earn it earlier, so that benefit starts paying off sooner. Most per day banks the stat fastest in real time; biggest total finishes the largest single courses first, and the button above switches between them.';
+    body.appendChild(orderNote);
+
+    // Torn does not attach a learningOutcomes entry to every course. Silence
+    // on 31 of them would read as "these have nothing," which is wrong for
+    // the ones whose only benefit is a working-stat gain — the one category
+    // this view computes rather than classifies.
+    const outcomeNote = doc.createElement('div');
+    outcomeNote.className = 'tes-note';
+    outcomeNote.textContent = '31 courses grant no learning outcome at all. Working Stats is the only focus category that can still reach them.';
+    body.appendChild(outcomeNote);
+
+    // A stale or unmapped count names a live disagreement between the
+    // taxonomy and today's payload — shown, never swallowed, because a silent
+    // zero here would rank a real benefit as worthless or trust a judgement
+    // that no longer applies.
+    if (model.focusHealth && (model.focusHealth.stale > 0 || model.focusHealth.unmapped > 0)) {
+      const healthNote = doc.createElement('div');
+      healthNote.className = 'tes-note';
+      healthNote.textContent = `Focus data health: ${model.focusHealth.stale} classification${model.focusHealth.stale === 1 ? '' : 's'} out of date, ${model.focusHealth.unmapped} outcome${model.focusHealth.unmapped === 1 ? '' : 's'} not yet classified.`;
+      body.appendChild(healthNote);
+    }
+
+    const toggle = handlers.onFocusToggle || function () {};
+    const reprioritise = handlers.onFocusPriority || function () {};
+    const toggleSection = handlers.onFocusSectionToggle || function () {};
+    const toggleCompleted = handlers.onFocusCompletedToggle || function () {};
+    const openCategories = Array.isArray(model.focusOpenCategories)
+      ? model.focusOpenCategories
+      : [];
+    const openCompletedCategories = Array.isArray(model.focusOpenCompletedCategories)
+      ? model.focusOpenCompletedCategories
+      : [];
+
+    function isCompletedUnchosen(sel) {
+      return sel.remainingLabel === 'complete' && sel.priority === null;
+    }
+
+    function appendSelectionRow(parent, category, sel) {
+      const row = doc.createElement('div');
+      row.className = 'tes-focus-row';
+      const completedUnchosen = isCompletedUnchosen(sel);
+      if (completedUnchosen) {
+        row.setAttribute('data-disabled', 'true');
+        row.setAttribute('title', 'This focus is already complete and cannot be selected.');
+      }
+
+      const box = doc.createElement('input');
+      box.setAttribute('type', 'checkbox');
+      // A single control either way: toggleFocus reads the player's current
+      // focuses to decide select, deselect or swap, so every checkbox that is
+      // still actionable commits through the same call.
+      if (sel.priority !== null) box.checked = true;
+      if (completedUnchosen) box.disabled = true;
+      if (!completedUnchosen && box.addEventListener) {
+        box.addEventListener('change', function () { toggle(category, sel.selection); });
+      }
+      row.appendChild(box);
+
+      const label = doc.createElement('span');
+      label.className = 'tes-focus-name';
+      label.textContent = sel.selection;
+      row.appendChild(label);
+
+      const remaining = doc.createElement('span');
+      remaining.className = 'tes-focus-remaining';
+      remaining.textContent = sel.remainingLabel;
+      row.appendChild(remaining);
+
+      parent.appendChild(row);
+    }
+
+    for (const group of model.focusGroups) {
+      const expanded = openCategories.indexOf(group.category) !== -1;
+      const chosen = group.selections.find(function (sel) {
+        return sel.priority !== null;
+      }) || null;
+      const section = focusSection(doc, body, group.category, group.selections, chosen, expanded, function () {
+        toggleSection(group.category);
+      }, function (selection, position) {
+        reprioritise(group.category, selection, position);
+      });
+      if (!expanded) continue;
+      const completed = group.selections.filter(isCompletedUnchosen);
+      // A completed chosen focus stays in the main list: it is the category's
+      // active plan, the header names it, and its live checkbox is the only
+      // control that can untick it. Hiding that control behind a disclosure
+      // the player has no reason to open would make the choice look permanent.
+      const remaining = group.selections.filter(function (sel) {
+        return !isCompletedUnchosen(sel);
+      });
+      for (const sel of remaining) appendSelectionRow(section, group.category, sel);
+
+      // No empty disclosure: a button that opens onto nothing promises an
+      // action it cannot perform.
+      if (completed.length > 0) {
+        const completedExpanded = openCompletedCategories.indexOf(group.category) !== -1;
+        const completedGroup = doc.createElement('div');
+        completedGroup.className = 'tes-focus-completed';
+        const completedHeading = doc.createElement('button');
+        completedHeading.className = 'tes-focus-completed-title';
+        completedHeading.textContent = `completed (${completed.length})`;
+        completedHeading.setAttribute('aria-expanded', completedExpanded ? 'true' : 'false');
+        if (completedHeading.addEventListener) {
+          completedHeading.addEventListener('click', function () { toggleCompleted(group.category); });
+        }
+        completedGroup.appendChild(completedHeading);
+        if (completedExpanded) {
+          for (const sel of completed) appendSelectionRow(completedGroup, group.category, sel);
+        }
+        section.appendChild(completedGroup);
+      }
+    }
+  }
+
+  // One box per degree, each answering the same question independently: if I
+  // did only this, starting now, when would it finish? The all-remaining
+  // total answers that same question for everything at once, so it renders
+  // as its own full-width banner before the grid rather than as a thirteenth
+  // cell inside it — a box among boxes reads as one more degree, not the
+  // total. Every name here is Torn's, so every one goes in through
   // textContent.
   function renderGridView(doc, body, model, handlers) {
     // A guard on the model contract, not a state this panel produces:
@@ -2168,11 +3242,31 @@
     intro.textContent = 'Each box answers: if I did only this degree, starting now, when would it finish?';
     body.appendChild(intro);
 
+    // Lifted out of the grid (it used to be the last cell, .tes-cell-all) and
+    // given its own full-width banner: it is not a thirteenth degree, it is
+    // the answer to a different question — everything at once — and sat
+    // among the degree boxes it read as one more of them rather than the
+    // total. allBox carries the same durationLabel/finishLabel treatment as
+    // every cell (buildPanelModel), just rendered here instead of in .tes-grid.
+    const banner = doc.createElement('div');
+    banner.className = 'tes-all-banner';
+    const bannerTitle = doc.createElement('div');
+    bannerTitle.className = 'tes-cell-title';
+    bannerTitle.textContent = model.grid.allBox.name;
+    banner.appendChild(bannerTitle);
+    const bannerDetail = doc.createElement('div');
+    bannerDetail.className = 'tes-cell-detail';
+    bannerDetail.textContent = model.grid.allBox.courseCount === 0
+      ? 'Already complete'
+      : `${model.grid.allBox.courseCount} crs — ${model.grid.allBox.durationLabel}\n${model.grid.allBox.finishLabel}`;
+    banner.appendChild(bannerDetail);
+    body.appendChild(banner);
+
     const grid = doc.createElement('div');
     grid.className = 'tes-grid';
     for (const box of model.grid.boxes) {
       const cell = doc.createElement('div');
-      cell.className = box.key === 'all' ? 'tes-cell tes-cell-all' : 'tes-cell';
+      cell.className = 'tes-cell';
       const title = doc.createElement('div');
       title.className = 'tes-cell-title';
       title.textContent = box.bachelorPrefix ? `${box.name} (${box.bachelorPrefix})` : box.name;
@@ -2180,7 +3274,7 @@
       const detail = doc.createElement('div');
       detail.textContent = box.courseCount === 0
         ? 'Already complete'
-        : `${box.courseCount} courses — ${box.durationLabel}\n${box.finishLabel}`;
+        : `${box.courseCount} crs — ${box.durationLabel}\n${box.finishLabel}`;
       detail.className = 'tes-cell-detail';
       cell.appendChild(detail);
       grid.appendChild(cell);
@@ -2236,7 +3330,7 @@
     if (model.finishLabel) {
       const finish = doc.createElement('div');
       finish.className = 'tes-finish';
-      finish.textContent = `Queue finishes: ${model.finishLabel}`;
+      finish.textContent = `Queue fin: ${model.finishLabel}`;
       body.appendChild(finish);
     }
 
@@ -2246,7 +3340,20 @@
       const c = model.consumables;
       const boost = doc.createElement('div');
       boost.className = 'tes-summary';
+      // .tes-summary itself no longer carries white-space: pre-line (Task
+      // 7 — the queue summary below needed a border on just its middle
+      // section, which pre-line on the whole class would not allow). This
+      // block still joins several lines with '\n' and needs them to wrap,
+      // so it asks for that directly rather than depending on the class.
+      boost.style.whiteSpace = 'pre-line';
       const lines = [];
+      // First, because it is first in the arithmetic: the Books lines below
+      // are computed against the path this one leaves behind, not against the
+      // raw queue total. Rendering them the other way round would read as two
+      // independent savings off the same number.
+      if (c.jobPoints > 0) {
+        lines.push(`With ${c.jobPoints} job point${c.jobPoints === 1 ? '' : 's'} (30 mins each): ${c.jobPointFinishLabel} (${c.jobPointDurationLabel})`);
+      }
       if (c.plannedBooks > 0) {
         lines.push(`With ${c.plannedBooks} Book${c.plannedBooks === 1 ? '' : 's'} of Carols: ${c.plannedFinishLabel} (${c.plannedDurationLabel})`);
       }
@@ -2259,42 +3366,78 @@
       if (!c.floorCostLabel) {
         lines.push('Set a Book price in settings to see what that floor would cost.');
       }
-      lines.push('Books shorten queued course time. Time already running on your current course is not affected.');
+      lines.push('Job points are spent first, at 30 minutes each, and the Book figures above are what is left after them. Both shorten queued course time. Time already running on your current course is not affected.');
       boost.textContent = lines.join('\n');
       body.appendChild(boost);
     }
 
+    // Three real child elements, not one text node joined with '\n', so each
+    // part can be styled and asserted on independently. Each piece is set
+    // through textContent only; course names come from Torn and are not ours
+    // to trust into markup.
+    //
+    // The second class is what carries the separator under the whole block —
+    // see .tes-summary-queue in panelStyleText. .tes-summary alone is shared
+    // with three other blocks that must not gain a border.
     const summary = doc.createElement('div');
-    summary.className = 'tes-summary';
-    const lines = [`Perk reduction: ${model.reductionLabel}`];
+    summary.className = 'tes-summary tes-summary-queue';
+
+    const inputs = doc.createElement('div');
+    inputs.className = 'tes-summary-inputs';
+    inputs.textContent = `Perk reduction: ${model.reductionLabel}`;
+    summary.appendChild(inputs);
+
+    const result = doc.createElement('div');
+    result.className = 'tes-summary-result';
     if (model.finishLabel) {
-      lines.push(`Total queued time: ${model.totalLabel}`);
+      result.textContent = `Total queued time: ${model.totalLabel}`;
     } else if (model.queue.length === 0) {
-      lines.push('Queue is empty. Add a course below.');
+      result.textContent = 'Queue is empty. Add a course below.';
     } else {
       // finishLabel is withheld (buildPanelModel) whenever problems is
       // non-empty — a queue with unmet prerequisites is not a plan the
       // player can actually follow, so no total is safe to print. The
-      // per-course detail lands below via the problems loop.
-      lines.push('This queue cannot be followed as ordered — missing prerequisites below.');
+      // per-course detail lands below via the diagnostics block.
+      result.textContent = 'This queue cannot be followed as ordered — missing prerequisites below.';
     }
-    for (const entry of model.stale) {
-      lines.push(`Removed ${entry.prefix || entry.courseId} from your queue — ${entry.why}.`);
+    summary.appendChild(result);
+
+    // Rendered only when there is something to diagnose, so a clean queue's
+    // summary is exactly two sections and nothing hints at a problem that
+    // does not exist.
+    if (model.stale.length || model.problems.length) {
+      const diagnostics = doc.createElement('div');
+      diagnostics.className = 'tes-summary-diagnostics';
+      const diagLines = [];
+      for (const entry of model.stale) {
+        diagLines.push(`Removed ${entry.prefix || entry.courseId} from your queue — ${entry.why}.`);
+      }
+      for (const problem of model.problems) {
+        diagLines.push(`${problem.prefix} needs ${problem.missing.map(function (m) { return m.prefix; }).join(', ')}`);
+      }
+      diagnostics.textContent = diagLines.join('\n');
+      summary.appendChild(diagnostics);
     }
-    for (const problem of model.problems) {
-      lines.push(`${problem.prefix} needs ${problem.missing.map(function (m) { return m.prefix; }).join(', ')}`);
-    }
-    // textContent throughout, never innerHTML: course names come from Torn
-    // and are not ours to trust into markup.
-    summary.textContent = lines.join('\n');
+
     body.appendChild(summary);
 
+    // Two lines per queued course, sharing one grid row with the remove
+    // button (.tes-queue-row in the injected CSS): the existing info line,
+    // then an indented, smaller line naming what the course actually gives —
+    // never inferred from its name (see bonusLabel). Both lines are
+    // textContent, never innerHTML: bonusLabel's text comes straight from
+    // Torn's own payload and is not ours to trust into markup.
     for (const item of model.queue) {
       const row = doc.createElement('div');
-      row.className = 'tes-row';
-      const label = doc.createElement('span');
-      label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — finishes ${item.finishLabel}`;
-      row.appendChild(label);
+      row.className = 'tes-queue-row';
+      const main = doc.createElement('span');
+      main.className = 'tes-queue-main';
+      main.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — fin ${item.finishLabel}`;
+      row.appendChild(main);
+      const bonus = doc.createElement('span');
+      bonus.className = 'tes-queue-bonus';
+      bonus.textContent = item.bonusLabel;
+      row.appendChild(bonus);
       const remove = doc.createElement('button');
       remove.textContent = 'remove';
       remove.dataset.courseId = String(item.courseId);
@@ -2324,6 +3467,9 @@
     if (model.addable.length > 0) {
       const allOpt = doc.createElement('option');
       allOpt.value = ALL_COURSES_OPTION;
+      // Deliberately unabbreviated — see the rule above formatDuration. This
+      // is prose in a full-width dropdown, not a dense readout, and it is
+      // meant to read the same as the all-remaining banner's own title.
       allOpt.textContent = `— all remaining courses (${model.addable.length}) —`;
       if (model.selectedCourseId === ALL_COURSES_OPTION) allOpt.selected = true;
       picker.appendChild(allOpt);
@@ -2331,9 +3477,11 @@
     for (const option of model.addable) {
       const opt = doc.createElement('option');
       opt.value = String(option.courseId);
-      // The label already carries the bachelor marker, built once in the model
-      // rather than reassembled per render. textContent, never innerHTML.
+      // The bachelor marker is a class, not text in the label — see the
+      // `.tes-option-bachelor` rule in panelStyleText for the colour and the
+      // accepted macOS trade. textContent, never innerHTML.
       opt.textContent = option.label;
+      if (option.isBachelor) opt.className = 'tes-option-bachelor';
       // Rebuilding the list on every draw would otherwise reset the
       // scroll position back to the top of a ~130-entry list on every add.
       if (model.selectedCourseId != null && option.courseId === model.selectedCourseId) {
@@ -2478,6 +3626,11 @@
       // would draw an optionless dropdown if that ever changed, which is what
       // this whole field group is here to prevent.
       perkInference: NO_INFERENCE, orderModes: ORDER_MODE_LABELS, debugReport: null, grid: null,
+      // Same trio buildPanelModel's failure model carries, for the same
+      // reason: no catalogue means no registry to check and no totals to
+      // state.
+      focusGroups: null, focuses: null, focusHealth: null, focusOpenCategories: [],
+      focusOpenCompletedCategories: [],
       consumables: null,
       // Same pair buildPanelModel carries, for the reason the comment above
       // gives: a renderer handed this model must not meet an undefined.
@@ -2491,6 +3644,13 @@
     onPickerChange: function () {}, onViewChange: function () {},
     onSettingChange: function () {},
     onToggleDebugReport: function () {}, onCopyDebugReport: function () {},
+    // renderFocusView (reachable only via renderPanel's view dispatch, which
+    // guards its own calls with `|| function(){}`) does not strictly need
+    // these to exist here — but every other handler renderSettingsView calls
+    // is kept for shape completeness, and these are the same kind of caller.
+    onFocusToggle: function () {}, onFocusPriority: function () {}, onFocusSectionToggle: function () {},
+    onFocusCompletedToggle: function () {},
+    onFocusRankToggle: function () {},
     // renderSettingsView (the only renderer that calls onImportPlan) is
     // unreachable through this handler set: both errorModel call sites pass
     // noopHandlers, errorModel hardcodes view: 'schedule', and renderPanel
@@ -2557,20 +3717,22 @@
     // the same value is offered again. Persisting a refusal would need a fourth
     // state, and there is nothing here worth that.
     function prefillPerks(data) {
-      if (!data) return;
+      if (!data) return false;
       const inference = inferPerks(data.reduction);
-      if (!inference.determinate) return;
+      if (!inference.determinate) return false;
       let changed = false;
       const next = JSON.parse(JSON.stringify(settings));
       if (next.perks.meritsPercent === null) { next.perks.meritsPercent = inference.meritsPercent; changed = true; }
       if (next.perks.principal === null) { next.perks.principal = inference.principal; changed = true; }
       if (next.perks.wsuBlock === null) { next.perks.wsuBlock = inference.wsuBlock; changed = true; }
-      if (!changed) return;
+      if (!changed) return false;
       // normaliseSettings is the only writer of the canonical shape.
       settings = normaliseSettings(next);
+      return true;
+    }
+    if (prefillPerks(fetchResult.ok ? fetchResult.data : null)) {
       settingsSaveFailed = !saveSettings(settings);
     }
-    prefillPerks(fetchResult.ok ? fetchResult.data : null);
 
     let selectedCourseId = null;
     // Built on demand and never persisted: it is a snapshot of one moment's
@@ -2582,9 +3744,22 @@
     // it hidden next visit; a player who opened settings once does not want
     // settings every visit.
     let view = 'schedule';
+    // Focus sections are transient disclosure state. Entering the view starts
+    // closed every time, while an in-view heading click redraws just its own
+    // category open or closed without writing either storage key.
+    let focusOpenCategories = [];
+    // Nested completed groups use the same transient lifetime as their parent
+    // categories. They reset on every entry to Focus and are never persisted.
+    let focusOpenCompletedCategories = [];
     // Cleared by the next successful import, never persisted: it describes one
     // paste, and a stale reason beside a plan that imported fine is a lie.
     let importError = null;
+    // The reset control's arm/confirm state (v0.3.0 Task 2). Held here, not
+    // in plan or settings, and never written through savePlan/saveSettings —
+    // every other handler sets this false before doing its own work, which
+    // is what makes a view change, a collapse, or any other click disarm it.
+    // A panel reopened later must never be found armed.
+    let resetArmed = false;
 
     // draw/buildPanelModel/renderPanel are unguarded and schedule() throws
     // plain Errors on unexpected input; without this the throw becomes an
@@ -2603,6 +3778,9 @@
           view: view,
           debugReport: debugReport,
           importError: importError,
+          resetArmed: resetArmed,
+          focusOpenCategories: focusOpenCategories,
+          focusOpenCompletedCategories: focusOpenCompletedCategories,
         });
 
         function commit(next) {
@@ -2612,9 +3790,11 @@
 
         return renderPanel(document, mount, model, {
           onToggle: function () {
+            resetArmed = false;
             commit({ queue: currentPlan.queue, collapsed: !currentPlan.collapsed });
           },
           onAdd: function (courseId) {
+            resetArmed = false;
             if (currentPlan.queue.indexOf(courseId) !== -1) return;
             // Queue the whole prerequisite chain, not just the course the
             // player picked — the panel must never invite a plan validateQueue
@@ -2636,6 +3816,7 @@
           // after whatever is already queued — adding everything must not
           // reorder or discard a plan the player already built.
           onAddAll: function () {
+            resetArmed = false;
             const data = fetchResult.ok ? fetchResult.data : null;
             if (!data) return;
             const everything = allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
@@ -2644,12 +3825,14 @@
             commit({ queue: currentPlan.queue.concat(toAdd), collapsed: currentPlan.collapsed });
           },
           onRemove: function (courseId) {
+            resetArmed = false;
             commit({
               queue: currentPlan.queue.filter(function (id) { return id !== courseId; }),
               collapsed: currentPlan.collapsed,
             });
           },
           onPickerChange: function (value) {
+            resetArmed = false;
             // The sentinel is preserved rather than coerced: Number('__all__')
             // is NaN, so the integer guard below would reset the picker to the
             // top of the list on the next redraw.
@@ -2664,13 +3847,23 @@
             selectedCourseId = Number.isInteger(parsed) ? parsed : null;
           },
           onViewChange: function (next) {
-            view = next;
+            resetArmed = false;
+            // The focus button is absent outside focus ordering, but callers
+            // can still invoke this route directly. Keep that route from
+            // stranding the panel on a view whose entry is unavailable.
+            const nextView = next === 'focus' && settings.orderMode !== 'focus' ? 'schedule' : next;
+            if (nextView === 'focus' && view !== 'focus') {
+              focusOpenCategories = [];
+              focusOpenCompletedCategories = [];
+            }
+            view = nextView;
             draw(currentPlan, saveFailed === true);
           },
           // The view emits dotted `perks.*` paths for the nested group and a
           // bare field name for the rest. An empty number input means "not
           // said" (null), which for a perk is distinct from zero.
           onSettingChange: function (field, rawValue) {
+            resetArmed = false;
             const next = JSON.parse(JSON.stringify(settings));
             const value = typeof rawValue === 'boolean' ? rawValue
               : NUMERIC_SETTING_FIELDS.indexOf(field) === -1 ? rawValue
@@ -2682,15 +3875,71 @@
             // rejected value falls back to its default rather than being stored.
             settings = normaliseSettings(next);
             settingsSaveFailed = !saveSettings(settings);
+            // Queue order is the single switch the focus nav button reads.
+            // Turning it off while standing on the focus view would leave the
+            // player looking at a page whose own nav entry just went dark,
+            // with no route back except the settings page they came from —
+            // so this falls back to schedule instead. settings.focuses is
+            // left alone: this switch says which ordering applies, not what
+            // the player is building toward. view is closure state, never
+            // persisted, so this writes nothing to storage.
+            if (field === 'orderMode' && settings.orderMode !== 'focus' && view === 'focus') view = 'schedule';
+            draw(currentPlan, saveFailed === true);
+          },
+          // Both route through the same commit path onSettingChange uses —
+          // normalise, save, redraw — so a failed write surfaces as
+          // settingsSaveFailed rather than being lost, and priority stays in
+          // step with settings.focuses' own array order (see
+          // toggleFocus/setFocusPriority: priority IS the index).
+          onFocusToggle: function (category, selection) {
+            resetArmed = false;
+            const next = JSON.parse(JSON.stringify(settings));
+            next.focuses = toggleFocus(settings.focuses, category, selection);
+            settings = normaliseSettings(next);
+            settingsSaveFailed = !saveSettings(settings);
+            draw(currentPlan, saveFailed === true);
+          },
+          onFocusRankToggle: function () {
+            resetArmed = false;
+            const next = JSON.parse(JSON.stringify(settings));
+            next.focusRankBasis = settings.focusRankBasis === 'per-day' ? 'total' : 'per-day';
+            settings = normaliseSettings(next);
+            settingsSaveFailed = !saveSettings(settings);
+            draw(currentPlan, saveFailed === true);
+          },
+          onFocusPriority: function (category, selection, position) {
+            resetArmed = false;
+            const next = JSON.parse(JSON.stringify(settings));
+            next.focuses = setFocusPriority(settings.focuses, category, selection, position);
+            settings = normaliseSettings(next);
+            settingsSaveFailed = !saveSettings(settings);
+            draw(currentPlan, saveFailed === true);
+          },
+          onFocusSectionToggle: function (category) {
+            resetArmed = false;
+            const index = focusOpenCategories.indexOf(category);
+            focusOpenCategories = index === -1
+              ? focusOpenCategories.concat(category)
+              : focusOpenCategories.filter(function (openCategory) { return openCategory !== category; });
+            draw(currentPlan, saveFailed === true);
+          },
+          onFocusCompletedToggle: function (category) {
+            resetArmed = false;
+            const index = focusOpenCompletedCategories.indexOf(category);
+            focusOpenCompletedCategories = index === -1
+              ? focusOpenCompletedCategories.concat(category)
+              : focusOpenCompletedCategories.filter(function (openCategory) { return openCategory !== category; });
             draw(currentPlan, saveFailed === true);
           },
           onToggleDebugReport: function () {
+            resetArmed = false;
             debugReport = debugReport
               ? null
               : buildDebugReport(gatherDebugContext({ fetchResult: fetchResult, plan: currentPlan, settings: settings }));
             draw(currentPlan, saveFailed === true);
           },
           onCopyDebugReport: function () {
+            resetArmed = false;
             if (!debugReport) return;
             // Clipboard access is not granted and may be refused; the report is
             // already on screen, so a failed copy costs the player nothing.
@@ -2713,6 +3962,7 @@
           // than swallowed. Both writes are checked — an import that lost the
           // plan it just accepted must say so, not report success.
           onImportPlan: function (text) {
+            resetArmed = false;
             const data = fetchResult.ok ? fetchResult.data : null;
             if (!data) { importError = 'No course data loaded, so a plan cannot be checked.'; draw(currentPlan, saveFailed === true); return; }
             const decoded = decodePlan(text, data.courses);
@@ -2725,6 +3975,45 @@
             settings = decoded.settings;
             settingsSaveFailed = !saveSettings(settings);
             commit({ queue: decoded.queue, collapsed: currentPlan.collapsed });
+          },
+          // One pair of handlers, not three: model.view already decides what
+          // gets cleared, so there is one place that decides and no way for
+          // the button and the action to disagree about which page they are
+          // on. Arming never touches storage — only a confirm does, and only
+          // through the same commit/saveSettings paths every other mutation
+          // uses, so a failed write surfaces exactly the way it would there.
+          onResetArm: function () {
+            resetArmed = true;
+            draw(currentPlan, saveFailed === true);
+          },
+          onResetConfirm: function () {
+            resetArmed = false;
+            if (view === 'schedule') {
+              commit({ queue: [], collapsed: currentPlan.collapsed });
+              return;
+            }
+            if (view === 'settings') {
+              settings = settingsDefaults(settings);
+              prefillPerks(fetchResult.ok ? fetchResult.data : null);
+              settingsSaveFailed = !saveSettings(settings);
+              draw(currentPlan, saveFailed === true);
+              return;
+            }
+            if (view === 'focus') {
+              // Priority is the array index, not a stored field — clearing
+              // focuses to [] removes every number with it. Same
+              // normalise/save/redraw commit onFocusToggle uses, so a failed
+              // write surfaces as settingsSaveFailed rather than being lost.
+              const next = Object.assign({}, settings, { focuses: [] });
+              settings = normaliseSettings(next);
+              settingsSaveFailed = !saveSettings(settings);
+              draw(currentPlan, saveFailed === true);
+              return;
+            }
+            // No other view is reset-armable; redraw disarms the button
+            // regardless, so a stray confirm here is inert rather than stuck
+            // armed.
+            draw(currentPlan, saveFailed === true);
           },
         });
       } catch (e) {
