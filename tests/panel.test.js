@@ -1679,3 +1679,60 @@ test('every existing summary message survives the restructure', () => {
   assert.match(allText(empty), /Queue is empty/);
   assert.match(allText(empty), /Perk reduction/);
 });
+
+// -----------------------------------------------------------------------
+// resetButton (v0.3.0 Task 1): the arm/confirm control this task adds.
+//
+// The task brief's own tests used `btn.dispatchEvent({ type: 'click' })` and
+// `nav.childNodes.length`. tests/fake-document.js implements neither —
+// created elements have no `dispatchEvent` at all (this file's real idiom is
+// the `fire()` helper above, which calls the registered listener directly),
+// and the element shape is `children`, not `childNodes`. Adapted below to
+// `fire()` and `.children.length`; the assertions themselves are unchanged.
+// -----------------------------------------------------------------------
+
+test('a disarmed reset button shows its plain label and arms on click', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const nav = doc.createElement('div');
+  let armed = 0;
+  let confirmed = 0;
+  const btn = x.resetButton(doc, nav, 'reset', false, () => { armed += 1; }, () => { confirmed += 1; });
+  assert.strictEqual(btn.textContent, 'reset');
+  fire(btn, 'click');
+  assert.strictEqual(armed, 1);
+  assert.strictEqual(confirmed, 0, 'the first click must never apply');
+});
+
+test('an armed reset button says so and applies on the next click', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const nav = doc.createElement('div');
+  let confirmed = 0;
+  const btn = x.resetButton(doc, nav, 'reset', true, () => {}, () => { confirmed += 1; });
+  assert.ok(/sure/i.test(btn.textContent), 'an armed button must say what it is about to do');
+  fire(btn, 'click');
+  assert.strictEqual(confirmed, 1);
+});
+
+test('an armed button is marked so it does not look like the disarmed one', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const nav = doc.createElement('div');
+  const off = x.resetButton(doc, nav, 'reset', false, () => {}, () => {});
+  const on = x.resetButton(doc, nav, 'reset', true, () => {}, () => {});
+  assert.notStrictEqual(off.className, on.className);
+});
+
+test('resetButton appends to the row it was given', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const nav = doc.createElement('div');
+  x.resetButton(doc, nav, 'reset', false, () => {}, () => {});
+  assert.strictEqual(nav.children.length, 1);
+});
+
+test('the armed reset button carries the warning colour rule in the stylesheet', () => {
+  const { x } = load();
+  assert.match(x.panelStyleText(), /\.tes-reset-armed\s*\{[^}]*color:\s*#ff8080/);
+});

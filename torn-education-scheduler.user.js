@@ -2370,6 +2370,8 @@
       '#tes-panel .tes-header-toggle { font-weight: normal; }',
       '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: 8px; }',
       '#tes-panel .tes-nav .tes-settings { margin-left: auto; }',
+      '#tes-panel .tes-nav .tes-reset { margin-left: auto; }',
+      '#tes-panel .tes-reset-armed { border-color: #ff8080; color: #ff8080; }',
       '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
       '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
       '#tes-panel .tes-error { color: #ff8080; margin-bottom: 8px; }',
@@ -2617,6 +2619,31 @@
     section.appendChild(heading);
     body.appendChild(section);
     return section;
+  }
+
+  // Two clicks, because a queue is a plan built by hand and there is no undo
+  // anywhere in this panel. It shares a row with four buttons that only change
+  // what you are looking at, which makes a misclick MORE likely than it would
+  // be alone, not less — hence the arm, and hence the colour change so the two
+  // states cannot be confused at a glance.
+  //
+  // The armed state is the caller's, not this function's: it belongs to
+  // init()'s closure so that a redraw for any other reason disarms it, and so
+  // it can never be written to storage.
+  //
+  // The label changes rather than a dialog appearing — a confirm() would be a
+  // modal on someone else's page, and this panel does not own the tab.
+  function resetButton(doc, nav, label, armed, onArm, onConfirm) {
+    const btn = doc.createElement('button');
+    btn.className = armed ? 'tes-reset tes-reset-armed' : 'tes-reset';
+    btn.textContent = armed ? `${label} — sure?` : label;
+    if (btn.addEventListener) {
+      btn.addEventListener('click', function () {
+        if (armed) onConfirm(); else onArm();
+      });
+    }
+    nav.appendChild(btn);
+    return btn;
   }
 
   function numberField(doc, section, label, value, onCommit) {
