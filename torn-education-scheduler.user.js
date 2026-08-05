@@ -2343,7 +2343,9 @@
     style.textContent = [
       '#tes-panel { border: 1px solid #4a4a4a; background: #1c1c1c; color: #e6e6e6;',
       '  padding: 12px 14px; margin: 12px 0; border-radius: 6px; font-size: 13px; line-height: 1.5; }',
-      '#tes-panel .tes-header { font-weight: bold; cursor: pointer; margin-bottom: 8px; }',
+      '#tes-panel .tes-header { font-weight: bold; margin-bottom: 8px;',
+      '  display: flex; align-items: center; justify-content: space-between; gap: 8px; }',
+      '#tes-panel .tes-header-toggle { font-weight: normal; }',
       '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: 8px; }',
       '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
       '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
@@ -2413,10 +2415,23 @@
 
     const view = model.view || 'schedule';
 
+    // Two elements, not one clickable div. The title names the view; the button
+    // is a real button that looks like every other button in the panel, and it
+    // is the only thing that toggles. margin-left:auto puts it right.
     const header = doc.createElement('div');
     header.className = 'tes-header';
-    header.textContent = `${VIEW_TITLES[view] || VIEW_TITLES.schedule} — ${model.collapsed ? 'show' : 'hide'}`;
-    if (header.addEventListener) header.addEventListener('click', handlers.onToggle);
+
+    const title = doc.createElement('span');
+    title.className = 'tes-header-title';
+    title.textContent = VIEW_TITLES[view] || VIEW_TITLES.schedule;
+    header.appendChild(title);
+
+    const toggle = doc.createElement('button');
+    toggle.className = 'tes-header-toggle';
+    toggle.textContent = model.collapsed ? 'show' : 'hide';
+    if (toggle.addEventListener) toggle.addEventListener('click', handlers.onToggle);
+    header.appendChild(toggle);
+
     panel.appendChild(header);
 
     if (!model.collapsed) {
