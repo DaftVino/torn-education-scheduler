@@ -2381,6 +2381,27 @@
   // literal emitted text, not a summary of it.
   function panelStyleText() {
     return [
+      // Colour values are Bookie's default scheme, panel-root block
+      // (Torn_Bookie_Live_Scores.js:8244). NOT .tm-theme-default, which is a
+      // nested component's local palette and disagrees with this one — see the
+      // spec's table. Type, spacing and focus are local, hence --tes-*: the
+      // --tm-* prefix means "matches Bookie", and these do not.
+      //
+      // No --tm-font. The panel inherits Torn's font, which is what makes it
+      // look like part of the page rather than bolted on.
+      '#tes-panel {',
+      '  --tm-bg: #1f1f1f; --tm-bg-2: #242424; --tm-bg-3: #111111;',
+      '  --tm-hover: #292929; --tm-border: #3a3a3a; --tm-border-2: #555555;',
+      '  --tm-text: #ffffff; --tm-muted: #b8b8b8; --tm-meta: #cfcfcf;',
+      // Fills and borders keep Bookie's values; type needs its own, because
+      // --tm-good measures 2.56:1 as text on --tm-bg and fails AA. The panel's
+      // existing green and red already pass at 10.44:1 and 7.02:1, so they stay.
+      '  --tm-good: #2a6b3a; --tm-good-text: #7ee081;',
+      '  --tm-bad: #aa3333; --tm-bad-text: #ff8080;',
+      '  --tes-text-sm: 12px; --tes-text: 14px; --tes-text-lg: 1.25em;',
+      '  --tes-gap-xs: 4px; --tes-gap-sm: 6px; --tes-gap: 8px; --tes-gap-lg: 14px;',
+      '  --tes-focus-ring: 2px solid var(--tm-good-text);',
+      '}',
       '#tes-panel { border: 1px solid #4a4a4a; background: #1c1c1c; color: #e6e6e6;',
       '  padding: 12px 14px; margin: 12px 0; border-radius: 6px; font-size: 13px; line-height: 1.5; }',
       '#tes-panel .tes-header { font-weight: bold; margin-bottom: 8px;',
