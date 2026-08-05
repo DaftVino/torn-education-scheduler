@@ -376,11 +376,39 @@ test('the picker offers the all-remaining entry second and marks the bachelors',
   assert.match(all.textContent, /all remaining courses \(115\)/);
   assert.strictEqual(picker.children.length, model.addable.length + 2);
   // The marker has to survive into the option the player actually reads, not
-  // just the model: an <option> cannot be styled portably, so the text is it.
+  // just the model: no text prefix any more (owner decision), so the class
+  // is what carries it — see the "bachelor colour" test below for the rule
+  // itself.
   const bachelor = picker.children.find((c) => /BIO3420/.test(c.textContent));
-  assert.ok(bachelor.textContent.startsWith('[bachelor] '), 'the bachelor is unmarked in the picker');
+  assert.ok(!/\[bachelor\]/i.test(bachelor.textContent), 'the bachelor label still carries the retired text prefix');
+  assert.strictEqual(bachelor.className, 'tes-option-bachelor', 'the bachelor is unmarked in the picker');
   const plain = picker.children.find((c) => /BIO2380/.test(c.textContent));
   assert.ok(plain.textContent.indexOf('[bachelor]') === -1);
+  assert.notStrictEqual(plain.className, 'tes-option-bachelor', 'a non-bachelor was marked as one');
+});
+
+test('bachelor labels carry no prefix', () => {
+  const { exports, state } = okState([]);
+  const model = exports.buildPanelModel(state);
+  for (const a of model.addable) assert.ok(!/\[bachelor\]/i.test(a.label));
+});
+
+test('bachelor options are classed and non-bachelors are not', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const model = exports.buildPanelModel(state);
+  const panel = exports.renderPanel(doc, mount, model, noopHandlers);
+  const picker = panel.children[1].children.find((c) => c.tagName === 'select');
+  const opts = picker.children.filter((c) => c.tagName === 'option');
+  const marked = opts.filter((o) => /tes-option-bachelor/.test(o.className || ''));
+  assert.ok(marked.length > 0, 'no bachelor option was classed');
+  assert.ok(marked.length < opts.length, 'every option was classed as a bachelor');
+});
+
+test('the bachelor colour is the finish-line green', () => {
+  const { exports } = okState([]);
+  assert.match(exports.panelStyleText(), /\.tes-option-bachelor[^}]*#7ee081/);
 });
 
 // The failure this guards is not hypothetical: a browser selects the first

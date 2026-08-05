@@ -67,6 +67,9 @@ const EXPORT_NAMES = [
   'looksLikePayload', 'searchForPayload', 'newWalkState', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
   'formatDate', 'formatTime', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
+  // panel stylesheet — test-only, so a rule's colour can be asserted without
+  // a DOM to read the injected <style> element back out of
+  'panelStyleText',
   // errorModel/noopHandlers are exported as a pair: the render path treats
   // noopHandlers by identity, so a test asserting that needs the real object.
   'errorModel', 'noopHandlers',

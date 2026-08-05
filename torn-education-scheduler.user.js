@@ -2056,9 +2056,11 @@
     for (const course of data.courses.values()) {
       if (course.status === 'completed' || course.status === 'inProgress') continue;
       if (queued.has(course.id)) continue;
-      // Tier-3 courses unlock things and gate on an entire degree, so they have
-      // to stand out among ~115 entries. Styling an <option> is unreliable
-      // across browsers; a text marker in the label is the portable answer.
+      // Tier-3 courses unlock things and gate on an entire degree, so they
+      // have to stand out among ~115 entries. Carried here as `isBachelor`
+      // only — the picker renderer turns it into a `.tes-option-bachelor`
+      // class rather than a text prefix (owner decision: see the CSS rule in
+      // injectStyleOnce/panelStyleText for why, and why there is no fallback).
       const isBachelor = course.tier === 3;
       addable.push({
         courseId: course.id,
@@ -2066,7 +2068,7 @@
         name: course.name,
         isBachelor: isBachelor,
         durationLabel: formatDuration(course.duration),
-        label: `${isBachelor ? '[bachelor] ' : ''}${course.prefix} ${course.name} (${formatDuration(course.duration)})`,
+        label: `${course.prefix} ${course.name} (${formatDuration(course.duration)})`,
       });
     }
     addable.sort(function (a, b) { return a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0; });
@@ -2354,11 +2356,13 @@
     try { return doc.querySelector(selector); } catch (e) { return null; }
   }
 
-  function injectStyleOnce(doc) {
-    if (queryOne(doc, '#tes-style')) return;
-    const style = doc.createElement('style');
-    style.id = 'tes-style';
-    style.textContent = [
+  // The exact string injected into the page's <style id="tes-style"> tag.
+  // Pulled out of injectStyleOnce so a test can assert on a rule (e.g. the
+  // bachelor colour below) without a DOM to read the <style> element back
+  // out of. A later design-tokens pass also depends on this returning the
+  // literal emitted text, not a summary of it.
+  function panelStyleText() {
+    return [
       '#tes-panel { border: 1px solid #4a4a4a; background: #1c1c1c; color: #e6e6e6;',
       '  padding: 12px 14px; margin: 12px 0; border-radius: 6px; font-size: 13px; line-height: 1.5; }',
       '#tes-panel .tes-header { font-weight: bold; margin-bottom: 8px;',
@@ -2413,7 +2417,19 @@
       '  border: 1px solid #4a4a4a; border-radius: 4px; padding: 6px; font-family: monospace; font-size: 0.95em; }',
       '#tes-panel .tes-foot { margin-top: 8px; opacity: 0.7; font-size: 0.95em; }',
       '#tes-panel a { color: #7ee081; }',
+      // Best-effort by nature: Chrome and Firefox on Windows and Linux honour a
+      // colour on an <option>; macOS draws the menu itself and commonly ignores
+      // it, so those players see no marker. Accepted trade — no fallback prefix,
+      // since one would reinstate for some users what removing it was for.
+      '#tes-panel .tes-option-bachelor { color: #7ee081; }',
     ].join('\n');
+  }
+
+  function injectStyleOnce(doc) {
+    if (queryOne(doc, '#tes-style')) return;
+    const style = doc.createElement('style');
+    style.id = 'tes-style';
+    style.textContent = panelStyleText();
     // Reading head/body is a property access on a document we do not own; a
     // page that throws here must still get its panel.
     let parent = null;
@@ -3144,9 +3160,11 @@
     for (const option of model.addable) {
       const opt = doc.createElement('option');
       opt.value = String(option.courseId);
-      // The label already carries the bachelor marker, built once in the model
-      // rather than reassembled per render. textContent, never innerHTML.
+      // The bachelor marker is a class, not text in the label — see the
+      // `.tes-option-bachelor` rule in panelStyleText for the colour and the
+      // accepted macOS trade. textContent, never innerHTML.
       opt.textContent = option.label;
+      if (option.isBachelor) opt.className = 'tes-option-bachelor';
       // Rebuilding the list on every draw would otherwise reset the
       // scroll position back to the top of a ~130-entry list on every add.
       if (model.selectedCourseId != null && option.courseId === model.selectedCourseId) {
