@@ -260,7 +260,7 @@ test('renderPanel surfaces a visible message naming what is missing when the pla
   const mount = doc.createElement('div');
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
   const body = panel.children[1];
-  const summary = body.children.find((c) => hasClass(c, 'tes-summary'));
+  const summary = descendants(body).find((c) => hasClass(c, 'tes-summary'));
   // allText, not summary.textContent: Task 7 split the summary into three
   // child elements (.tes-summary-inputs/-result/-diagnostics), so the
   // messages live on those, not on the outer .tes-summary div itself — the
@@ -290,7 +290,7 @@ test('renderPanel names a dropped stale queue entry on screen, not only in the m
   // allText, not c.textContent: Task 7 moved the stale-entry line onto the
   // nested .tes-summary-diagnostics child, so the outer .tes-summary div's
   // own textContent is empty.
-  const summaries = body.children.filter((c) => hasClass(c, 'tes-summary'));
+  const summaries = descendants(body).filter((c) => hasClass(c, 'tes-summary'));
   const summary = summaries.find((c) => /Removed/.test(allText(c)));
   assert.ok(summary, `no .tes-summary block named the stale entry: ${summaries.map((s) => allText(s)).join(' | ')}`);
   assert.match(
@@ -508,12 +508,12 @@ test('the all-remaining entry queues every remaining course, in a followable ord
   // .tes-summary-inputs/-result/-diagnostics children, so that child's
   // presence — not the outer div's own (now-empty) textContent — is what
   // distinguishes it from the Books block.
-  const summary = redrawn.children.find(
+  const summary = descendants(redrawn).find(
     (c) => hasClass(c, 'tes-summary') && descendants(c).some((d) => d.className === 'tes-summary-inputs')
   );
   assert.ok(summary, 'no queue summary block rendered');
   assert.ok(!/cannot be followed/.test(allText(summary)), allText(summary));
-  assert.ok(redrawn.children.some((c) => c.className === 'tes-finish'), 'no finish date for the full plan');
+  assert.ok(descendants(redrawn).some((c) => c.className === 'tes-finish'), 'no finish date for the full plan');
 });
 
 // Number('') is 0 and passes Number.isInteger, so choosing the placeholder back
@@ -596,7 +596,21 @@ function hasClass(el, name) {
 }
 
 const hasText = (el, text) => descendants(el).some((c) => c.textContent === text);
-const RECORDED_SETTINGS_TITLE = 'Recorded with this plan — not calculated';
+const EDUCATION_PERKS_TITLE = 'Education perks';
+
+function settingsSectionTitle(section) {
+  const title = descendants(section).find((c) => c.className === 'tes-section-title');
+  return title && title.textContent;
+}
+
+function settingsSectionRole(section) {
+  const role = descendants(section).find((c) => c.className === 'tes-section-role');
+  return role && role.textContent;
+}
+
+function findSettingsSection(root, title) {
+  return descendants(root).find((c) => c.className === 'tes-section' && settingsSectionTitle(c) === title);
+}
 
 test('the shell renders the requested view with every available nav button', () => {
   const { exports, state } = okState([]);
@@ -622,11 +636,11 @@ test('the shell renders the requested view with every available nav button', () 
   const fallback = draw(undefined);
   assert.match(fallback.panel.children[0].children[0].textContent, /^Education Scheduler/);
   assert.ok(hasText(fallback.body, 'add'), 'the schedule view did not render its add control');
-  assert.ok(!hasText(fallback.body, RECORDED_SETTINGS_TITLE), 'the schedule view rendered settings content');
+  assert.ok(!hasText(fallback.body, EDUCATION_PERKS_TITLE), 'the schedule view rendered settings content');
 
   const settings = draw('settings');
   assert.match(settings.panel.children[0].children[0].textContent, /^Settings/);
-  for (const label of ['Boosters', 'Planning', RECORDED_SETTINGS_TITLE, 'Merits reduction (%)',
+  for (const label of ['Boosters', 'Planning', EDUCATION_PERKS_TITLE, 'Merits reduction (%)',
     'Principal rank (10%)', 'WSU stock block (10%)', 'Job points available', 'Queue order']) {
     assert.ok(hasText(settings.body, label), `the settings view is missing "${label}"`);
   }
@@ -637,7 +651,7 @@ test('the shell renders the requested view with every available nav button', () 
   // Content only the grid view produces: a degree box titled with its bachelor.
   // tests/grid.test.js owns the view's behaviour; this pins the dispatch.
   assert.ok(hasText(grid.body, 'Biology (BIO3420)'), 'the grid view did not render its boxes');
-  assert.ok(!hasText(grid.body, RECORDED_SETTINGS_TITLE), 'the grid view rendered settings content');
+  assert.ok(!hasText(grid.body, EDUCATION_PERKS_TITLE), 'the grid view rendered settings content');
 
   const focus = draw('focus');
   assert.match(focus.panel.children[0].children[0].textContent, /^Focus/);
@@ -645,7 +659,7 @@ test('the shell renders the requested view with every available nav button', () 
   // tests/panel.test.js's own focus tests own the view's behaviour beyond
   // this; this pins the dispatch.
   assert.ok(hasText(focus.body, 'Working Stats'), 'the focus view did not render its categories');
-  assert.ok(!hasText(focus.body, RECORDED_SETTINGS_TITLE), 'the focus view rendered settings content');
+  assert.ok(!hasText(focus.body, EDUCATION_PERKS_TITLE), 'the focus view rendered settings content');
 
   // Planner destinations are fixed controls, including the current view.
   // v0.3.0 Task 2 adds a reset button after settings on schedule, focus and
@@ -754,9 +768,7 @@ test('the settings view shows the inference as an inference, not as a reading', 
   // content) so this stays pinned to the note leading that section — its
   // whole job — rather than passing no matter where the note ends up on
   // the page.
-  const recordedSection = descendants(panel.children[1]).find(
-    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE
-  );
+  const recordedSection = findSettingsSection(panel.children[1], EDUCATION_PERKS_TITLE);
   const note = descendants(recordedSection).find((c) => c.className === 'tes-note'
     && /Inferred from your 40% reduction/.test(c.textContent));
   assert.ok(note, 'the recorded settings section has no inference note');
@@ -774,7 +786,7 @@ test('the recorded settings note explains why its fields do not change dates and
     noopHandlers,
   );
   const sections = descendants(panel.children[1]).filter((c) => c.className === 'tes-section');
-  const recorded = sections.find((c) => c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE);
+  const recorded = sections.find((c) => settingsSectionTitle(c) === EDUCATION_PERKS_TITLE);
   const explanatoryNotes = recorded.children.filter((c) => c.className === 'tes-note'
     && /These fields do not change/.test(c.textContent));
 
@@ -800,7 +812,7 @@ test('only date-changing booster fields remain and inert fields render only in t
     noopHandlers,
   );
   const sections = descendants(panel.children[1]).filter((c) => c.className === 'tes-section');
-  const section = (title) => sections.find((c) => c.children[0] && c.children[0].textContent === title);
+  const section = (title) => sections.find((c) => settingsSectionTitle(c) === title);
   const rowLabels = (parent) => parent.children
     .filter((c) => c.className === 'tes-row')
     .map((c) => c.children[0].textContent);
@@ -820,14 +832,13 @@ test('only date-changing booster fields remain and inert fields render only in t
     'Books of Carols owned',
     'Book of Carols price',
   ]);
-  assert.deepStrictEqual(rowLabels(section(RECORDED_SETTINGS_TITLE)), relocated);
-  assert.strictEqual(section('Education perks'), undefined, 'the standalone perks section still renders');
+  assert.deepStrictEqual(rowLabels(section(EDUCATION_PERKS_TITLE)), relocated);
   for (const label of relocated) {
     assert.ok(!rowLabels(section('Boosters')).includes(label), `${label} still renders in Boosters`);
   }
 });
 
-test('the recorded-not-calculated section is immediately before Share this plan', () => {
+test('settings keeps five sections in the selected order with explicit roles', () => {
   const { exports, state } = okState([]);
   const doc = makeFakeDocument();
   const panel = exports.renderPanel(
@@ -838,17 +849,29 @@ test('the recorded-not-calculated section is immediately before Share this plan'
   );
   const titles = panel.children[1].children
     .filter((c) => c.className === 'tes-section')
-    .map((c) => c.children[0].textContent);
+    .map(settingsSectionTitle);
+  const roles = panel.children[1].children
+    .filter((c) => c.className === 'tes-section')
+    .map(settingsSectionRole);
 
   assert.deepStrictEqual(titles, [
     'Boosters',
     'Planning',
+    EDUCATION_PERKS_TITLE,
     'Help',
-    RECORDED_SETTINGS_TITLE,
     'Share this plan',
   ]);
-  assert.match(titles[titles.indexOf('Share this plan') - 1], /recorded/i);
-  assert.match(titles[titles.indexOf('Share this plan') - 1], /not calculated/i);
+  assert.deepStrictEqual(roles, [
+    'Affects dates',
+    'Affects order',
+    'Saved only · not used in dates',
+    'Troubleshooting',
+    'Export or import',
+  ]);
+  const headers = descendants(panel.children[1]).filter((c) => c.className === 'tes-section-header');
+  assert.strictEqual(headers.length, 5, 'every Settings section needs one visual header bar');
+  assert.ok(headers.every((header) => descendants(header).some((c) => c.className === 'tes-section-title')));
+  assert.ok(headers.every((header) => descendants(header).some((c) => c.className === 'tes-section-role')));
 });
 
 test('each relocated field commits through onSettingChange with its unchanged path', () => {
@@ -861,9 +884,7 @@ test('each relocated field commits through onSettingChange with its unchanged pa
     exports.buildPanelModel({ ...state, view: 'settings' }),
     { onSettingChange: (field, value) => commits.push([field, value]) },
   );
-  const recorded = descendants(panel.children[1]).find(
-    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE
-  );
+  const recorded = findSettingsSection(panel.children[1], EDUCATION_PERKS_TITLE);
 
   const edit = (parent, label, value) => {
     const field = fieldFor(parent, label);
@@ -877,9 +898,7 @@ test('each relocated field commits through onSettingChange with its unchanged pa
   // must not have moved with them: the share string and the debug report both
   // key off `jobPoints`, and a rename would silently break every plan already
   // in circulation.
-  const boosters = descendants(panel.children[1]).find(
-    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === 'Boosters'
-  );
+  const boosters = findSettingsSection(panel.children[1], 'Boosters');
   edit(boosters, 'Job points available', '17');
 
   assert.deepStrictEqual(commits, [
@@ -1880,16 +1899,18 @@ test('the Focus rank button states both bases and commits through the real handl
   fire(nav.children.find((button) => /focus/i.test(button.textContent)), 'click');
 
   let body = panelEl().children[1];
-  let button = body.children.find((child) => child.className === 'tes-focus-rank-toggle');
-  let buttonAt = body.children.indexOf(button);
+  let overview = descendants(body).find((child) => hasClass(child, 'tes-focus-overview'));
+  let button = overview.children.find((child) => child.className === 'tes-focus-rank-toggle');
+  let buttonAt = overview.children.indexOf(button);
   assert.strictEqual(button.className, 'tes-focus-rank-toggle');
   assert.strictEqual(button.textContent, 'sorting: most per day');
-  assert.strictEqual(body.children[buttonAt + 1].className, 'tes-note', 'the rank button must precede the notes');
+  assert.strictEqual(overview.children[buttonAt + 1].className, 'tes-note', 'the rank button must precede the notes');
 
   fire(button, 'click');
   assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).focusRankBasis, 'total');
   body = panelEl().children[1];
-  button = body.children.find((child) => child.className === 'tes-focus-rank-toggle');
+  overview = descendants(body).find((child) => hasClass(child, 'tes-focus-overview'));
+  button = overview.children.find((child) => child.className === 'tes-focus-rank-toggle');
   assert.strictEqual(button.textContent, 'sorting: biggest total');
 
   fire(button, 'click');
@@ -2127,16 +2148,45 @@ test('the toggle reads show when collapsed', () => {
 // silently passing.
 // -----------------------------------------------------------------------
 
-test('a queue row is two lines with a remove button spanning both', () => {
+test('a queue row is a compact two-line entry with identity before metadata', () => {
   const { x } = load();
   const doc = makeDocument();
   const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [38] })), handlers());
   const row = descendants(panel).find((c) => c.className === 'tes-queue-row');
   assert.ok(row, 'queue rows get their own class, not the shared .tes-row');
-  assert.ok(row.children.some((c) => c.className === 'tes-queue-main'), 'main info line missing');
-  assert.ok(row.children.some((c) => c.className === 'tes-queue-bonus'), 'bonus line missing');
+  const main = row.children.find((c) => c.className === 'tes-queue-main');
+  const detail = row.children.find((c) => c.className === 'tes-queue-detail');
+  assert.ok(main, 'course identity line missing');
+  assert.ok(detail, 'duration/date/bonus line missing');
+  assert.match(main.textContent, /^[A-Z0-9]+ · /, 'the identity line does not lead with the course prefix');
+  assert.doesNotMatch(main.textContent, /\bfin\b|days|hrs|wks/, 'timing leaked onto the identity line');
+  assert.match(detail.textContent, / · fin .* · /, 'metadata does not use the chosen middle-dot sequence');
   const remove = row.children.find((c) => c.tagName === 'button');
   assert.ok(remove, 'remove button missing from the row');
+  assert.strictEqual(remove.dataset.courseId, '38', 'the remove action lost its course id');
+});
+
+test('a queue row preserves hostile-length Torn text in full', () => {
+  const { x } = load();
+  const data = x.parsePayload(loadFixture());
+  const course = data.courses.get(38);
+  const longName = `Course ${'UnbrokenName'.repeat(40)}`;
+  const longBonus = `Bonus ${'UnbrokenBonus'.repeat(40)}`;
+  course.name = longName;
+  course.learningOutcomes = [longBonus];
+  course.workingStatsGain = [];
+  const doc = makeDocument();
+  const model = x.buildPanelModel({
+    fetchResult: { ok: true, data },
+    plan: { queue: [38], collapsed: false },
+    settings: {},
+    view: 'schedule',
+    now: NOW,
+  });
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const row = descendants(panel).find((c) => c.className === 'tes-queue-row');
+  assert.ok(row.children.find((c) => c.className === 'tes-queue-main').textContent.includes(longName));
+  assert.ok(row.children.find((c) => c.className === 'tes-queue-detail').textContent.includes(longBonus));
 });
 
 test('a course with working stats names them', () => {
@@ -2207,9 +2257,9 @@ test('the rendered queue bonus line never reaches innerHTML, even with markup in
   });
   const panel = x.renderPanel(doc, doc.body, model, handlers());
   const row = descendants(panel).find((c) => c.className === 'tes-queue-row');
-  const bonus = row.children.find((c) => c.className === 'tes-queue-bonus');
-  assert.strictEqual(bonus.textContent, '<img src=x onerror=alert(1)>');
-  assert.strictEqual(bonus.children.length, 0, 'the evil string must never become a child node');
+  const detail = row.children.find((c) => c.className === 'tes-queue-detail');
+  assert.ok(detail.textContent.endsWith(' · <img src=x onerror=alert(1)>'));
+  assert.strictEqual(detail.children.length, 0, 'the evil string must never become a child node');
 });
 
 // The all-courses box used to be the last cell in the degrees grid. Task 6
@@ -2224,7 +2274,7 @@ test('the rendered queue bonus line never reaches innerHTML, even with markup in
 // `[]` (see the file's header comment), so that call would silently find
 // nothing and the test would pass for the wrong reason. Adapted to this
 // file's real idiom instead: `descendants()` over the rendered panel.
-test('the all-remaining banner renders before the grid, titled all remaining courses', () => {
+test('the all-remaining banner renders before the degree list, titled all remaining courses', () => {
   const { x } = load();
   const doc = makeDocument();
   const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: 'grid' })), handlers());
@@ -2237,12 +2287,12 @@ test('the all-remaining banner renders before the grid, titled all remaining cou
 
   // panel.children[1] is the body renderGridView appends into (same
   // structure other tests in this file rely on) — the banner must be a
-  // direct child appearing before .tes-grid, not merely present somewhere.
+  // direct child appearing before .tes-degree-list, not merely present somewhere.
   const body = panel.children[1];
   const bannerIndex = body.children.indexOf(banner);
-  const gridIndex = body.children.findIndex((c) => c.className === 'tes-grid');
-  assert.ok(bannerIndex !== -1 && gridIndex !== -1, 'banner or grid missing from the body');
-  assert.ok(bannerIndex < gridIndex, 'the banner does not come before the grid');
+  const listIndex = body.children.findIndex((c) => c.className === 'tes-degree-list');
+  assert.ok(bannerIndex !== -1 && listIndex !== -1, 'banner or degree list missing from the body');
+  assert.ok(bannerIndex < listIndex, 'the banner does not come before the degree list');
 });
 
 // Task 7: the schedule summary used to be one text node built by
@@ -2271,34 +2321,53 @@ test('the summary is three real sections, not one text node', () => {
   assert.ok(descendants(panel).find((c) => c.className === 'tes-summary-result'), 'no .tes-summary-result rendered');
 });
 
-// The owner moved this at the v0.3.0 QA gate: the line used to sit between
-// "Perk reduction" and the total, and belongs below the whole summary, above
-// the queue rows. Both halves are asserted, because the failure that put it in
-// the wrong place was a border on the wrong element rather than a missing one —
-// a test for "a border exists somewhere" would have passed throughout.
-test('the summary separator sits under the whole block, not between its lines', () => {
+test('the schedule overview groups every pre-course figure in one differentiated surface', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [38] })), handlers());
+  const body = panel.children[1];
+  const overview = body.children.find((c) => hasClass(c, 'tes-schedule-overview'));
+  const firstQueue = body.children.findIndex((c) => c.className === 'tes-queue-row');
+  assert.ok(overview && hasClass(overview, 'tes-overview'), 'the pre-course content has no shared overview surface');
+  assert.ok(descendants(overview).find((c) => c.className === 'tes-finish'), 'finish figure escaped the overview');
+  assert.ok(descendants(overview).find((c) => c.className === 'tes-boosters'), 'booster scenarios escaped the overview');
+  assert.ok(descendants(overview).find((c) => hasClass(c, 'tes-summary-queue')), 'queue assumptions escaped the overview');
+  assert.ok(body.children.indexOf(overview) < firstQueue, 'the overview does not precede the course rows');
+});
+
+test('the Focus controls and guidance share one differentiated intro surface', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: 'focus' })), handlers());
+  const overview = descendants(panel).find((c) => hasClass(c, 'tes-focus-overview'));
+  assert.ok(overview && hasClass(overview, 'tes-overview'), 'Focus has no overview surface');
+  assert.ok(descendants(overview).find((c) => c.className === 'tes-focus-rank-toggle'));
+  assert.ok(descendants(overview).filter((c) => hasClass(c, 'tes-note')).length >= 2,
+    'the two Focus guidance paragraphs are not grouped with their control');
+});
+
+// The overview outline now separates assumptions from courses. Keeping the
+// older summary divider inside that outline would double the boundary directly
+// after Total queued time.
+test('the wrapped schedule summary has no redundant separator line', () => {
   const { x } = load();
   const css = x.panelStyleText();
 
   assert.ok(
-    /\.tes-summary-queue[^{]*\{[^}]*border-bottom:/.test(css),
-    'the queue summary must carry the separator on its own bottom edge'
-  );
-  assert.ok(
-    !/\.tes-summary-result[^{]*\{[^}]*border/.test(css),
-    'the total line must not carry a border — that is what put the line above it'
+    !/\.tes-summary-(?:queue|result)[^{]*\{[^}]*border(?:-bottom)?:/.test(css),
+    'the overview outline already separates the summary from course rows'
   );
 
-  // The class has to actually reach the schedule view's summary block, or the
-  // rule above styles nothing. It must NOT reach the Books block, the grid
-  // intro, or either view's no-data message, all of which share .tes-summary.
+  // Keep the semantic class on exactly the real queue summary even though it
+  // no longer paints a line; tests and future layout rules can still identify
+  // the assumptions block without relying on position.
   const doc = makeDocument();
   const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [38] })), handlers());
-  const bordered = descendants(panel).filter((c) => hasClass(c, 'tes-summary-queue'));
-  assert.strictEqual(bordered.length, 1, 'exactly one block carries the separator');
+  const summaries = descendants(panel).filter((c) => hasClass(c, 'tes-summary-queue'));
+  assert.strictEqual(summaries.length, 1, 'exactly one block is the queue summary');
   assert.ok(
-    descendants(bordered[0]).some((c) => c.className === 'tes-summary-inputs'),
-    'the separator belongs to the queue summary, not to some other .tes-summary block'
+    descendants(summaries[0]).some((c) => c.className === 'tes-summary-inputs'),
+    'the semantic class belongs to the queue assumptions block'
   );
 });
 
@@ -2587,9 +2656,7 @@ test('an ambiguous reduction still refills no perks after a settings defaults re
   assert.strictEqual(fieldFor(body, 'Merits reduction (%)').value, '');
   assert.strictEqual(fieldFor(body, 'Principal rank (10%)').value, '');
   assert.strictEqual(fieldFor(body, 'WSU stock block (10%)').value, '');
-  const recorded = descendants(body).find(
-    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE
-  );
+  const recorded = findSettingsSection(body, EDUCATION_PERKS_TITLE);
   assert.match(allText(recorded), /4 possible combinations/);
 });
 

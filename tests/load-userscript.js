@@ -86,8 +86,39 @@ const EXPORT_NAMES = [
   'GREASY_FORK_URL', 'FORUM_POST_URL', 'isResolvedUrl', 'buildDebugReport', 'gatherDebugContext',
 ];
 
-function buildInstrumentedSource() {
-  const original = fs.readFileSync(SOURCE_PATH, 'utf8');
+// The two § K1 launch URLs are module-level consts inside the IIFE, closed
+// over by every renderer that reads them, so a test cannot inject a resolved
+// one from outside. Without this the link path is only ever asserted in the
+// direction that is true today — "renders nothing while unresolved" — and the
+// direction that matters at launch is never exercised at all. That is the
+// shape of two defects this repo has already shipped, so it gets a lever.
+//
+// It does exactly what the owner will do on launch day: replace the whole
+// string, per the instruction in the source. Deliberately NOT a blanket
+// find-and-replace of the token — rewriting PLACEHOLDER_TOKEN itself would
+// leave isResolvedUrl comparing the resolved URL against its own slug and
+// reporting it unresolved, which would make this lever prove the opposite of
+// what it claims.
+const RESOLVED_GREASY_FORK_URL = 'https://greasyfork.org/en/scripts/123456-torn-education-scheduler';
+const RESOLVED_FORUM_POST_URL = 'https://www.torn.com/forums.php#/p=threads&f=61&t=16000000';
+
+function resolveLaunchUrls(source) {
+  const swap = function (text, name, url) {
+    const pattern = new RegExp(`const ${name} = \`[^\`]*\`;`);
+    if (!pattern.test(text)) {
+      throw new Error(`${name} is no longer a template-literal placeholder — update resolveLaunchUrls`);
+    }
+    return text.replace(pattern, `const ${name} = ${JSON.stringify(url)};`);
+  };
+  let out = swap(source, 'GREASY_FORK_URL', RESOLVED_GREASY_FORK_URL);
+  out = swap(out, 'FORUM_POST_URL', RESOLVED_FORUM_POST_URL);
+  return out;
+}
+
+function buildInstrumentedSource(options = {}) {
+  const original = options.resolveLaunchUrls
+    ? resolveLaunchUrls(fs.readFileSync(SOURCE_PATH, 'utf8'))
+    : fs.readFileSync(SOURCE_PATH, 'utf8');
   const marker = '})();';
   const idx = original.lastIndexOf(marker);
   if (idx === -1) throw new Error('Could not find IIFE close marker in production source');
@@ -195,7 +226,7 @@ function makeSandbox(options = {}) {
 function loadUserscript(options = {}) {
   const { sandbox, gmStore, setNow, win, observers, runTimers } = makeSandbox(options);
   const context = vm.createContext(sandbox);
-  vm.runInContext(buildInstrumentedSource(), context, { filename: 'torn-education-scheduler.user.js' });
+  vm.runInContext(buildInstrumentedSource(options), context, { filename: 'torn-education-scheduler.user.js' });
   if (sandbox.__TES_ERR__) throw sandbox.__TES_ERR__;
   if (!sandbox.__TES__) throw new Error('Export injection failed: __TES__ not set');
 
@@ -298,4 +329,7 @@ function loadFixture(name = 'education-init-data.json') {
   return JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8'));
 }
 
-module.exports = { loadUserscript, loadFixture, EXPORT_NAMES, SOURCE_PATH };
+module.exports = {
+  loadUserscript, loadFixture, EXPORT_NAMES, SOURCE_PATH,
+  RESOLVED_GREASY_FORK_URL, RESOLVED_FORUM_POST_URL,
+};

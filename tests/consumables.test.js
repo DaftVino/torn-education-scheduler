@@ -300,10 +300,18 @@ function shortCourse(data) {
   return [Array.from(data.courses.values()).find((c) => c.prefix === 'BUS1100').id];
 }
 
-// The line the whole feature turns on, pulled out of the rendered text so
-// every test below reads the same string the player does.
-function floorLine(text) {
-  return text.split('\n').find((l) => l.includes('Floor with maximum Books'));
+function boosterRows(nodes) {
+  return nodes.filter((n) => n.className === 'tes-booster-row');
+}
+
+function rowText(row) {
+  return descendants(row).map((n) => n.textContent || '').join(' ');
+}
+
+// The structured row the whole feature turns on. The date, Book count and cost
+// must share this one row even though they are separate readable elements.
+function floorRow(nodes) {
+  return boosterRows(nodes).find((row) => rowText(row).includes('Maximum Books floor'));
 }
 
 test('the schedule model carries the consumables block with both dates', () => {
@@ -319,18 +327,20 @@ test('the schedule model carries the consumables block with both dates', () => {
   assert.notStrictEqual(c.floorFinishLabel, model.finishLabel);
 });
 
-test('the rendered floor date never appears without its cost', () => {
-  const { model, text } = schedulePanel();
+test('the rendered floor row never separates its date from its cost', () => {
+  const { model, nodes, text } = schedulePanel();
   const c = model.consumables;
-  const line = text.split('\n').find((l) => l.includes(c.floorFinishLabel) && l.includes('Floor'));
-  assert.ok(line, `the floor date is not on screen: ${text}`);
+  const row = floorRow(nodes);
+  assert.ok(row, `the floor row is not on screen: ${text}`);
+  const line = rowText(row);
   assert.ok(c.floorCostLabel, 'the default settings do not carry a Book price');
-  // The rule this feature turns on: the two arrive together, in one line, or
+  // The rule this feature turns on: the values arrive in one scenario row, or
   // the panel is quoting a date nobody can act on.
   assert.ok(
     line.includes(c.floorCostLabel),
-    `the floor date rendered without its cost: ${line}`,
+    `the floor row rendered without its cost: ${line}`,
   );
+  assert.ok(line.includes(c.floorFinishLabel), `the floor row rendered without its date: ${line}`);
   assert.ok(line.includes(String(c.floorBooks)), `the floor line does not say how many Books: ${line}`);
 });
 
@@ -349,8 +359,8 @@ test('owning Books adds a planned line without moving the floor', () => {
     some.model.consumables.floorFinishLabel,
     'the floor moved when the player said they owned more Books',
   );
-  assert.ok(!/With 0 Books of Carols/.test(none.text), 'a zero-Book plan rendered a planned line');
-  assert.match(some.text, /With 20 Books of Carols: /);
+  assert.ok(!/0 Books owned/.test(none.text), 'a zero-Book plan rendered a planned row');
+  assert.match(some.text, /20 Books owned/);
 });
 
 // "$0" satisfies the letter of "the floor ships with its cost" and defeats its
@@ -373,13 +383,13 @@ test('a typed zero reaches bookPrice, where a cleared field does not', () => {
 });
 
 test('a floor date is never rendered beside $0', () => {
-  const { model, text } = schedulePanel({ settings: { bookPrice: 0 } });
+  const { model, nodes, text } = schedulePanel({ settings: { bookPrice: 0 } });
   const c = model.consumables;
   // One field, not a flag beside it: formatMoney never returns a falsy string,
   // so null is the absence, and the view tests the label it is about to print.
   assert.strictEqual(c.floorCostLabel, null, 'an unset price was formatted into a figure');
 
-  const line = floorLine(text);
+  const line = rowText(floorRow(nodes));
   assert.ok(line, 'the floor line vanished — the fix was to name the gap, not to hide the date');
   assert.ok(!/\$0\b/.test(line), `the floor date rendered beside $0: ${line}`);
   assert.ok(!/\$/.test(line), `an unset price still produced a money figure: ${line}`);
@@ -392,9 +402,9 @@ test('a floor date is never rendered beside $0', () => {
   assert.match(text, /Set a Book price in settings to see what that floor would cost\./);
 });
 
-test('a real price puts no "cost unknown" wording anywhere near the floor line', () => {
-  const { text } = schedulePanel({ settings: { bookPrice: 13500000 } });
-  const line = floorLine(text);
+test('a real price puts no "cost unknown" wording anywhere near the floor row', () => {
+  const { nodes, text } = schedulePanel({ settings: { bookPrice: 13500000 } });
+  const line = rowText(floorRow(nodes));
   assert.ok(!/cost unknown/.test(line), line);
   assert.ok(!/Set a Book price in settings/.test(text), 'the prompt renders when a price is set');
   assert.match(line, /\$[0-9]/, `the floor line carries no money figure: ${line}`);
@@ -404,7 +414,7 @@ test('a real price puts no "cost unknown" wording anywhere near the floor line',
 // path is where both review findings lived, so it gets its own render test
 // rather than being asserted only at the pure-function level.
 test('the clamped floor renders the Books it takes, not the Books the cooldown allows', () => {
-  const { exports, data, model, text } = schedulePanel({
+  const { exports, data, model, nodes, text } = schedulePanel({
     pickQueue: shortCourse,
     settings: { maxCooldownHours: 8760, booksOwned: 500, bookPrice: 13500000 },
   });
@@ -413,8 +423,8 @@ test('the clamped floor renders the Books it takes, not the Books the cooldown a
   assert.strictEqual(c.floorBooks, 17);
   assert.strictEqual(c.floorDurationLabel, '0 hrs');
 
-  const line = floorLine(text);
-  assert.ok(line.includes('(17 — $229.5m)'), `the floor line prices the ceiling rather than the path: ${line}`);
+  const line = rowText(floorRow(nodes));
+  assert.ok(line.includes('17 Books · $229.5m'), `the floor row prices the ceiling rather than the path: ${line}`);
   assert.ok(!line.includes('738'), `the raw cooldown ceiling reached the screen: ${line}`);
 
   // A floor of zero remaining queued time finishes the instant the queue
@@ -428,7 +438,9 @@ test('the clamped floor renders the Books it takes, not the Books the cooldown a
 
   // Owning 500 Books cannot spend more than the path can absorb either.
   assert.strictEqual(c.plannedBooks, 17);
-  assert.match(text, /With 17 Books of Carols: .* \(0 hrs\)/);
+  const planned = boosterRows(nodes).find((row) => rowText(row).includes('17 Books owned'));
+  assert.ok(planned, 'the clamped planned-Books row is missing');
+  assert.match(rowText(planned), /17 Books owned.*0 hrs/);
 });
 
 // The defect this whole round exists to close: the field took a number, stored
@@ -438,7 +450,7 @@ test('entering job points changes what the schedule view shows', () => {
   const some = schedulePanel({ settings: { jobPoints: 200 } });
 
   assert.ok(!/job point/.test(none.text), 'a zero-point plan rendered a job-point line');
-  assert.match(some.text, /With 200 job points \(30 mins each\): /);
+  assert.match(some.text, /200 job points/);
   // The figure moved, which is the report the owner filed: the field used to
   // be inert, so this is the assertion that fails if it becomes inert again.
   assert.notStrictEqual(
@@ -450,13 +462,13 @@ test('entering job points changes what the schedule view shows', () => {
     'the Books ceiling ignored the shortened path');
 });
 
-test('the job-point line renders above the Book lines, in calculation order', () => {
-  const { text } = schedulePanel({ settings: { jobPoints: 200, booksOwned: 20 } });
-  const lines = text.split('\n');
-  const at = (needle) => lines.findIndex((l) => l.includes(needle));
-  const points = at('job points (30 mins each)');
-  const planned = at('Books of Carols:');
-  const floor = at('Floor with maximum Books');
+test('the job-point row renders above the Book rows, in calculation order', () => {
+  const { nodes, text } = schedulePanel({ settings: { jobPoints: 200, booksOwned: 20 } });
+  const rows = boosterRows(nodes);
+  const at = (needle) => rows.findIndex((row) => rowText(row).includes(needle));
+  const points = at('200 job points');
+  const planned = at('20 Books owned');
+  const floor = at('Maximum Books floor');
 
   assert.ok(points !== -1 && planned !== -1 && floor !== -1, `a line is missing:\n${text}`);
   // Not cosmetic: the Book figures are computed against the path the points
@@ -468,8 +480,8 @@ test('the job-point line renders above the Book lines, in calculation order', ()
 
 test('the rendered panel says job points are spent before Books', () => {
   const { text } = schedulePanel({ settings: { jobPoints: 200 } });
-  assert.match(text, /Job points are spent first, at 30 minutes each/);
-  assert.match(text, /Book figures above are what is left after them/);
+  assert.match(text, /Job points apply first/);
+  assert.match(text, /Book figures use the time left after them/);
   // The claim that survived from before job points did anything, and still
   // has to: neither consumable touches the course already running.
   assert.match(text, /Time already running on your current course is not affected/);
@@ -477,7 +489,7 @@ test('the rendered panel says job points are spent before Books', () => {
 
 test('one job point reads as singular', () => {
   const { text } = schedulePanel({ settings: { jobPoints: 1 } });
-  assert.match(text, /With 1 job point \(30 mins each\): /);
+  assert.match(text, /1 job point/);
   assert.ok(!/1 job points/.test(text), text.split('\n').find((l) => l.includes('job point')));
 });
 

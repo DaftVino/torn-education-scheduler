@@ -28,3 +28,6 @@ tests/fixtures/*.html
 
 # Excel lock files, created while a workbook is open
 ~$*
+
+# Tool artifact directory — visualizations are duplicated into docs/designs/
+.codex/
