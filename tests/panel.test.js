@@ -1879,3 +1879,27 @@ test('resetting the queue leaves settings alone', async () => {
   fire(findReset(), 'click');
   assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 18);
 });
+
+// The mirror of the test above: page ownership cuts both ways, and only one
+// direction had an end-to-end guard. tests/settings.test.js proves the pure
+// settingsDefaults() function preserves the queue's field alone (it has none
+// to touch); it says nothing about whether the settings view's own click
+// path ever reaches savePlan. Both halves are asserted — a reset that
+// silently did nothing would still leave the queue untouched, so the queue
+// assertion alone would not catch a broken settings reset.
+test('resetting settings leaves the queue alone', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [34, 35] }, { maxCooldownHours: 18 });
+  const panelEl = () => doc.querySelector('#tes-panel');
+  const findReset = () => descendants(panelEl()).find((c) => /tes-reset/.test(c.className));
+  const findNavBtn = (pattern) => {
+    const nav = descendants(panelEl()).find((c) => c.className === 'tes-nav');
+    return nav.children.find((b) => pattern.test(b.textContent));
+  };
+  fire(findNavBtn(/settings/i), 'click');
+  fire(findReset(), 'click');
+  fire(findReset(), 'click');
+  assert.deepStrictEqual(JSON.parse(gmStore.get(x.STORAGE_KEY)).queue, [34, 35],
+    'the settings reset must not touch the stored queue');
+  assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 24,
+    'the settings reset must actually restore the default, not silently no-op');
+});
