@@ -124,6 +124,14 @@ test('a split course is reached by both its selections', () => {
   }
 });
 
+test('an unlock course scores one rather than a zero-valued map entry', () => {
+  const { x, data } = load();
+  const row = x.FOCUS_TAXONOMY.find((r) => r.category === 'Unlocks & Abilities' && r.selection === 'Sports Shop Access');
+  assert.ok(row, 'Sports Shop Access must remain a real unlock taxonomy selection');
+  const [scores] = x.focusScores([{ category: row.category, selection: row.selection }], data.courses);
+  assert.strictEqual(scores.get(row.courseId), 1);
+});
+
 test('a split course reached under two selections scores its exact magnitude, not just presence', () => {
   const { x, data } = load();
   // Real data, not synthetic: courseId 50's "defense and dexterity" outcome is
@@ -156,7 +164,8 @@ test('a course reached twice under one selection would be scored as their sum, n
     if (!perGroup.has(key)) perGroup.set(key, { category: row.category, selection: row.selection, totals: new Map() });
     const group = perGroup.get(key);
     if (group.totals.has(row.courseId)) anyRepeat = true;
-    group.totals.set(row.courseId, (group.totals.get(row.courseId) || 0) + row.magnitude);
+    const value = (row.unit === 'none' || !Number.isFinite(row.magnitude)) ? 1 : row.magnitude;
+    group.totals.set(row.courseId, (group.totals.get(row.courseId) || 0) + value);
   }
   assert.strictEqual(anyRepeat, false,
     'fixture shape changed: a real same-selection repeat now exists; assert scores.get() against the summed total directly');
@@ -165,8 +174,14 @@ test('a course reached twice under one selection would be scored as their sum, n
     const [scores] = x.focusScores([{ category, selection }], data.courses);
     for (const [courseId, total] of totals) {
       if (!data.courses.has(courseId)) continue; // stale row, outside this contract
-      assert.strictEqual(scores.get(courseId), total,
-        `course ${courseId} under ${category} ${selection} must total ${total}`);
+      let expected = total;
+      for (const [downstreamId, downstreamScore] of totals) {
+        if (x.upstreamOf(downstreamId, data.courses, new Map()).has(courseId)) {
+          expected = Math.max(expected, downstreamScore);
+        }
+      }
+      assert.strictEqual(scores.get(courseId), expected,
+        `course ${courseId} under ${category} ${selection} must keep its summed score or its largest routed descendant score`);
     }
   }
 });
@@ -185,19 +200,14 @@ test('focusScores returns one map per focus, in order', () => {
   ], data.courses);
   assert.strictEqual(maps.length, 2);
 
-  // Index correspondence, not just "the two differ": maps[0] must really be
-  // intelligence and maps[1] must really be endurance, checked against
-  // workingStatsFor independently of focusScores rather than against each
-  // other, so a reversed or shuffled result array is caught rather than
-  // passed as "two different-looking maps".
-  for (const id of maps[0].keys()) {
-    assert.ok(x.workingStatsFor(data.courses.get(id)).has('intelligence'),
-      `course ${id} in maps[0] must actually carry an intelligence gain`);
-  }
-  for (const id of maps[1].keys()) {
-    assert.ok(x.workingStatsFor(data.courses.get(id)).has('endurance'),
-      `course ${id} in maps[1] must actually carry an endurance gain`);
-  }
+  // A map also carries inherited routing scores for prerequisites. A tier-3
+  // target has no descendants, though, so it still pins each map's direct
+  // selection and result-array correspondence exactly.
+  const intelligenceTarget = [...data.courses.values()].find((c) => c.tier === 3 && x.workingStatsFor(c).get('intelligence'));
+  const enduranceTarget = [...data.courses.values()].find((c) => c.tier === 3 && x.workingStatsFor(c).get('endurance'));
+  assert.ok(intelligenceTarget && enduranceTarget, 'need terminal targets for both stats');
+  assert.strictEqual(maps[0].get(intelligenceTarget.id), x.workingStatsFor(intelligenceTarget).get('intelligence'));
+  assert.strictEqual(maps[1].get(enduranceTarget.id), x.workingStatsFor(enduranceTarget).get('endurance'));
   const onlyInFirst = [...maps[0].keys()].find((id) => !maps[1].has(id));
   assert.ok(onlyInFirst !== undefined, 'expected at least one course to differ between the two maps, or this test has no teeth');
 
@@ -298,14 +308,14 @@ test('focusTotals sums an independently-computed reference for every real select
     const k = x.focusKey(row.category, row.selection);
     if (!groups.has(k)) groups.set(k, { category: row.category, selection: row.selection, byCourse: new Map() });
     const g = groups.get(k);
-    g.byCourse.set(row.courseId, (g.byCourse.get(row.courseId) || 0) + (Number.isFinite(row.magnitude) ? row.magnitude : 0));
+    const value = (row.unit === 'none' || !Number.isFinite(row.magnitude)) ? 1 : row.magnitude;
+    g.byCourse.set(row.courseId, (g.byCourse.get(row.courseId) || 0) + value);
   }
   let checked = 0;
   for (const { category, selection, byCourse } of groups.values()) {
     const t = x.focusTotals({ category, selection }, data.courses, new Set());
-    if (t.unit === 'count') continue; // magnitude is meaningless by design here
     let reference = 0;
-    for (const v of byCourse.values()) reference += v;
+    for (const v of byCourse.values()) reference += (t.unit === 'count') ? 1 : v;
     assert.strictEqual(t.total, reference, `${category} / ${selection} total must match its independently summed reference`);
     checked++;
   }
@@ -323,7 +333,8 @@ test('totals are never summed across selections', () => {
     const byCourse = new Map();
     for (const row of x.FOCUS_TAXONOMY) {
       if (row.category !== category || row.selection !== selection) continue;
-      byCourse.set(row.courseId, (byCourse.get(row.courseId) || 0) + (Number.isFinite(row.magnitude) ? row.magnitude : 0));
+      const value = (row.unit === 'none' || !Number.isFinite(row.magnitude)) ? 1 : row.magnitude;
+      byCourse.set(row.courseId, (byCourse.get(row.courseId) || 0) + value);
     }
     let total = 0;
     for (const v of byCourse.values()) total += v;

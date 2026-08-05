@@ -410,9 +410,8 @@ test('a queued id missing from the catalogue is carried through rather than thro
 
 test('focus ordering never changes the finish date', () => {
   const { x, data } = load();
-  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 20);
-  const settings = x.normaliseSettings({ focuses: [{ category: 'Working Stats', selection: 'intelligence' }] });
-  const scores = x.focusScores(settings.focuses, data.courses);
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const scores = x.focusScores([{ category: 'Unlocks & Abilities', selection: 'Museum Access' }], data.courses);
   const now = 1767225600;
 
   const asListed = x.schedule({
@@ -423,8 +422,62 @@ test('focus ordering never changes the finish date', () => {
     courses: data.courses, activeCourse: data.activeCourse,
     queue: x.orderQueue(queue, 'focus', data.courses, scores), now,
   });
-  assert.strictEqual(focused.finishesAt, asListed.finishesAt);
-  assert.strictEqual(focused.totalSeconds, asListed.totalSeconds);
+  assert.deepStrictEqual(
+    { finishesAt: focused.finishesAt, totalSeconds: focused.totalSeconds },
+    { finishesAt: asListed.finishesAt, totalSeconds: asListed.totalSeconds },
+  );
+});
+
+test('real unlock, company, and crime focuses each change the fixture queue', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const cases = [
+    { category: 'Unlocks & Abilities', selection: 'Museum Access', courseId: 21 },
+    { category: 'Company Bonuses', selection: 'Advertising Effectiveness', courseId: 100 },
+    { category: 'Crime & Jail Bonuses', selection: 'Bail Cost Discount', courseId: 102 },
+  ];
+  for (const focus of cases) {
+    const focused = x.orderQueue(queue, 'focus', data.courses, x.focusScores([focus], data.courses));
+    assert.notDeepStrictEqual(focused, queue, `${focus.selection} must change the fixture order`);
+    assert.ok(focused.indexOf(focus.courseId) < queue.indexOf(focus.courseId),
+      `${focus.selection} course ${focus.courseId} must move toward the front`);
+  }
+});
+
+test('an unlock focus hoists its complete prerequisite chain toward the front', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const target = 21; // Museum Access, a tier-3 course.
+  const focused = x.orderQueue(queue, 'focus', data.courses,
+    x.focusScores([{ category: 'Unlocks & Abilities', selection: 'Museum Access' }], data.courses));
+  const chain = [...x.upstreamOf(target, data.courses, new Map()), target]
+    .filter((id) => queue.indexOf(id) !== -1);
+  assert.ok(chain.length > 2, 'Museum Access must keep a non-trivial queued prerequisite chain');
+  for (const id of chain) {
+    assert.ok(focused.indexOf(id) < queue.indexOf(id), `prerequisite ${id} must move toward the front`);
+  }
+});
+
+test('focus ranks benefit per day, not raw magnitude', () => {
+  const { x } = load();
+  const courses = makeCourses([
+    { id: 1, duration: 10 * 86400 }, // raw 50, five per day
+    { id: 2, duration: 86400 }, // raw 10, ten per day
+  ]);
+  const ordered = x.orderQueue([1, 2], 'focus', courses, [new Map([[1, 50], [2, 10]])]);
+  assert.deepStrictEqual(ordered, [2, 1]);
+});
+
+test('focus ranks remain finite when duration is zero or missing', () => {
+  const { x } = load();
+  const courses = makeCourses([{ id: 1, duration: 0 }, { id: 2 }]);
+  delete courses.get(2).duration;
+  const scoreMap = new Map([[1, 2], [2, 1]]);
+  // Infinity / Infinity is NaN, which makes the comparator silently fall
+  // through to this reversed player order. A finite fallback must still rank
+  // the higher score first.
+  const ordered = x.orderQueue([2, 1], 'focus', courses, [scoreMap]);
+  assert.deepStrictEqual(ordered, [1, 2]);
 });
 
 test('focus ordering still places prerequisites before dependants', () => {
@@ -475,8 +528,8 @@ test('a second focus breaks ties without being summed into the first', () => {
   assert.ok(roots.length >= 2, 'need at least two root courses to prove anything here');
   for (let i = 0; i < roots.length; i += 1) {
     for (let j = i + 1; j < roots.length; j += 1) {
-      const a = primary.get(roots[i]) || 0;
-      const b = primary.get(roots[j]) || 0;
+      const a = (primary.get(roots[i]) || 0) / (data.courses.get(roots[i]).duration / 86400);
+      const b = (primary.get(roots[j]) || 0) / (data.courses.get(roots[j]).duration / 86400);
       if (a !== b) {
         assert.ok(a >= b, `${roots[i]} (primary ${a}) placed before ${roots[j]} (primary ${b})`);
       }

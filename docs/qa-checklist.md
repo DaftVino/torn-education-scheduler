@@ -193,8 +193,9 @@ but nobody has watched a real queue re-sort in a real browser yet.
 
 | # | Steps | Expected |
 |---|---|---|
-| M1 | With Queue order left at anything **other than** "My focus first", look at the nav row | The `focus` button is present but **disabled**, with a title explaining that Queue order must be set to "My focus first" in Settings first. Clicking it does nothing. |
-| M2 | In Settings, set Queue order to "My focus first" | The `focus` nav button becomes clickable. Click it. |
+| M1 | On a **fresh install**, look at the nav row before touching Settings | The `focus` button is present and **enabled**. Focus is now the default Queue order, so the feature is available out of the box. The queue itself is unchanged from as-listed, because focus ordering degrades to as-listed until you pick a focus — confirm the queue order matches what as-listed gives. |
+| M1a | In Settings, change Queue order to anything other than "My focus first", then look at the nav row | The `focus` button is **gone** — not greyed out, absent. Changing it back makes the button reappear. This replaced the disabled-button-with-a-title behaviour: the button is present by default now, so there is no longer a discoverability problem for a disabled state to solve. |
+| M2 | Click the `focus` button | The Focus view opens. |
 | M3 | On the Focus view, tick one selection's checkbox, under any category | It shows priority `1` beside it, and a remaining-out-of-total figure specific to that selection — e.g. `12 of 40 left`, `35% left of 60%` for a percent-based one, or `N courses left, no fixed total` for a selection (like weapon experience) with no stated ceiling. |
 | M4 | Tick a second selection under any category, then type `1` into its priority field | The two swap priorities. Numbers are never duplicated and never skip — always a dense 1..N over however many you have chosen. |
 | M5 | With two focuses chosen at different priorities, watch the Schedule queue re-sort | Courses serving the priority-1 focus move earliest. A course that serves only the priority-2 focus never jumps ahead of a priority-1 course purely by having a bigger secondary score — **ranking is lexicographic, never summed.** Picking two selections that visibly disagree (a course with a huge secondary score but a lower primary one) is the case that actually proves this; a queue where the two never conflict cannot. |
@@ -217,7 +218,7 @@ misclick and a lost queue or lost focus selections.
 | N2 | With it armed, click any **other** control instead — add a course, switch views, collapse the panel, change a setting | The button reverts to plain `reset`, unarmed. **Nothing was cleared.** Confirm this for at least two different kinds of "other click," not just one — the arm has to disarm on any redraw, not on a specific button. |
 | N3 | Arm `reset` again, then click it a second time | The queue empties. Settings, Focus selections and everything else are untouched. |
 | N4 | Repeat N1–N3 on the Focus view (its button also reads `reset`) | Only your focus selections and priorities clear. The queue you built on Schedule is untouched. |
-| N5 | Repeat N1–N3 on Settings, where the button reads `defaults` | Every setting — cooldown, Books owned/price, perk fields, Queue order — returns to its shipped default. **Your chosen focuses survive this reset** — `defaults` deliberately does not touch `focuses`, since a focus is what you are building toward, not a setting to reset. |
+| N5 | Repeat N1–N3 on Settings, where the button reads `defaults` | Every setting — cooldown, Books owned/price, perk fields, Queue order — returns to its shipped default. **Queue order returns to "My focus first"**, which is the default as of v0.3.0 — so if you had switched it away and lost the `focus` nav button, `defaults` brings the button back. **Your chosen focuses survive this reset** — `defaults` deliberately does not touch `focuses`, since a focus is what you are building toward, not a setting to reset. |
 | N6 | Open Degrees and look for a reset button | **None renders.** Degrees owns no player-editable state, so nothing there is arm-able. |
 
 ## O. The permanent settings landmark and the header

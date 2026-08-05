@@ -586,7 +586,9 @@
       const k = focusKey(row.category, row.selection);
       if (!byKey.has(k)) byKey.set(k, new Map());
       const scores = byKey.get(k);
-      const n = isFinite(row.magnitude) ? row.magnitude : 0;
+      // Number.isFinite deliberately does not coerce null: unlock rows have no
+      // magnitude, and each one still means one course worth routing toward.
+      const n = (row.unit === 'none' || !Number.isFinite(row.magnitude)) ? 1 : row.magnitude;
       scores.set(row.courseId, (scores.get(row.courseId) || 0) + n);
     }
 
@@ -600,10 +602,26 @@
           const n = workingStatsFor(course).get(selection);
           if (n) out.set(course.id, n);
         }
-        return out;
+        return propagateFocusScore(out);
       }
-      return byKey.get(focusKey(category, selection)) || new Map();
+      return propagateFocusScore(byKey.get(focusKey(category, selection)) || new Map());
     });
+
+    // A focus target is unreachable until its prerequisites finish, so route
+    // its score back through the same closure orderQueue uses. Maximum, never
+    // sum: a shared gate must not outrank the target merely for serving several
+    // focused courses, which would invent the exchange rate focus avoids.
+    function propagateFocusScore(scores) {
+      const routed = new Map(scores);
+      const upstream = new Map();
+      for (const [courseId, score] of scores) {
+        for (const ancestorId of upstreamOf(courseId, map, upstream)) {
+          const inherited = routed.get(ancestorId) || 0;
+          if (score > inherited) routed.set(ancestorId, score);
+        }
+      }
+      return routed;
+    }
   }
 
   // Selections whose catalogue total cannot honestly be stated. Each is a
@@ -646,7 +664,7 @@
     // course, and counting its magnitude twice would overstate the total.
     const byCourse = new Map();
     for (const r of rows) {
-      byCourse.set(r.courseId, (byCourse.get(r.courseId) || 0) + (isFinite(r.magnitude) ? r.magnitude : 0));
+      byCourse.set(r.courseId, (byCourse.get(r.courseId) || 0) + (Number.isFinite(r.magnitude) ? r.magnitude : 0));
     }
 
     let total = 0;
@@ -769,7 +787,17 @@
       if (chosen === 'focus') {
         // dependentCount is O(catalogue) per call; focus has its own
         // ranking and never reads `rank`, so it must not pay for it.
-        rankVector.set(id, maps.map(function (m) { return -(m.get(id) || 0); }));
+        const course = courses.get(id);
+        // Treat an absent or zero duration as one day: a malformed catalogue
+        // must keep a finite, useful rank instead of leaking NaN/Infinity into
+        // the comparator, while scored courses still sort ahead of zeroes.
+        const durationDays = (course && Number.isFinite(course.duration) && course.duration > 0)
+          ? course.duration / 86400
+          : 1;
+        rankVector.set(id, maps.map(function (m) {
+          const score = (m instanceof Map && Number.isFinite(m.get(id))) ? m.get(id) : 0;
+          return -(score / durationDays);
+        }));
       } else {
         const course = courses.get(id);
         rank.set(id, chosen === 'shortest-first'
