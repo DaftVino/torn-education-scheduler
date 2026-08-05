@@ -36,6 +36,51 @@ test('the newest CHANGELOG heading is the version being shipped', () => {
     'the newest CHANGELOG heading and @version disagree — a bumped script ships invisibly');
 });
 
+// § K1. The two URL constants are placeholders until the script is published,
+// and they resolve at different moments — the Greasy Fork listing exists before
+// the forum post is written — so this is a two-pass resolution, not one.
+//
+// The failure being prevented is shipping a literal placeholder to users. That
+// happens at publication, and the observable signal for "published" is
+// @downloadURL/@updateURL: those only get added once a Greasy Fork listing
+// exists to point at. So the two halves of § K1 are tied together here — adding
+// auto-update without resolving the URLs fails the build.
+test('an unresolved URL placeholder cannot ship alongside auto-update', () => {
+  const src = fs.readFileSync(SOURCE_PATH, 'utf8');
+  const hasPlaceholder = /REPLACE_BEFORE_LAUNCH/.test(src);
+  const publishes = /^\/\/ @(downloadURL|updateURL)/m.test(src);
+  assert.ok(
+    !(hasPlaceholder && publishes),
+    'the script declares auto-update while a URL is still REPLACE_BEFORE_LAUNCH — '
+    + 'resolve GREASY_FORK_URL and FORUM_POST_URL before adding @downloadURL/@updateURL',
+  );
+});
+
+// A half-edited URL is the state the guard above cannot see: replacing the
+// domain but leaving the token, or vice versa, produces something that looks
+// resolved to a reader and is not. Each constant is therefore either wholly a
+// placeholder or wholly real, and isResolvedUrl is what every consumer tests.
+test('each launch URL is wholly a placeholder or wholly resolved', () => {
+  const { exports } = loadUserscript();
+  for (const [name, url] of [['GREASY_FORK_URL', exports.GREASY_FORK_URL], ['FORUM_POST_URL', exports.FORUM_POST_URL]]) {
+    assert.strictEqual(typeof url, 'string', `${name} is no longer a string`);
+    const token = url.includes('REPLACE_BEFORE_LAUNCH');
+    assert.strictEqual(exports.isResolvedUrl(url), !token, `${name} half-resolved`);
+    if (!token) assert.match(url, /^https:\/\//, `${name} resolved to a non-https URL`);
+  }
+});
+
+// The behaviour the placeholders must not change. They are non-empty strings,
+// so a bare truthiness test would have started rendering links to a dead URL
+// the moment null was replaced.
+test('an unresolved placeholder renders no link anywhere', () => {
+  const { exports } = loadUserscript();
+  assert.strictEqual(exports.isResolvedUrl('https://greasyfork.org/scripts/REPLACE_BEFORE_LAUNCH'), false);
+  assert.strictEqual(exports.isResolvedUrl('https://greasyfork.org/scripts/12345-tes'), true);
+  assert.strictEqual(exports.isResolvedUrl(null), false);
+  assert.strictEqual(exports.isResolvedUrl(''), false);
+});
+
 test('@match and @grant are exactly the declared security surface', () => {
   const src = fs.readFileSync(SOURCE_PATH, 'utf8');
   const matches = [...src.matchAll(/^\/\/ @match\s+(\S+)$/gm)].map((m) => m[1]);

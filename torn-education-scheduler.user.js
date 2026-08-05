@@ -26,11 +26,31 @@
   // plausible id, so a missed guard fails visibly instead of queueing course 0.
   const ALL_COURSES_OPTION = '__all__';
 
-  // Resolved post-launch, once the script is published. Until then every
-  // consumer guards on null and renders nothing: a wrong link in a diagnostic
-  // is worse than an obvious placeholder, because it looks like it works.
-  const GREASY_FORK_URL = null;
-  const FORUM_POST_URL = null;
+  // Resolved post-launch, once the script is published (§ K1). They resolve at
+  // DIFFERENT moments — the script is listed on Greasy Fork before the forum
+  // post is written — so expect two passes, not one.
+  //
+  // Placeholders rather than null, at the owner's request, so the wiring they
+  // feed is visible and can be QA'd before either URL exists. The token is
+  // deliberately shouty and deliberately not a valid destination: a plausible
+  // but wrong link is worse than an obvious placeholder, because it looks like
+  // it works. `tests/metadata.test.js` fails the build if one of these is
+  // still present when @version is a release, so a placeholder cannot ship.
+  //
+  // To resolve: replace the whole string. Do not edit around the token — the
+  // guard test matches on it, and a half-edited URL would pass.
+  const PLACEHOLDER_TOKEN = 'REPLACE_BEFORE_LAUNCH';
+  const GREASY_FORK_URL = `https://greasyfork.org/scripts/${PLACEHOLDER_TOKEN}`;
+  const FORUM_POST_URL = `https://www.torn.com/forums.php#/${PLACEHOLDER_TOKEN}`;
+
+  // Every consumer of the two constants above tests THIS, never the constant's
+  // own truthiness. A placeholder is a non-empty string, so `if (FORUM_POST_URL)`
+  // would have started rendering a link to a dead URL the moment the
+  // placeholders replaced null — which is precisely the "looks like it works"
+  // failure the comment above warns about. Nothing renders until a URL is real.
+  function isResolvedUrl(url) {
+    return typeof url === 'string' && url.length > 0 && url.indexOf(PLACEHOLDER_TOKEN) === -1;
+  }
 
   // ─── ENGINE START ───────────────────────────────────────────────
   // Pure functions only. No DOM, no network, no GM_*, no ambient clock.
@@ -1618,7 +1638,7 @@
       // the instruction is useful without the URL; the URL is appended only
       // once it exists, so resolving it has a visible effect here and a test
       // that fails if it is set without the report being re-checked.
-      GREASY_FORK_URL
+      isResolvedUrl(GREASY_FORK_URL)
         ? `Please paste this into the feedback area on the Greasy Fork page for this script: ${GREASY_FORK_URL}`
         : 'Please paste this into the feedback area on the Greasy Fork page for this script.',
     ];
@@ -3125,7 +3145,7 @@
 
     // One compact line, and nothing at all while the URL is unresolved — not a
     // dead link, not a "#" href, not placeholder text pretending to be a link.
-    if (FORUM_POST_URL) {
+    if (isResolvedUrl(FORUM_POST_URL)) {
       const guide = doc.createElement('div');
       const link = doc.createElement('a');
       link.setAttribute('href', FORUM_POST_URL);
@@ -3655,7 +3675,7 @@
     // One unobtrusive line: a player who needs the guide will not go looking
     // in settings for it, but the schedule view must not become an advert.
     // Null URL renders nothing at all, exactly as in the settings view.
-    if (FORUM_POST_URL) {
+    if (isResolvedUrl(FORUM_POST_URL)) {
       const foot = doc.createElement('div');
       foot.className = 'tes-foot';
       const link = doc.createElement('a');

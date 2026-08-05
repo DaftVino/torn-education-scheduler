@@ -80,7 +80,10 @@ const EXPORT_NAMES = [
   // navigation
   'unmountPanel', 'observeNavigation',
   // debug report and the (still unresolved) guide links
-  'GREASY_FORK_URL', 'FORUM_POST_URL', 'buildDebugReport', 'gatherDebugContext',
+  // isResolvedUrl sits with the two URLs it guards (§ K1): they are
+  // placeholders until launch, and every consumer gates on it rather than on
+  // a constant's truthiness.
+  'GREASY_FORK_URL', 'FORUM_POST_URL', 'isResolvedUrl', 'buildDebugReport', 'gatherDebugContext',
 ];
 
 function buildInstrumentedSource() {
