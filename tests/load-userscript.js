@@ -41,6 +41,8 @@ const EXPORT_NAMES = [
   'ORDER_MODE_LABELS', 'orderQueue', 'dependentCount', 'upstreamOf',
   // focus taxonomy
   'FOCUS_TAXONOMY', 'focusRegistry',
+  // working stats
+  'WORKING_STATS', 'WORKING_STAT_RE', 'workingStatsFor',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
   // settings

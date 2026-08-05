@@ -30,6 +30,11 @@ test('normalises a course into the engine shape', () => {
     cost: 200,
     parentId: null,
     learningOutcomes: [],
+    workingStatsGain: [
+      'Gain 5 manual labor upon completion',
+      'Gain 50 intelligence upon completion',
+      'Gain 5 endurance upon completion',
+    ],
   });
 });
 

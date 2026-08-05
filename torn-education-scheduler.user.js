@@ -112,6 +112,7 @@
       cost: raw.actualCost,
       parentId: raw.parentId,
       learningOutcomes: Array.isArray(raw.learningOutcomes) ? raw.learningOutcomes : [],
+      workingStatsGain: Array.isArray(raw.workingStatsGain) ? raw.workingStatsGain : [],
     };
   }
 
@@ -524,6 +525,29 @@
     }
 
     return { entries, stale, unmapped, unclassified: 0 };
+  }
+
+  // Working stats are the one benefit Torn states in a machine-readable form:
+  // 294 lines across all 131 courses, 100% parse against this shape. Unlike
+  // learningOutcomes they need no taxonomy, which is why they are computed
+  // rather than classified.
+  const WORKING_STATS = Object.freeze(['intelligence', 'endurance', 'manual labor']);
+  const WORKING_STAT_RE = /^Gain ([\d,.]+) (.+?) upon completion$/;
+
+  function workingStatsFor(course) {
+    const out = new Map();
+    const gains = (course && Array.isArray(course.workingStatsGain)) ? course.workingStatsGain : [];
+    for (const line of gains) {
+      if (typeof line !== 'string') continue;
+      const m = WORKING_STAT_RE.exec(line);
+      if (!m) continue;
+      const n = Number(m[1].replace(/,/g, ''));
+      if (!isFinite(n)) continue;
+      const stat = m[2];
+      if (WORKING_STATS.indexOf(stat) === -1) continue;
+      out.set(stat, (out.get(stat) || 0) + n);
+    }
+    return out;
   }
 
   // Everything that has to be done before this course can be: the parentId
