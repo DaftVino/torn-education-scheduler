@@ -260,7 +260,7 @@ test('renderPanel surfaces a visible message naming what is missing when the pla
   const mount = doc.createElement('div');
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
   const body = panel.children[1];
-  const summary = body.children.find((c) => c.className === 'tes-summary');
+  const summary = body.children.find((c) => hasClass(c, 'tes-summary'));
   // allText, not summary.textContent: Task 7 split the summary into three
   // child elements (.tes-summary-inputs/-result/-diagnostics), so the
   // messages live on those, not on the outer .tes-summary div itself — the
@@ -290,7 +290,7 @@ test('renderPanel names a dropped stale queue entry on screen, not only in the m
   // allText, not c.textContent: Task 7 moved the stale-entry line onto the
   // nested .tes-summary-diagnostics child, so the outer .tes-summary div's
   // own textContent is empty.
-  const summaries = body.children.filter((c) => c.className === 'tes-summary');
+  const summaries = body.children.filter((c) => hasClass(c, 'tes-summary'));
   const summary = summaries.find((c) => /Removed/.test(allText(c)));
   assert.ok(summary, `no .tes-summary block named the stale entry: ${summaries.map((s) => allText(s)).join(' | ')}`);
   assert.match(
@@ -509,7 +509,7 @@ test('the all-remaining entry queues every remaining course, in a followable ord
   // presence — not the outer div's own (now-empty) textContent — is what
   // distinguishes it from the Books block.
   const summary = redrawn.children.find(
-    (c) => c.className === 'tes-summary' && descendants(c).some((d) => d.className === 'tes-summary-inputs')
+    (c) => hasClass(c, 'tes-summary') && descendants(c).some((d) => d.className === 'tes-summary-inputs')
   );
   assert.ok(summary, 'no queue summary block rendered');
   assert.ok(!/cannot be followed/.test(allText(summary)), allText(summary));
@@ -583,6 +583,16 @@ function descendants(el) {
     for (const child of (node.children || [])) walk(child);
   })(el);
   return out;
+}
+
+// Token match, not string equality. The schedule view's summary block carries
+// two classes — `tes-summary tes-summary-queue`, the second being what draws
+// the separator above the queue rows — so `className === 'tes-summary'` stopped
+// finding it. Splitting is also what keeps this from matching the block's own
+// `.tes-summary-inputs`/`-result`/`-diagnostics` children, which a substring
+// test would.
+function hasClass(el, name) {
+  return String(el.className || '').split(' ').indexOf(name) !== -1;
 }
 
 const hasText = (el, text) => descendants(el).some((c) => c.textContent === text);
@@ -1730,6 +1740,37 @@ test('the summary is three real sections, not one text node', () => {
   const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [38] })), handlers());
   assert.ok(descendants(panel).find((c) => c.className === 'tes-summary-inputs'), 'no .tes-summary-inputs rendered');
   assert.ok(descendants(panel).find((c) => c.className === 'tes-summary-result'), 'no .tes-summary-result rendered');
+});
+
+// The owner moved this at the v0.3.0 QA gate: the line used to sit between
+// "Perk reduction" and the total, and belongs below the whole summary, above
+// the queue rows. Both halves are asserted, because the failure that put it in
+// the wrong place was a border on the wrong element rather than a missing one —
+// a test for "a border exists somewhere" would have passed throughout.
+test('the summary separator sits under the whole block, not between its lines', () => {
+  const { x } = load();
+  const css = x.panelStyleText();
+
+  assert.ok(
+    /\.tes-summary-queue[^{]*\{[^}]*border-bottom:/.test(css),
+    'the queue summary must carry the separator on its own bottom edge'
+  );
+  assert.ok(
+    !/\.tes-summary-result[^{]*\{[^}]*border/.test(css),
+    'the total line must not carry a border — that is what put the line above it'
+  );
+
+  // The class has to actually reach the schedule view's summary block, or the
+  // rule above styles nothing. It must NOT reach the Books block, the grid
+  // intro, or either view's no-data message, all of which share .tes-summary.
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [38] })), handlers());
+  const bordered = descendants(panel).filter((c) => hasClass(c, 'tes-summary-queue'));
+  assert.strictEqual(bordered.length, 1, 'exactly one block carries the separator');
+  assert.ok(
+    descendants(bordered[0]).some((c) => c.className === 'tes-summary-inputs'),
+    'the separator belongs to the queue summary, not to some other .tes-summary block'
+  );
 });
 
 test('diagnostics appear only when there is something to diagnose', () => {
