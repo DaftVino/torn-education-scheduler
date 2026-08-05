@@ -1916,12 +1916,20 @@
       if (course.status === 'inProgress') { stale.push({ courseId: id, prefix: course.prefix, why: 'currently in progress' }); return false; }
       return true;
     });
+    // The scores the player asked for, handed to the sort that uses them.
+    // orderQueue treats a missing fourth argument as "no focus", which is why
+    // omitting this made 'My focus first' silently behave as 'as-listed'.
+    // Computed only in focus mode: focusScores walks the registry, and the
+    // other three modes have no use for the result.
+    const scoreMaps = settings.orderMode === 'focus'
+      ? focusScores(settings.focuses, data.courses)
+      : null;
     // The player's chosen ordering is applied once, here, and everything
     // downstream — schedule, validateQueue, finishById, the rendered rows —
     // reads the ordered queue. It cannot move the finish date (a sum does not
     // care about order); it moves which course finishes when, which is the
     // whole point of offering the choice.
-    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses);
+    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses, scoreMaps);
     const result = schedule({
       courses: data.courses, activeCourse: data.activeCourse, queue: queue, now: state.now,
     });
