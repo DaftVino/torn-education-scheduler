@@ -500,8 +500,8 @@ test('choosing the placeholder returns the panel to no selection at all', async 
   // Redraw through a handler that changes nothing else about the plan: collapse
   // and reopen, which rebuilds the picker from the model twice.
   for (let i = 0; i < 2; i += 1) {
-    const header = doc.querySelector('#tes-panel').children[0];
-    for (const fn of header.listeners.click) fn();
+    const toggle = doc.querySelector('#tes-panel').children[0].children[1];
+    for (const fn of toggle.listeners.click) fn();
   }
 
   const redrawn = pickerIn(doc.querySelector('#tes-panel'));
@@ -566,12 +566,12 @@ test('the shell renders the requested view and offers nav to the other three', (
 
   // Default: no view on the state at all still yields the schedule view.
   const fallback = draw(undefined);
-  assert.match(fallback.panel.children[0].textContent, /^Education Scheduler/);
+  assert.match(fallback.panel.children[0].children[0].textContent, /^Education Scheduler/);
   assert.ok(hasText(fallback.body, 'add'), 'the schedule view did not render its add control');
   assert.ok(!hasText(fallback.body, 'Education perks'), 'the schedule view rendered settings content');
 
   const settings = draw('settings');
-  assert.match(settings.panel.children[0].textContent, /^Settings/);
+  assert.match(settings.panel.children[0].children[0].textContent, /^Settings/);
   for (const label of ['Boosters', 'Education perks', 'Planning', 'Merits reduction (%)',
     'Principal rank (10%)', 'WSU stock block (10%)', 'Queue order']) {
     assert.ok(hasText(settings.body, label), `the settings view is missing "${label}"`);
@@ -579,14 +579,14 @@ test('the shell renders the requested view and offers nav to the other three', (
   assert.ok(!hasText(settings.body, 'add'), 'the settings view rendered schedule content');
 
   const grid = draw('grid');
-  assert.match(grid.panel.children[0].textContent, /^Degrees/);
+  assert.match(grid.panel.children[0].children[0].textContent, /^Degrees/);
   // Content only the grid view produces: a degree box titled with its bachelor.
   // tests/grid.test.js owns the view's behaviour; this pins the dispatch.
   assert.ok(hasText(grid.body, 'Biology (BIO3420)'), 'the grid view did not render its boxes');
   assert.ok(!hasText(grid.body, 'Education perks'), 'the grid view rendered settings content');
 
   const focus = draw('focus');
-  assert.match(focus.panel.children[0].textContent, /^Focus/);
+  assert.match(focus.panel.children[0].children[0].textContent, /^Focus/);
   // Content only the focus view produces: a category from the taxonomy.
   // tests/panel.test.js's own focus tests own the view's behaviour beyond
   // this; this pins the dispatch.
@@ -703,7 +703,7 @@ test('switching view redraws the panel without persisting the choice', async () 
   const toSettings = nav.children.find((b) => /settings/.test(b.textContent));
   for (const fn of toSettings.listeners.click) fn();
 
-  assert.match(doc.querySelector('#tes-panel').children[0].textContent, /^Settings/);
+  assert.match(doc.querySelector('#tes-panel').children[0].children[0].textContent, /^Settings/);
   // view lives in init()'s closure, never in storage: a player who opened
   // settings once does not want settings every visit.
   assert.strictEqual(gmStore.get(exports.STORAGE_KEY), undefined, 'switching view wrote to storage');
@@ -1067,7 +1067,7 @@ function state(overrides) {
   const data = x.parsePayload(loadFixture());
   return {
     fetchResult: o.fetchFailed ? { ok: false, reason: 'network', detail: 'offline' } : { ok: true, data: data },
-    plan: { queue: o.queue || [], collapsed: false },
+    plan: { queue: o.queue || [], collapsed: o.collapsed === true },
     now: NOW,
     view: o.view,
     settings: o.settings || {},
@@ -1188,13 +1188,13 @@ test('leaving focus mode while on the focus view returns to the schedule', async
   assert.strictEqual(orderSelect.value, 'focus');
 
   navTo(/focus/i);
-  assert.match(doc.querySelector('#tes-panel').children[0].textContent, /^Focus/, 'did not actually land on the focus view');
+  assert.match(doc.querySelector('#tes-panel').children[0].children[0].textContent, /^Focus/, 'did not actually land on the focus view');
 
   orderSelect.value = 'shortest-first';
   fire(orderSelect, 'change');
 
-  const header = doc.querySelector('#tes-panel').children[0].textContent;
-  assert.ok(/^Education Scheduler/.test(header),
+  const title = doc.querySelector('#tes-panel').children[0].children[0].textContent;
+  assert.ok(/^Education Scheduler/.test(title),
     'the player must not be stranded on a view whose nav entry is now disabled');
   assert.deepStrictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).focuses.length, 1,
     'leaving focus mode says nothing about what the player is building toward');
@@ -1337,4 +1337,52 @@ test('reordering the rendered queue by focus does not move the finish date', () 
 
   assert.strictEqual(focused.finishLabel, asListed.finishLabel);
   assert.strictEqual(focused.totalLabel, asListed.totalLabel);
+});
+
+// -----------------------------------------------------------------------
+// Task 3: the header splits into a title and a real toggle button.
+//
+// The task brief's own tests called `panel.querySelectorAll(...)` and
+// `dispatchEvent`. tests/fake-document.js implements neither on an element
+// created via `doc.createElement` (only `doc` itself has a
+// `querySelectorAll`, and it always returns `[]`; elements have no
+// `dispatchEvent` at all). Adapted to this file's real idioms: reading
+// `header.children[0]`/`children[1]` directly (renderPanel appends the
+// title before the toggle) and firing the registered listener with `fire()`.
+// -----------------------------------------------------------------------
+
+test('the header carries a title and a real button', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state()), handlers());
+  const header = panel.children[0];
+  const title = header.children[0];
+  const btn = header.children[1];
+  assert.strictEqual(title.className, 'tes-header-title');
+  assert.ok(btn, 'hide must be a button, not text');
+  assert.strictEqual(btn.className, 'tes-header-toggle');
+  // tests/fake-document.js stores the tag exactly as passed to createElement
+  // rather than uppercasing it the way a real browser's tagName does.
+  assert.strictEqual(btn.tagName, 'button');
+});
+
+test('only the toggle button collapses the panel', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  let toggled = 0;
+  const h = Object.assign({}, handlers(), { onToggle: () => { toggled += 1; } });
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state()), h);
+  const header = panel.children[0];
+  const title = header.children[0];
+  const toggle = header.children[1];
+  assert.ok(!title.listeners.click, 'the title is no longer the click target');
+  fire(toggle, 'click');
+  assert.strictEqual(toggled, 1);
+});
+
+test('the toggle reads show when collapsed', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ collapsed: true })), handlers());
+  assert.strictEqual(panel.children[0].children[1].textContent, 'show');
 });
