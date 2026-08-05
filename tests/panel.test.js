@@ -596,6 +596,7 @@ function hasClass(el, name) {
 }
 
 const hasText = (el, text) => descendants(el).some((c) => c.textContent === text);
+const RECORDED_SETTINGS_TITLE = 'Recorded with this plan — not calculated';
 
 test('the shell renders the requested view with every available nav button', () => {
   const { exports, state } = okState([]);
@@ -621,12 +622,12 @@ test('the shell renders the requested view with every available nav button', () 
   const fallback = draw(undefined);
   assert.match(fallback.panel.children[0].children[0].textContent, /^Education Scheduler/);
   assert.ok(hasText(fallback.body, 'add'), 'the schedule view did not render its add control');
-  assert.ok(!hasText(fallback.body, 'Education perks'), 'the schedule view rendered settings content');
+  assert.ok(!hasText(fallback.body, RECORDED_SETTINGS_TITLE), 'the schedule view rendered settings content');
 
   const settings = draw('settings');
   assert.match(settings.panel.children[0].children[0].textContent, /^Settings/);
-  for (const label of ['Boosters', 'Education perks', 'Planning', 'Merits reduction (%)',
-    'Principal rank (10%)', 'WSU stock block (10%)', 'Queue order']) {
+  for (const label of ['Boosters', 'Planning', RECORDED_SETTINGS_TITLE, 'Merits reduction (%)',
+    'Principal rank (10%)', 'WSU stock block (10%)', 'Job points available', 'Queue order']) {
     assert.ok(hasText(settings.body, label), `the settings view is missing "${label}"`);
   }
   assert.ok(!hasText(settings.body, 'add'), 'the settings view rendered schedule content');
@@ -636,7 +637,7 @@ test('the shell renders the requested view with every available nav button', () 
   // Content only the grid view produces: a degree box titled with its bachelor.
   // tests/grid.test.js owns the view's behaviour; this pins the dispatch.
   assert.ok(hasText(grid.body, 'Biology (BIO3420)'), 'the grid view did not render its boxes');
-  assert.ok(!hasText(grid.body, 'Education perks'), 'the grid view rendered settings content');
+  assert.ok(!hasText(grid.body, RECORDED_SETTINGS_TITLE), 'the grid view rendered settings content');
 
   const focus = draw('focus');
   assert.match(focus.panel.children[0].children[0].textContent, /^Focus/);
@@ -644,7 +645,7 @@ test('the shell renders the requested view with every available nav button', () 
   // tests/panel.test.js's own focus tests own the view's behaviour beyond
   // this; this pins the dispatch.
   assert.ok(hasText(focus.body, 'Working Stats'), 'the focus view did not render its categories');
-  assert.ok(!hasText(focus.body, 'Education perks'), 'the focus view rendered settings content');
+  assert.ok(!hasText(focus.body, RECORDED_SETTINGS_TITLE), 'the focus view rendered settings content');
 
   // Planner destinations are fixed controls, including the current view.
   // v0.3.0 Task 2 adds a reset button after settings on schedule, focus and
@@ -749,20 +750,21 @@ test('the settings view shows the inference as an inference, not as a reading', 
   assert.strictEqual(model.perkInference.determinate, true);
 
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
-  // Scoped to the Education perks section itself (not just matched on
+  // Scoped to the recorded-not-calculated section itself (not just matched on
   // content) so this stays pinned to the note leading that section — its
   // whole job — rather than passing no matter where the note ends up on
   // the page.
-  const perksSection = descendants(panel.children[1]).find(
-    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === 'Education perks'
+  const recordedSection = descendants(panel.children[1]).find(
+    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE
   );
-  const note = descendants(perksSection).find((c) => c.className === 'tes-note');
-  assert.ok(note, 'the perks section has no inference note');
+  const note = descendants(recordedSection).find((c) => c.className === 'tes-note'
+    && /Inferred from your 40% reduction/.test(c.textContent));
+  assert.ok(note, 'the recorded settings section has no inference note');
   assert.match(note.textContent, /Inferred from your 40% reduction/);
   assert.match(note.textContent, /Correct it if it is wrong/);
 });
 
-test('the settings view says the perk fields do not change dates and explains what they are for', () => {
+test('the recorded settings note explains why its fields do not change dates and what they are for', () => {
   const { exports, state } = okState([]);
   const doc = makeFakeDocument();
   const panel = exports.renderPanel(
@@ -772,15 +774,105 @@ test('the settings view says the perk fields do not change dates and explains wh
     noopHandlers,
   );
   const sections = descendants(panel.children[1]).filter((c) => c.className === 'tes-section');
-  const perks = sections.find((c) => c.children[0] && c.children[0].textContent === 'Education perks');
-  const boosters = sections.find((c) => c.children[0] && c.children[0].textContent === 'Boosters');
+  const recorded = sections.find((c) => c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE);
+  const explanatoryNotes = recorded.children.filter((c) => c.className === 'tes-note'
+    && /These fields do not change/.test(c.textContent));
 
-  assert.match(allText(perks), /These fields do not change any date the panel shows/);
-  assert.match(allText(perks), /Torn already applies these perks to the course durations it sends/);
-  assert.match(allText(perks), /reduction is read from Torn rather than rebuilt from what is typed here/);
-  assert.match(allText(perks), /shared plan and a debug report/);
-  assert.match(allText(boosters), /Job points do not change any date the panel shows/);
-  assert.match(allText(boosters), /like the perk fields below/);
+  assert.strictEqual(explanatoryNotes.length, 1, 'the inert-field explanation is split or repeated');
+  assert.match(explanatoryNotes[0].textContent, /do not change any date the panel shows/);
+  assert.match(explanatoryNotes[0].textContent, /applies education perks to the course durations it sends/);
+  assert.match(explanatoryNotes[0].textContent, /job points to the course in progress/);
+  assert.match(explanatoryNotes[0].textContent, /reads those durations rather than rebuilding them/);
+  assert.match(explanatoryNotes[0].textContent, /shared plan and a debug report/);
+});
+
+test('only date-changing booster fields remain and inert fields render only in the recorded section', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const panel = exports.renderPanel(
+    doc,
+    doc.createElement('div'),
+    exports.buildPanelModel({ ...state, view: 'settings' }),
+    noopHandlers,
+  );
+  const sections = descendants(panel.children[1]).filter((c) => c.className === 'tes-section');
+  const section = (title) => sections.find((c) => c.children[0] && c.children[0].textContent === title);
+  const rowLabels = (parent) => parent.children
+    .filter((c) => c.className === 'tes-row')
+    .map((c) => c.children[0].textContent);
+  const relocated = [
+    'Merits reduction (%)',
+    'Principal rank (10%)',
+    'WSU stock block (10%)',
+    'Job points available',
+  ];
+
+  assert.deepStrictEqual(rowLabels(section('Boosters')), [
+    'Max booster cooldown (hours)',
+    'Books of Carols owned',
+    'Book of Carols price',
+  ]);
+  assert.deepStrictEqual(rowLabels(section(RECORDED_SETTINGS_TITLE)), relocated);
+  assert.strictEqual(section('Education perks'), undefined, 'the standalone perks section still renders');
+  for (const label of relocated) {
+    assert.ok(!rowLabels(section('Boosters')).includes(label), `${label} still renders in Boosters`);
+  }
+});
+
+test('the recorded-not-calculated section is immediately before Share this plan', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const panel = exports.renderPanel(
+    doc,
+    doc.createElement('div'),
+    exports.buildPanelModel({ ...state, view: 'settings' }),
+    noopHandlers,
+  );
+  const titles = panel.children[1].children
+    .filter((c) => c.className === 'tes-section')
+    .map((c) => c.children[0].textContent);
+
+  assert.deepStrictEqual(titles, [
+    'Boosters',
+    'Planning',
+    'Help',
+    RECORDED_SETTINGS_TITLE,
+    'Share this plan',
+  ]);
+  assert.match(titles[titles.indexOf('Share this plan') - 1], /recorded/i);
+  assert.match(titles[titles.indexOf('Share this plan') - 1], /not calculated/i);
+});
+
+test('each relocated field commits through onSettingChange with its unchanged path', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const commits = [];
+  const panel = exports.renderPanel(
+    doc,
+    doc.createElement('div'),
+    exports.buildPanelModel({ ...state, view: 'settings' }),
+    { onSettingChange: (field, value) => commits.push([field, value]) },
+  );
+  const recorded = descendants(panel.children[1]).find(
+    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE
+  );
+
+  const edit = (label, value) => {
+    const field = fieldFor(recorded, label);
+    field.value = value;
+    fire(field, 'change');
+  };
+  edit('Merits reduction (%)', '12');
+  edit('Principal rank (10%)', 'no');
+  edit('WSU stock block (10%)', 'no');
+  edit('Job points available', '17');
+
+  assert.deepStrictEqual(commits, [
+    ['perks.meritsPercent', '12'],
+    ['perks.principal', false],
+    ['perks.wsuBlock', false],
+    ['jobPoints', '17'],
+  ]);
 });
 
 test('an ambiguous reduction prefills nothing and says why', () => {
@@ -2480,10 +2572,10 @@ test('an ambiguous reduction still refills no perks after a settings defaults re
   assert.strictEqual(fieldFor(body, 'Merits reduction (%)').value, '');
   assert.strictEqual(fieldFor(body, 'Principal rank (10%)').value, '');
   assert.strictEqual(fieldFor(body, 'WSU stock block (10%)').value, '');
-  const perks = descendants(body).find(
-    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === 'Education perks'
+  const recorded = descendants(body).find(
+    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE
   );
-  assert.match(allText(perks), /4 possible combinations/);
+  assert.match(allText(recorded), /4 possible combinations/);
 });
 
 // Task 3: the focus view's own reset. The focus nav entry is disabled unless

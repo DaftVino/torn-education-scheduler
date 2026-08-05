@@ -2894,15 +2894,6 @@
     numberField(doc, boosters, 'Max booster cooldown (hours)', s.maxCooldownHours, function (v) { set('maxCooldownHours', v); });
     numberField(doc, boosters, 'Books of Carols owned', s.booksOwned, function (v) { set('booksOwned', v); });
     numberField(doc, boosters, 'Book of Carols price', s.bookPrice, function (v) { set('bookPrice', v); });
-    numberField(doc, boosters, 'Job points available', s.jobPoints, function (v) { set('jobPoints', v); });
-    // Torn already applies job points to the course in progress, so
-    // activeCourse.completedAt already reflects them — there is nothing here
-    // for this field to correct. It is recorded only so it travels with a
-    // shared plan string and a debug report.
-    const jobPointsNote = doc.createElement('div');
-    jobPointsNote.className = 'tes-note';
-    jobPointsNote.textContent = 'Job points do not change any date the panel shows. Torn already applies them to the course in progress; like the perk fields below, this field only travels with a shared plan and a debug report.';
-    boosters.appendChild(jobPointsNote);
 
     // What the defaults button (below, in the nav row) is about to do to this
     // whole form — stated once, beside the section a player opening Settings
@@ -2911,21 +2902,6 @@
     resetNote.className = 'tes-note';
     resetNote.textContent = 'Resetting to defaults clears what you typed. The perk fields will refill with what the panel inferred from your reduction — typing over them is what makes a value yours.';
     boosters.appendChild(resetNote);
-
-    const perks = settingsSection(doc, body, 'Education perks');
-    // The note carries the honesty: it names the inference as an inference, so
-    // a prefilled field is never mistaken for something we read off the account.
-    const note = doc.createElement('div');
-    note.className = 'tes-note';
-    note.textContent = model.perkInference.note;
-    perks.appendChild(note);
-    const perkUseNote = doc.createElement('div');
-    perkUseNote.className = 'tes-note';
-    perkUseNote.textContent = 'These fields do not change any date the panel shows. Torn already applies these perks to the course durations it sends, so the reduction is read from Torn rather than rebuilt from what is typed here. They are recorded only to travel with a shared plan and a debug report.';
-    perks.appendChild(perkUseNote);
-    numberField(doc, perks, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
-    triStateField(doc, perks, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
-    triStateField(doc, perks, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
 
     const planning = settingsSection(doc, body, 'Planning');
     const modeRow = doc.createElement('div');
@@ -2996,6 +2972,22 @@
       }
       help.appendChild(copy);
     }
+
+    const recorded = settingsSection(doc, body, 'Recorded with this plan — not calculated');
+    const recordedNote = doc.createElement('div');
+    recordedNote.className = 'tes-note';
+    recordedNote.textContent = 'These fields do not change any date the panel shows: Torn already applies education perks to the course durations it sends and job points to the course in progress, so the panel reads those durations rather than rebuilding them from these values. They are kept so they travel with a shared plan and a debug report.';
+    recorded.appendChild(recordedNote);
+    // The note carries the honesty: it names the inference as an inference, so
+    // a prefilled field is never mistaken for something we read off the account.
+    const note = doc.createElement('div');
+    note.className = 'tes-note';
+    note.textContent = model.perkInference.note;
+    recorded.appendChild(note);
+    numberField(doc, recorded, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
+    triStateField(doc, recorded, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
+    triStateField(doc, recorded, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
+    numberField(doc, recorded, 'Job points available', s.jobPoints, function (v) { set('jobPoints', v); });
 
     // The one place in this script that takes text from outside the player's
     // own browser. Everything it can produce is data: the box is a textarea
