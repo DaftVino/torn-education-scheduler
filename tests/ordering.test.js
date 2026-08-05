@@ -239,14 +239,14 @@ test('an unknown mode falls back to as-listed rather than throwing', () => {
   assert.deepStrictEqual(x.orderQueue(queue, undefined, data.courses), queue);
 });
 
-test('the shipped mode list is exactly the three, and days-per-bonus is not among them', () => {
+test('the shipped mode list is exactly the four, and days-per-bonus is not among them', () => {
   const { x } = load();
   // days-per-bonus is parked (v0.2.0-scope § H2): the payload offers two
   // incompatible definitions of "bonus", and they sort the catalogue
   // differently. A mode that means one of two things is worse than no mode.
   // Array.from, because a non-function export is handed back with the vm
   // realm's Array prototype and deepStrictEqual compares prototypes.
-  assert.deepStrictEqual(Array.from(x.ORDER_MODE_LABELS, (m) => m.id), MODES);
+  assert.deepStrictEqual(Array.from(x.ORDER_MODE_LABELS, (m) => m.id), MODES.concat(['focus']));
   for (const mode of x.ORDER_MODE_LABELS) {
     assert.strictEqual(typeof mode.label, 'string');
     assert.ok(mode.label.length > 0, `${mode.id} has no label`);
@@ -404,4 +404,127 @@ test('a queued id missing from the catalogue is carried through rather than thro
     assert.strictEqual(ordered.length, 2, `${mode} dropped a course it could not read`);
     assert.deepStrictEqual(new Set(ordered), new Set([1, 404]));
   }
+});
+
+// ── focus mode ──────────────────────────────────────────────────────────────
+
+test('focus ordering never changes the finish date', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 20);
+  const settings = x.normaliseSettings({ focuses: [{ category: 'Working Stats', selection: 'intelligence' }] });
+  const scores = x.focusScores(settings.focuses, data.courses);
+  const now = 1767225600;
+
+  const asListed = x.schedule({
+    courses: data.courses, activeCourse: data.activeCourse,
+    queue: x.orderQueue(queue, 'as-listed', data.courses), now,
+  });
+  const focused = x.schedule({
+    courses: data.courses, activeCourse: data.activeCourse,
+    queue: x.orderQueue(queue, 'focus', data.courses, scores), now,
+  });
+  assert.strictEqual(focused.finishesAt, asListed.finishesAt);
+  assert.strictEqual(focused.totalSeconds, asListed.totalSeconds);
+});
+
+test('focus ordering still places prerequisites before dependants', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 30);
+  const scores = x.focusScores([{ category: 'Working Stats', selection: 'intelligence' }], data.courses);
+  const ordered = x.orderQueue(queue, 'focus', data.courses, scores);
+  const seen = new Set();
+  for (const id of ordered) {
+    for (const up of x.upstreamOf(id, data.courses, new Map())) {
+      if (ordered.indexOf(up) !== -1) {
+        assert.ok(seen.has(up), `course ${id} placed before its prerequisite ${up}`);
+      }
+    }
+    seen.add(id);
+  }
+});
+
+// The brief's original version of this test compared every pair in the
+// output and excused a pair only when one course was a direct prerequisite of
+// the other. That is not enough: a course can also be delayed because of a
+// prerequisite of its OWN that has nothing to do with the other course in the
+// pair (course 78 loses early tiebreaks and so keeps its high-primary child
+// 81 waiting), and the unrestricted check flags that legitimate delay as a
+// "secondary outranked the primary" failure — it fails against a correct
+// lexicographic implementation on this fixture (verified by hand). Restricting
+// the check to courses with no prerequisite anywhere in the queue removes the
+// confound: a root is ready from the first step and stays ready until it is
+// picked, so nothing but rank can explain which of two roots is placed first.
+test('a second focus breaks ties without being summed into the first', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 25);
+  const queueSet = new Set(queue);
+  const two = x.orderQueue(queue, 'focus', data.courses,
+    x.focusScores([
+      { category: 'Working Stats', selection: 'intelligence' },
+      { category: 'Passive Stat Bonus', selection: 'Speed' },
+    ], data.courses));
+
+  const primary = x.focusScores([{ category: 'Working Stats', selection: 'intelligence' }], data.courses)[0];
+  const isRoot = (id) => {
+    for (const up of x.upstreamOf(id, data.courses, new Map())) {
+      if (queueSet.has(up)) return false;
+    }
+    return true;
+  };
+  const roots = two.filter(isRoot);
+  assert.ok(roots.length >= 2, 'need at least two root courses to prove anything here');
+  for (let i = 0; i < roots.length; i += 1) {
+    for (let j = i + 1; j < roots.length; j += 1) {
+      const a = primary.get(roots[i]) || 0;
+      const b = primary.get(roots[j]) || 0;
+      if (a !== b) {
+        assert.ok(a >= b, `${roots[i]} (primary ${a}) placed before ${roots[j]} (primary ${b})`);
+      }
+    }
+  }
+});
+
+// The test above only proves the fixture never happens to disagree with a
+// summed score — the fixture's magnitudes are not picked to make summing and
+// lexicographic ranking diverge, so it would pass even against a summed
+// implementation on unlucky data. This one is built specifically so the two
+// policies produce provably different orders, and pins the lexicographic one.
+test('lexicographic ranking, not summed: a big secondary score cannot buy a place ahead of a better primary', () => {
+  const { x } = load();
+  // No prerequisite relationships at all, so the tiebreak is the only thing
+  // choosing and every course is ready from the start.
+  const courses = makeCourses([
+    { id: 1, duration: 100 }, // primary 10, secondary 0
+    { id: 2, duration: 100 }, // primary 9,  secondary 100 — huge secondary, weaker primary
+    { id: 3, duration: 100 }, // primary 1,  secondary 0
+    { id: 4, duration: 100 }, // primary 0,  secondary 0
+  ]);
+  const primaryMap = new Map([[1, 10], [2, 9], [3, 1], [4, 0]]);
+  const secondaryMap = new Map([[1, 0], [2, 100], [3, 0], [4, 0]]);
+
+  // Lexicographic: sort by primary alone since no two primaries tie -> 1,2,3,4.
+  // Summed: -(10+0), -(9+100), -(1+0), -(0+0) = -10, -109, -1, 0, sorted
+  // ascending gives 2,1,3,4 — course 2 jumps to first on the strength of a
+  // secondary focus alone. If this ever comes back [2, 1, 3, 4] the
+  // implementation is summing rather than ranking lexicographically.
+  const ordered = x.orderQueue([4, 3, 2, 1], 'focus', courses, [primaryMap, secondaryMap]);
+  assert.deepStrictEqual(ordered, [1, 2, 3, 4]);
+});
+
+test('focus mode with no scores degrades to the queue as given', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 10);
+  assert.deepStrictEqual(x.orderQueue(queue, 'focus', data.courses, []), x.orderQueue(queue, 'as-listed', data.courses));
+});
+
+test('focus is a Queue order option, because that select is what switches it on', () => {
+  const { x } = load();
+  const ids = x.ORDER_MODE_LABELS.map((m) => m.id);
+  assert.ok(ids.includes('focus'), 'the focus view is gated on this option existing');
+  assert.strictEqual(ids.length, 4);
+});
+
+test('a stored orderMode of focus survives normalisation', () => {
+  const { x } = load();
+  assert.strictEqual(x.normaliseSettings({ orderMode: 'focus' }).orderMode, 'focus');
 });
