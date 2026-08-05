@@ -780,9 +780,13 @@ test('the recorded settings note explains why its fields do not change dates and
 
   assert.strictEqual(explanatoryNotes.length, 1, 'the inert-field explanation is split or repeated');
   assert.match(explanatoryNotes[0].textContent, /do not change any date the panel shows/);
-  assert.match(explanatoryNotes[0].textContent, /applies education perks to the course durations it sends/);
-  assert.match(explanatoryNotes[0].textContent, /job points to the course in progress/);
+  assert.match(explanatoryNotes[0].textContent, /applied your education perks to the course durations it sends/);
   assert.match(explanatoryNotes[0].textContent, /reads those durations rather than rebuilding them/);
+  // Job points used to be listed here as a fourth inert field. They are not
+  // inert any more (planConsumables spends them), so the note has to say so
+  // rather than leave a player hunting the section they were moved out of.
+  assert.match(explanatoryNotes[0].textContent, /Job points are not among them/);
+  assert.match(explanatoryNotes[0].textContent, /Boosters/);
   assert.match(explanatoryNotes[0].textContent, /shared plan and a debug report/);
 });
 
@@ -804,10 +808,14 @@ test('only date-changing booster fields remain and inert fields render only in t
     'Merits reduction (%)',
     'Principal rank (10%)',
     'WSU stock block (10%)',
-    'Job points available',
   ];
 
+  // Job points came BACK to Boosters when they stopped being inert: they are
+  // spent by the player on courses not yet started, so planConsumables really
+  // does subtract them. First in the section because they are first in the
+  // arithmetic — the Book figures are computed against what they leave behind.
   assert.deepStrictEqual(rowLabels(section('Boosters')), [
+    'Job points available',
     'Max booster cooldown (hours)',
     'Books of Carols owned',
     'Book of Carols price',
@@ -857,15 +865,22 @@ test('each relocated field commits through onSettingChange with its unchanged pa
     (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === RECORDED_SETTINGS_TITLE
   );
 
-  const edit = (label, value) => {
-    const field = fieldFor(recorded, label);
+  const edit = (parent, label, value) => {
+    const field = fieldFor(parent, label);
     field.value = value;
     fire(field, 'change');
   };
-  edit('Merits reduction (%)', '12');
-  edit('Principal rank (10%)', 'no');
-  edit('WSU stock block (10%)', 'no');
-  edit('Job points available', '17');
+  edit(recorded, 'Merits reduction (%)', '12');
+  edit(recorded, 'Principal rank (10%)', 'no');
+  edit(recorded, 'WSU stock block (10%)', 'no');
+  // Job points now live in Boosters, but the field path is the one thing that
+  // must not have moved with them: the share string and the debug report both
+  // key off `jobPoints`, and a rename would silently break every plan already
+  // in circulation.
+  const boosters = descendants(panel.children[1]).find(
+    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === 'Boosters'
+  );
+  edit(boosters, 'Job points available', '17');
 
   assert.deepStrictEqual(commits, [
     ['perks.meritsPercent', '12'],

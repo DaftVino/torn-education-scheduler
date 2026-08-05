@@ -60,7 +60,7 @@ const EXPORT_NAMES = [
   // player's own browser
   'SHARE_PREFIX', 'encodePlan', 'decodePlan', 'FOCUS_CONCAT_INDEX',
   // consumables: the Books ceiling, the floor date, and what it costs
-  'SECONDS_PER_BOOK', 'booksCeiling', 'planConsumables', 'formatMoney',
+  'SECONDS_PER_BOOK', 'SECONDS_PER_JOB_POINT', 'booksCeiling', 'planConsumables', 'formatMoney',
   // adapter
   'fetchEducationData',
   // acquisition

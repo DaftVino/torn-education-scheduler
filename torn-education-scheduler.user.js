@@ -1234,6 +1234,13 @@
   // the two, and writing 43200 with a "6 + 6" comment beside it would leave the
   // relationship described rather than enforced.
   const BOOK_FIXED_POINT_SECONDS = SECONDS_PER_BOOK + BOOK_COOLDOWN_SECONDS;
+  // A job point buys 30 minutes off a course. Spent per course in the game,
+  // but the panel is costing a whole path, and over a path the only thing
+  // that matters is the total: N points remove N × 30 minutes from it.
+  //
+  // Unlike a Book, a point carries no cooldown, so there is no fixed point to
+  // solve and no ceiling beyond the path itself.
+  const SECONDS_PER_JOB_POINT = 1800;
 
   // Cooldown decays in real time, so over a long path the ceiling is set by the
   // total cooldown budget rather than by a single sitting:
@@ -1256,16 +1263,38 @@
   // and the floor from maximum possible use. The floor is NOT the planned date
   // minus leftovers, and it ships with its cost because "98 days for 5.35b" is
   // actionable where "98 days" is not.
+  //
+  // Job points are applied before either, and the ordering is load-bearing
+  // rather than cosmetic — see the comment on `boosted` below.
   function planConsumables(options) {
     const opts = options || {};
     const base = isInt(opts.baseSeconds) && opts.baseSeconds >= 0 ? opts.baseSeconds : 0;
     const owned = isInt(opts.booksOwned) && opts.booksOwned >= 0 ? opts.booksOwned : 0;
     const price = isInt(opts.bookPrice) && opts.bookPrice >= 0 ? opts.bookPrice : 0;
-    const ceiling = booksCeiling({ baseSeconds: base, maxCooldownSeconds: opts.maxCooldownSeconds });
+    const points = isInt(opts.jobPoints) && opts.jobPoints >= 0 ? opts.jobPoints : 0;
+
+    // Clamped to the path, exactly as every Book saving below is: a player
+    // holding more points than they have queued time cannot drive the path
+    // past zero.
+    const jobPointSaving = Math.min(points * SECONDS_PER_JOB_POINT, base);
+    // The points the saving actually costs, never the points the player holds.
+    // Same distinction plannedBooks draws below and for the same reason: a
+    // clamped saving quoted beside an unclamped count describes nothing.
+    // Math.ceil, because a half-spent point is spent.
+    const jobPointsUsed = Math.ceil(jobPointSaving / SECONDS_PER_JOB_POINT);
+    // Every Book figure below is computed against THIS, not against `base`.
+    // The ordering is not presentational: `ceiling` is a function of the path
+    // length, so points shorten the path AND lower the number of Books it can
+    // absorb. Costing the Books first would price a ceiling for a path that
+    // no longer exists — the same class of error as pricing the floor at the
+    // cooldown ceiling, which this function already refuses to do.
+    const boosted = base - jobPointSaving;
+
+    const ceiling = booksCeiling({ baseSeconds: boosted, maxCooldownSeconds: opts.maxCooldownSeconds });
 
     const usable = Math.min(owned, ceiling);
-    const plannedSaving = Math.min(usable * SECONDS_PER_BOOK, base);
-    const floorSaving = Math.min(ceiling * SECONDS_PER_BOOK, base);
+    const plannedSaving = Math.min(usable * SECONDS_PER_BOOK, boosted);
+    const floorSaving = Math.min(ceiling * SECONDS_PER_BOOK, boosted);
 
     // Count and price the Books that actually buy the saving, never the ones
     // the cooldown budget would merely allow. The two diverge whenever the
@@ -1278,13 +1307,20 @@
     const floorBooks = Math.ceil(floorSaving / SECONDS_PER_BOOK);
 
     return {
+      // Points, then the path they leave behind for the Books to work on.
+      // jobPointSeconds is what every figure below was computed against, so a
+      // consumer that wants to show the ordering has the intermediate value
+      // rather than having to re-derive it from a saving.
+      jobPoints: jobPointsUsed,
+      jobPointSaving: jobPointSaving,
+      jobPointSeconds: boosted,
       ceiling: ceiling,
       plannedBooks: plannedBooks,
       plannedSaving: plannedSaving,
-      plannedSeconds: base - plannedSaving,
+      plannedSeconds: boosted - plannedSaving,
       floorBooks: floorBooks,
       floorSaving: floorSaving,
-      floorSeconds: base - floorSaving,
+      floorSeconds: boosted - floorSaving,
       floorCost: floorBooks * price,
       // A price of zero is not a price. SETTINGS_BOUNDS.bookPrice.min is 0, so
       // a player who TYPES 0 gets there and it survives normalisation — the
@@ -2228,12 +2264,18 @@
           maxCooldownSeconds: settings.maxCooldownHours * 3600,
           booksOwned: settings.booksOwned,
           bookPrice: settings.bookPrice,
+          jobPoints: settings.jobPoints,
         })
       : null;
     // startsAt + seconds, not finishesAt - saving: the queue begins when the
     // active course ends, and that anchor is the only fixed point either date
     // can be measured from.
     const consumablesModel = consumables ? {
+      // The job-point line is the path the Books then work on, so it renders
+      // above them — the view's line order is the calculation's order.
+      jobPoints: consumables.jobPoints,
+      jobPointFinishLabel: `${formatDate(result.startsAt + consumables.jobPointSeconds)} · ${formatTime(result.startsAt + consumables.jobPointSeconds)} TCT`,
+      jobPointDurationLabel: formatDuration(consumables.jobPointSeconds),
       ceiling: consumables.ceiling,
       plannedBooks: consumables.plannedBooks,
       plannedFinishLabel: `${formatDate(result.startsAt + consumables.plannedSeconds)} · ${formatTime(result.startsAt + consumables.plannedSeconds)} TCT`,
@@ -2891,6 +2933,15 @@
     }
 
     const boosters = settingsSection(doc, body, 'Boosters');
+    // First in the section because it is first in the arithmetic
+    // (planConsumables): points come off the path, and the Book figures are
+    // computed against what they leave behind. Reading the section top to
+    // bottom is reading the calculation in order.
+    numberField(doc, boosters, 'Job points available', s.jobPoints, function (v) { set('jobPoints', v); });
+    const jobPointNote = doc.createElement('div');
+    jobPointNote.className = 'tes-note';
+    jobPointNote.textContent = 'Each job point removes 30 minutes from a queued course, and points are spent before any Book of Carols — so the Book figures on the schedule are what is left after them. Time already running on your current course is not affected.';
+    boosters.appendChild(jobPointNote);
     numberField(doc, boosters, 'Max booster cooldown (hours)', s.maxCooldownHours, function (v) { set('maxCooldownHours', v); });
     numberField(doc, boosters, 'Books of Carols owned', s.booksOwned, function (v) { set('booksOwned', v); });
     numberField(doc, boosters, 'Book of Carols price', s.bookPrice, function (v) { set('bookPrice', v); });
@@ -2976,7 +3027,7 @@
     const recorded = settingsSection(doc, body, 'Recorded with this plan — not calculated');
     const recordedNote = doc.createElement('div');
     recordedNote.className = 'tes-note';
-    recordedNote.textContent = 'These fields do not change any date the panel shows: Torn already applies education perks to the course durations it sends and job points to the course in progress, so the panel reads those durations rather than rebuilding them from these values. They are kept so they travel with a shared plan and a debug report.';
+    recordedNote.textContent = 'These fields do not change any date the panel shows: Torn has already applied your education perks to the course durations it sends, so the panel reads those durations rather than rebuilding them from these values. They are kept so they travel with a shared plan and a debug report. Job points are not among them — they are spent by you, on courses you have not started yet, so they live in Boosters and do move the dates.';
     recorded.appendChild(recordedNote);
     // The note carries the honesty: it names the inference as an inference, so
     // a prefilled field is never mistaken for something we read off the account.
@@ -2987,7 +3038,6 @@
     numberField(doc, recorded, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
     triStateField(doc, recorded, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
     triStateField(doc, recorded, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
-    numberField(doc, recorded, 'Job points available', s.jobPoints, function (v) { set('jobPoints', v); });
 
     // The one place in this script that takes text from outside the player's
     // own browser. Everything it can produce is data: the box is a textarea
@@ -3297,6 +3347,13 @@
       // so it asks for that directly rather than depending on the class.
       boost.style.whiteSpace = 'pre-line';
       const lines = [];
+      // First, because it is first in the arithmetic: the Books lines below
+      // are computed against the path this one leaves behind, not against the
+      // raw queue total. Rendering them the other way round would read as two
+      // independent savings off the same number.
+      if (c.jobPoints > 0) {
+        lines.push(`With ${c.jobPoints} job point${c.jobPoints === 1 ? '' : 's'} (30 mins each): ${c.jobPointFinishLabel} (${c.jobPointDurationLabel})`);
+      }
       if (c.plannedBooks > 0) {
         lines.push(`With ${c.plannedBooks} Book${c.plannedBooks === 1 ? '' : 's'} of Carols: ${c.plannedFinishLabel} (${c.plannedDurationLabel})`);
       }
@@ -3309,7 +3366,7 @@
       if (!c.floorCostLabel) {
         lines.push('Set a Book price in settings to see what that floor would cost.');
       }
-      lines.push('Books shorten queued course time. Time already running on your current course is not affected.');
+      lines.push('Job points are spent first, at 30 minutes each, and the Book figures above are what is left after them. Both shorten queued course time. Time already running on your current course is not affected.');
       boost.textContent = lines.join('\n');
       body.appendChild(boost);
     }
