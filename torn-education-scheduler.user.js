@@ -3441,12 +3441,17 @@
     intro.textContent = 'Each box answers: if I did only this degree, starting now, when would it finish?';
     body.appendChild(intro);
 
-    // Lifted out of the grid (it used to be the last cell, .tes-cell-all) and
-    // given its own full-width banner: it is not a thirteenth degree, it is
-    // the answer to a different question — everything at once — and sat
-    // among the degree boxes it read as one more of them rather than the
-    // total. allBox carries the same durationLabel/finishLabel treatment as
-    // every cell (buildPanelModel), just rendered here instead of in .tes-grid.
+    // Its own full-width banner above the list, not a row inside it: this is
+    // the answer to a different question — everything at once — and sitting
+    // among the degrees it reads as one more of them rather than the total.
+    //
+    // That reasoning survived the v0.5.0 layout pass, which replaced the card
+    // grid this banner was originally lifted out of with .tes-degree-list. The
+    // previous version of this comment still explained the banner in terms of
+    // .tes-grid and .tes-cell-all, neither of which exists any more — it
+    // described a layout the reader could no longer find, which is the failure
+    // this file names elsewhere: prefer the invariant (the total is not one of
+    // the degrees) over the mechanism it was once expressed through.
     const banner = doc.createElement('div');
     banner.className = 'tes-all-banner';
     const bannerTitle = doc.createElement('div');
