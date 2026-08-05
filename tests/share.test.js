@@ -422,7 +422,7 @@ const importButton = (body) => descendants(body).find((el) => /import/i.test(el.
 
 function renderedQueueIds(doc) {
   return descendants(panelBody(doc))
-    .filter((el) => el.className === 'tes-row')
+    .filter((el) => el.className === 'tes-queue-row')
     .map((row) => (row.children || []).find((c) => c.dataset && c.dataset.courseId !== undefined))
     .filter(Boolean)
     .map((btn) => Number(btn.dataset.courseId));
