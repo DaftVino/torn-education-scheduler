@@ -1872,6 +1872,16 @@
     return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
   }
 
+  // Abbreviation rule (do not re-litigate without updating this comment):
+  // abbreviate in dense readouts where the word sits beside a number and
+  // space is scarce — "6 crs", "84 days", "12 hrs" (the grid cell, the
+  // queue row, this function). Keep the full word in prose, where it reads
+  // as a sentence rather than a measurement — the picker's own
+  // `— all remaining courses (115) —` at ~2980 is the deliberate exception:
+  // "all remaining crs (115)" reads badly in a full-width dropdown with no
+  // space pressure, and the all-remaining banner (a later task in this
+  // plan) titles itself "all remaining courses" too, so the picker matches
+  // the banner rather than the grid.
   function formatDuration(seconds) {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
@@ -2977,6 +2987,9 @@
     if (model.addable.length > 0) {
       const allOpt = doc.createElement('option');
       allOpt.value = ALL_COURSES_OPTION;
+      // Deliberately unabbreviated — see the rule above formatDuration. This
+      // is prose in a full-width dropdown, not a dense readout, and it is
+      // meant to read the same as the all-remaining banner's own title.
       allOpt.textContent = `— all remaining courses (${model.addable.length}) —`;
       if (model.selectedCourseId === ALL_COURSES_OPTION) allOpt.selected = true;
       picker.appendChild(allOpt);
