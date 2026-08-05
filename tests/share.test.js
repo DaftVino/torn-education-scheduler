@@ -38,6 +38,51 @@ test('a plan round-trips through encode and decode', () => {
   assert.strictEqual(out.settings.orderMode, 'shortest-first');
 });
 
+test('a focus set round-trips through the share string, in priority order', () => {
+  const { x, courses } = load();
+  const settings = x.normaliseSettings({ focuses: [
+    { category: 'Working Stats', selection: 'intelligence' },
+    { category: 'Passive Stat Bonus', selection: 'Speed' },
+  ] });
+  const text = x.encodePlan({ queue: [34] }, settings);
+  const got = x.decodePlan(text, courses);
+  assert.strictEqual(got.ok, true, got.detail);
+  // deepStrictEqual on the array checks order as well as membership, which is
+  // the point: priority IS the index, so a decoder that round-tripped the
+  // right two focuses in the wrong order would still be wrong.
+  assert.deepStrictEqual(got.settings.focuses, settings.focuses);
+  // And the reverse order is a different plan, not an equal one — guards
+  // against a comparison that only checked set membership.
+  assert.notDeepStrictEqual(got.settings.focuses, settings.focuses.slice().reverse());
+});
+
+test('an unknown selection refuses the whole import', () => {
+  const { x, courses } = load();
+  const text = x.encodePlan({ queue: [34] }, x.normaliseSettings(null)) + '|f=NopeNope';
+  const got = x.decodePlan(text, courses);
+  assert.strictEqual(got.ok, false);
+  assert.strictEqual(got.reason, 'unknown-focus');
+});
+
+test('a focus set with a genuine selection alongside an unknown one refuses too, not partially', () => {
+  const { x, courses } = load();
+  const text = x.encodePlan({ queue: [34] }, x.normaliseSettings(null)) + '|f=Working Statsintelligence,NopeNope';
+  const got = x.decodePlan(text, courses);
+  assert.strictEqual(got.ok, false, 'a mix of one good and one bad focus imported partially');
+});
+
+test('a share string with no focus field imports with an empty focus set', () => {
+  const { x, courses } = load();
+  const got = x.decodePlan(x.encodePlan({ queue: [34] }, x.normaliseSettings(null)), courses);
+  assert.strictEqual(got.ok, true);
+  assert.deepStrictEqual(got.settings.focuses, []);
+});
+
+test('a focus field full of separators never throws', () => {
+  const { x, courses } = load();
+  assert.doesNotThrow(() => x.decodePlan('TES1|q=34|f=,,,', courses));
+});
+
 test('an empty queue round-trips', () => {
   const { x, courses } = load();
   const out = x.decodePlan(x.encodePlan({ queue: [] }, x.freshSettings()), courses);
