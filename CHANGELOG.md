@@ -10,10 +10,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 - A Focus view: pick what you want out of education — a working stat, a battle
   stat, weapon damage, or a specific unlock — and the queue re-sorts to deliver
-  it first. Ten categories, 79 selections, built from a classification of all
-  101 of Torn's `learningOutcomes` strings. Focus mode is switched on from
-  Queue order; the nav button is disabled until then and says so. Multiple
-  focuses rank lexicographically by the priority you set, never summed.
+  it first. Ten categories, 82 selections — 79 built from a classification of
+  all 101 of Torn's `learningOutcomes` strings, plus Working Stats' own three.
+  Focus mode is switched on from Queue order; the nav button is disabled until
+  then and says so. Multiple focuses rank lexicographically by the priority
+  you set, never summed.
 - Reset controls: `reset` on the schedule clears the queue, `reset` on Focus
   clears your selections, `defaults` on Settings restores setting defaults —
   each takes two clicks to arm and confirm, and each clears only what its own

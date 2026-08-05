@@ -4,7 +4,7 @@ The one gate the harness cannot run. `/qa` and `/browse` are off for this repo
 (`CLAUDE.md`): the app under test is a third-party site behind a real login, so
 every case here is run by hand, in a real browser, signed into a real account.
 
-473 automated tests pass against a scrubbed fixture. Everything below exists
+476 automated tests pass against a scrubbed fixture. Everything below exists
 because a fixture cannot prove it: the live DOM, Torn's real React tree,
 Tampermonkey's sandbox, and whether the words on screen are true.
 
