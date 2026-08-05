@@ -2524,8 +2524,9 @@
       '#tes-panel .tes-section { margin-bottom: var(--tes-gap-lg); }',
       '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); color: var(--tm-meta); }',
       '#tes-panel .tes-focus-section { border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; margin-bottom: var(--tes-gap-lg); }',
-      '#tes-panel .tes-focus-section-header { display: grid; grid-template-columns: 2.5em 1fr; align-items: center; gap: 8px; }',
+      '#tes-panel .tes-focus-section-header { display: grid; grid-template-columns: 2.5em 1fr auto; align-items: center; gap: 8px; }',
       '#tes-panel .tes-focus-section-title { width: 100%; text-align: left; }',
+      '#tes-panel .tes-focus-section-count { justify-self: end; color: var(--tm-muted); font-size: var(--tes-text-sm); white-space: nowrap; }',
       '#tes-panel .tes-focus-priority-slot { width: 2.5em; }',
       '#tes-panel .tes-focus-row { display: grid; grid-template-columns: 1.5em 1fr auto; align-items: center; gap: 8px; padding: 2px 0; }',
       '#tes-panel .tes-focus-row input[type="checkbox"] { width: auto; }',
@@ -2754,7 +2755,7 @@
   // Focus categories are collapsed independently and are deliberately not
   // settings sections: their heading is a control, while settings headings
   // must remain inert labels with the exact shape their callers expect.
-  function focusSection(doc, body, title, chosen, expanded, onToggle, onPriority) {
+  function focusSection(doc, body, title, selections, chosen, expanded, onToggle, onPriority) {
     const section = doc.createElement('div');
     section.className = 'tes-focus-section';
     const header = doc.createElement('div');
@@ -2783,6 +2784,12 @@
     heading.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     if (heading.addEventListener) heading.addEventListener('click', onToggle);
     header.appendChild(heading);
+    const total = selections.length;
+    const complete = selections.filter(function (selection) { return selection.remainingLabel === 'complete'; }).length;
+    const count = doc.createElement('span');
+    count.className = 'tes-focus-section-count';
+    count.textContent = `${total - complete} rem /${total} total`;
+    header.appendChild(count);
     section.appendChild(header);
     body.appendChild(section);
     return section;
@@ -3125,7 +3132,7 @@
       const chosen = group.selections.find(function (sel) {
         return sel.priority !== null;
       }) || null;
-      const section = focusSection(doc, body, group.category, chosen, expanded, function () {
+      const section = focusSection(doc, body, group.category, group.selections, chosen, expanded, function () {
         toggleSection(group.category);
       }, function (selection, position) {
         reprioritise(group.category, selection, position);
