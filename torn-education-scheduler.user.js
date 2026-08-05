@@ -22,8 +22,8 @@
 // repository — with its LICENSE, its README and its history — does not travel
 // with it. Without this line the copy on someone's disk states no terms at
 // all, and Greasy Fork reads this key rather than the repo to decide what it
-// is allowed to host. tests/metadata.test.js pins it to package.json and the
-// LICENSE file so the three cannot drift into disagreeing about one fact.
+// is allowed to host. It is kept in step with package.json and the LICENSE
+// file, so the three cannot disagree about one fact.
 
 (function () {
   'use strict';
@@ -37,58 +37,28 @@
   // plausible id, so a missed guard fails visibly instead of queueing course 0.
   const ALL_COURSES_OPTION = '__all__';
 
-  // The two § K1 launch URLs. They resolve at DIFFERENT moments — the script is
-  // listed on Greasy Fork before the forum post is written — so this is two
-  // passes, and **only the first has happened**. GREASY_FORK_URL is real;
-  // FORUM_POST_URL is still a placeholder. Do not read the pair as one state.
+  // The two launch URLs, in different states: the script is listed, the forum
+  // post is not yet written.
   //
-  // PLACEHOLDER_TOKEN is therefore still live rather than a leftover, and its
-  // name invites exactly that misreading, so: it is the marker FORUM_POST_URL
-  // below is built from, and the string isResolvedUrl looks for to decide
-  // whether a URL may be rendered. Deleting it breaks both. It goes when the
-  // forum post is published and nothing is built from it any more.
-  //
-  // Placeholders rather than null, at the owner's request, so resolving one is
-  // swapping a string rather than reintroducing a value.
-  //
-  // What that does NOT mean, because the first version of this comment claimed
-  // it and was wrong: a placeholder is not visible anywhere in the panel and
-  // cannot be QA'd by looking. Nothing renders while a URL is unresolved — see
-  // isResolvedUrl below — because a link to a dead address is worse than no
-  // link, and shipping one is the exact failure the token is shouty to prevent.
-  // The rendered-link path is covered by tests instead, which load this file
-  // with both URLs forced to real values (tests/load-userscript.js'
-  // resolveLaunchUrls) and assert the links appear with the right href;
-  // asserting only that nothing renders today would leave launch day untested.
-  //
-  // `tests/metadata.test.js` also fails the build if a placeholder is still
-  // present once @downloadURL/@updateURL are added, so one cannot ship.
-  //
-  // To resolve the remaining one: replace the whole string. Do not edit around
-  // the token — the guard test matches on it, and a half-edited URL would pass.
+  // PLACEHOLDER_TOKEN is live, not a leftover — FORUM_POST_URL is built from
+  // it and isResolvedUrl matches on it. To resolve: replace the whole string,
+  // never part of it — a half-edited URL would read as resolved.
   const PLACEHOLDER_TOKEN = 'REPLACE_BEFORE_LAUNCH';
-  // Pass 1 is done: the script is listed, so this is the real page and the
-  // debug report's contact line now names where to send it. It matches the
-  // @homepage above deliberately — one address for the script, not two.
+  // Same address as @homepage above: one place to send people, not two.
   const GREASY_FORK_URL = 'https://greasyfork.org/en/scripts/590070-torn-education-scheduler';
-  // Pass 2 is not: the forum post is unwritten (docs/designs/forum-post-plan.md),
-  // so this stays a placeholder and every consumer keeps rendering nothing.
   const FORUM_POST_URL = `https://www.torn.com/forums.php#/${PLACEHOLDER_TOKEN}`;
 
-  // Every consumer of the two constants above tests THIS, never the constant's
-  // own truthiness. A placeholder is a non-empty string, so `if (FORUM_POST_URL)`
-  // would have started rendering a link to a dead URL the moment the
-  // placeholders replaced null — which is precisely the "looks like it works"
-  // failure the comment above warns about. Nothing renders until a URL is real.
+  // Every consumer tests this, never the constant's own truthiness: a
+  // placeholder is a non-empty string, so `if (FORUM_POST_URL)` would render a
+  // link to a dead address. Nothing renders until a URL is real.
   function isResolvedUrl(url) {
     return typeof url === 'string' && url.length > 0 && url.indexOf(PLACEHOLDER_TOKEN) === -1;
   }
 
   // ─── ENGINE START ───────────────────────────────────────────────
   // Pure functions only. No DOM, no network, no GM_*, no ambient clock.
-  // Enforced by tests/purity.test.js, which strips comments before scanning —
-  // prose here may use ordinary English words like window or location; code
-  // here may not touch them.
+  // Checked automatically, comments excluded — prose here may use ordinary
+  // English words like window or location; code here may not touch them.
 
   const VALID_STATUSES = new Set(['completed', 'inProgress', 'available', 'notMeetRequirement']);
 
@@ -318,33 +288,14 @@
     return result;
   }
 
-  // What the player will have finished by the time a *plan* starts, as opposed
-  // to what they have finished today. The two differ by exactly one thing: the
-  // course being served right now. Nothing queued can begin before it ends —
-  // schedule() starts the queue at activeCourse.completedAt — so for judging a
-  // plan the in-progress course is done.
+  // What you will have finished by the time a plan starts, rather than today:
+  // the course running now ends before anything queued can begin, so for
+  // judging a plan it counts as done. unmetPrerequisites answers the other
+  // question — "can I start this today?" — where it correctly does not.
   //
-  // unmetPrerequisites answers the other question, "can I start this today?",
-  // where an in-progress course is correctly *not* completed
-  // (tests/prereq.test.js pins that, deliberately). Neither is a softening of
-  // the other: the caller picks the set that matches the question it is asking.
-  // Without this, the Biology bachelor is unqueueable for as long as any
-  // Biology tier-2 course is running — which, for a player on the education
-  // page, is nearly always — and the panel would answer "all remaining courses"
-  // with a plan it then refuses to date.
-  //
-  // Only the course `activeCourse` actually names is promoted — gated on
-  // `activeCourse.id`, not on `status` alone, since the two come from
-  // independent parts of the payload. This function does not itself check
-  // `completedAt`; that a named `activeCourse` carries a valid one is a
-  // `parsePayload` invariant enforced before any caller reaches here, not
-  // re-verified by this one (call it directly with `{id: 34}` and it
-  // promotes). A course marked inProgress that activeCourse does not name has
-  // no completion time anywhere, so schedule() bills none of its remaining
-  // weeks. Promoting it would print a finish date short by up to a whole
-  // course. Refusing to promote it costs only the withheld date the panel
-  // would have shown before any of this existed, which is the trade this
-  // codebase makes every time: no date beats a wrong one.
+  // Only the course activeCourse names is promoted. One marked inProgress that
+  // it does not name has no completion time anywhere, so counting it would
+  // print a finish date short by up to a whole course.
   function plannedCompletions(completedIds, courses, activeCourse) {
     const done = new Set(completedIds);
     if (!activeCourse || !isInt(activeCourse.id)) return done;
@@ -396,16 +347,9 @@
   }
 
   // Ordering does NOT change the finish date. Courses run one at a time, so
-  // the total is a sum, and a sum is order-independent — tests/engine.test.js
-  // asserts that property directly and tests/ordering.test.js re-asserts it for
-  // every mode. What ordering changes is time-to-benefit: how early each perk
-  // starts paying off. Several community guides blur the two. This must not.
-  //
-  // Three modes, not four: days-per-bonus is parked (docs/designs/
-  // v0.2.0-scope.md § H2) because the payload offers two candidate meanings of
-  // "bonus" that sort the catalogue differently, and a mode that means one of
-  // two things is worse than no mode. It must stay out of this list — an
-  // unknown id falls back to as-listed, which is the behaviour it gets today.
+  // the total is a sum, and a sum does not care about order. What ordering
+  // changes is time-to-benefit: how early each perk starts paying off. Several
+  // community guides blur the two. This must not.
   //
   // This list is the single source of truth for the mode vocabulary:
   // ORDER_MODES (which normaliseSettings validates against) is derived from it
@@ -631,30 +575,19 @@
     return out;
   }
 
-  // The fresh-install focus order: gain multipliers, then quantified benefits,
-  // then unlocks/unscored courses. Contributions are normalised per type before
-  // they are summed, so a unit that happens to use large numbers cannot buy a
-  // higher rank than a different kind of benefit.
-  // Returns a VECTOR of two maps — `[group, score]` — for orderQueue's existing
-  // lexicographic comparison, not one combined number.
+  // The fresh-install order: gain multipliers, then quantified benefits, then
+  // unlocks. Contributions are normalised per type before they are summed, so a
+  // benefit that happens to use large numbers cannot outrank a different kind.
   //
-  // The combined number was tried first and is a trap worth recording, because
-  // it passes every test that checks a score and still orders by the wrong
-  // thing. Adding a large per-group offset (1e12 / 1e6 / 0) does keep the
-  // groups disjoint — but orderQueue then divides the WHOLE value by the
-  // course's duration, and the offset divides with it. Across the real
-  // catalogue the offset term spans 238,095 down to 34,014 while the
-  // normalised score spans 0.3, so the score contributes about one part in a
-  // million and the result is shortest-first wearing a scoring feature's
-  // clothes. Every score-level assertion still passed.
+  // Returns a VECTOR of two maps — [group, score] — compared lexicographically,
+  // never one combined number. Folding the group into the score as an offset
+  // fails silently: orderQueue divides by duration, the offset divides with it,
+  // and the offset term dwarfs the score by six orders of magnitude — leaving
+  // shortest-first wearing a scoring feature's clothes.
   //
-  // Lexicographically the group is simply compared first and never mixed into
-  // the score's magnitude, so no offset is needed and nothing can drown
-  // anything else out.
-  //
-  // `basis` is applied HERE, to the score element only — a group is not a rate
-  // and dividing it by days is meaningless. Callers must therefore ask
-  // orderQueue for 'total' so it does not divide a second time.
+  // `basis` is applied here, to the score element only, since a group is not a
+  // rate. Callers therefore ask orderQueue for 'total' so it does not divide
+  // a second time.
   function balancedScores(courses, completedIds, basis) {
     const map = (courses instanceof Map) ? courses : new Map();
     const done = (completedIds instanceof Set) ? completedIds : new Set();
@@ -866,34 +799,16 @@
     return { unit, total, remaining, statable };
   }
 
-  // Everything that has to be done before this course can be: the parentId
-  // chain, plus the one rule the payload does not carry in parentId — a tier-3
-  // bachelor requires every tier-2 course in its own category.
+  // Everything that must be done before this course can be: the parentId chain,
+  // plus the rule the payload does not carry — a tier-3 bachelor requires every
+  // tier-2 course in its own category. The two compose, which is why this is one
+  // closure rather than two checks: a tier-1 root reaches its own bachelor only
+  // through the tier-2 courses between them.
   //
-  // The two rules COMPOSE, and that is the whole reason this is a closure
-  // rather than two separate tests. A tier-1 root reaches its category's
-  // bachelor only through the tier-2 courses between them, so asking "is the
-  // target a tier-2 course in this bachelor's category?" as a second chance
-  // after the parent walk misses every tier-1 root by exactly one — its own
-  // bachelor. That was the defect in the first cut of dependentCount: uniform
-  // across all twelve roots, invisible on today's catalogue because tier-1
-  // counts (6-14) never cross tier-2's (1-2), and wrong the moment a rank band
-  // is mixed. tests/ordering.test.js pins the exact counts now, and the mixed
-  // band as its own case, rather than a floor that passes either way.
-  //
-  // `cache` is optional caller-supplied scratch, so a caller asking about many
-  // courses over one catalogue walks each chain once. Omitted, the walk is
-  // private and the answer is identical. Two contracts come with it:
-  //
-  //   1. It is keyed by course id ALONE, not by catalogue. One cache belongs to
-  //      one `courses` map, and handing a cache warmed against a different one
-  //      returns confidently wrong answers rather than failing. No caller in
-  //      this file can — orderQueue creates its cache and drops it inside one
-  //      call — but dependentCount is exported taking it, so the rule is
-  //      written down rather than left to be inferred.
-  //   2. The returned Set on a cache hit IS the cached instance, not a copy.
-  //      Every caller reads it and nothing writes to it; that has to stay true,
-  //      or one caller's mutation silently rewrites another's graph.
+  // `cache` is optional scratch so a caller asking about many courses walks each
+  // chain once. It is keyed by course id alone, so one cache belongs to one
+  // catalogue; and a cache hit returns the stored Set itself, so callers must
+  // read it and never write to it.
   function upstreamOf(courseId, courses, cache) {
     if (cache && cache.has(courseId)) return cache.get(courseId);
     const seen = new Set();
@@ -1037,15 +952,10 @@
         const byRank = rank.get(queue[a]) - rank.get(queue[b]);
         if (byRank !== 0) return byRank;
         // The player's own ordering breaks a rank tie, so a queue whose courses
-        // all score the same comes back exactly as it went in.
-        //
-        // This is NOT a hedge against sort stability — Array.prototype.sort has
-        // been stable by specification since ES2019. It is here because
-        // `ready` arriving in queue order is incidental: it holds only while
-        // `remaining` is built by successive filters over an array, and a
-        // refactor to a Set or a Map breaks it silently. No test can guard this
-        // key (deleting it changes no output today), so this comment is the
-        // guard, and it has to carry the reason that is actually true.
+        // all score the same comes back exactly as it went in. Not a hedge
+        // against sort stability, which is guaranteed: `ready` arriving in queue
+        // order holds only while `remaining` is an array, and a refactor to a
+        // Set would break it silently.
         return a - b;
       });
 
@@ -1064,9 +974,7 @@
   //
   // Order does not change finishesAt — a sum is order-independent. Ordering
   // changes time-to-benefit, which is a different question, answered by
-  // orderQueue (this release, not a later one). tests/engine.test.js asserts
-  // the order-independence directly; tests/ordering.test.js asserts every
-  // mode against the same finishesAt.
+  // orderQueue.
   function schedule(options) {
     const courses = options.courses;
     const activeCourse = options.activeCourse;
@@ -1099,27 +1007,15 @@
   // computed independently from the same starting point, pulling in whatever
   // prerequisites it needs and skipping what is done.
   //
-  // The design this was written from predicted the boxes would NOT sum to the
-  // all-courses box, on the theory that degrees share prerequisite courses.
-  // Torn's catalogue says otherwise, and it is worth stating here rather than
-  // leaving the next reader to rediscover it: no course has a parentId outside
-  // its own category, and a tier-3 bachelor gates only on tier-2 courses in
-  // its own category, so the twelve categories partition the catalogue exactly
-  // and the boxes sum — in course count and in seconds. tests/grid.test.js
-  // asserts the partition itself, so the day Torn breaks it the test names the
-  // course that did.
+  // The boxes DO sum to the all-courses box today, in both course count and
+  // seconds: no course has a parentId outside its own category, and a tier-3
+  // bachelor gates only on tier-2 courses in its own, so the twelve categories
+  // partition the catalogue exactly.
   //
-  // sumsDiffer is kept anyway, and is false today. Its reachability is a
-  // property of a third-party catalogue that can change without a commit here,
-  // which is exactly the branch worth keeping: if a prerequisite ever does
-  // cross a category, a reader who adds the boxes up and gets a bigger number
-  // than the all-courses box needs the UI to say why before concluding the
-  // tool is broken. The test drives it by giving a real fixture a real
-  // cross-category parent, not by flipping the flag.
-  //
-  // Declared below allRemainingCourses and schedule, both of which it calls.
-  // Function declarations hoist, so this is not a requirement — it is the
-  // reading order being kept honest.
+  // sumsDiffer is kept anyway and is false today, because that is a property of
+  // Torn's catalogue rather than of this code. If a prerequisite ever does
+  // cross a category, the UI has to say why before someone adds the boxes up,
+  // gets a bigger number and concludes the tool is broken.
   function buildDegreeGrid(options) {
     const courses = options.courses;
     const categories = options.categories;
@@ -1504,20 +1400,11 @@
       floorSaving: floorSaving,
       floorSeconds: boosted - floorSaving,
       floorCost: floorBooks * price,
-      // A price of zero is not a price. SETTINGS_BOUNDS.bookPrice.min is 0, so
-      // a player who TYPES 0 gets there and it survives normalisation — the
-      // arithmetic above is then honest and the sentence it produces ("the
-      // floor costs $0") is the single most misleading thing this feature
-      // could say.
-      //
-      // Clearing the field does NOT reach 0, and the guard would look like
-      // dead code to anyone who tested that path: onSettingChange maps '' to
-      // null, and boundedInt(null) returns the 13.5m default. An earlier
-      // version of this comment claimed otherwise and was wrong. The reachable
-      // path is a typed zero, and only that.
-      //
-      // Drawn here, in the engine, so every consumer inherits the distinction
-      // rather than each one rediscovering that 0 means "unsaid".
+      // A price of zero is not a price. Typing 0 survives normalisation, and
+      // the sentence it would produce — "the floor costs $0" — is the most
+      // misleading thing this feature could say. Clearing the field does not
+      // reach 0; it restores the default. So the reachable path is a typed
+      // zero, and only that.
       priceKnown: price > 0,
     };
   }
@@ -1706,19 +1593,14 @@
     return parts.join('|');
   }
 
-  // The one piece of the share string that is quoted back to the player, so it
-  // is the one piece that needs sizing and sanitising. gatherDebugContext
-  // already clamps Torn's own `raw.error` on the reasoning that "that string is
-  // not ours to size" — and a pasted share string comes from a more hostile
-  // source than Torn does. 40 characters is enough to find the offending token
-  // in a paste and not enough to be a wall of text.
+  // The only part of a pasted share string quoted back on screen, so the only
+  // part needing sizing and sanitising. 40 characters is enough to find the
+  // offending token and not enough to be a wall of text.
   //
-  // The character replacement is the other half, and it is not decoration: a
-  // bidi override (U+202E) inside the quoted token reverses the display of the
-  // rest of the line it lands in, so an "error" message can be made to read as
-  // something else entirely. Every one of these is invisible by definition,
-  // which means removing them costs the player nothing — they could not have
-  // seen the character in their paste either way.
+  // The character replacement is not decoration: a bidi override (U+202E) inside
+  // the quoted token reverses the display of the rest of its line, so an error
+  // message can be made to read as something else entirely. Every character
+  // stripped here is invisible anyway, so removing it costs the reader nothing.
   const MAX_TOKEN_CHARS = 40;
   const UNPRINTABLE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/g;
   function quoteToken(token) {
@@ -2151,8 +2033,7 @@
   //
   // NEVER the local getters. A player on UTC+10 reading a bare local 21:00
   // would be eleven hours wrong about when to log in, and the bug is invisible
-  // on any machine already set to UTC, including CI. tests/timezone.test.js pins
-  // a non-UTC TZ for exactly that reason.
+  // on any machine already set to UTC, so it is checked under a non-UTC zone.
   function pad2(n) { return n < 10 ? `0${n}` : String(n); }
 
   function formatDate(seconds) {
@@ -2167,7 +2048,7 @@
     return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
   }
 
-  // Abbreviation rule (do not re-litigate without updating this comment):
+  // Abbreviation rule:
   // abbreviate in dense readouts where the word sits beside a number and
   // space is scarce — "6 crs", "84 days", "12 hrs" (the grid cell, the
   // queue row, this function). Keep the full word in prose, where it reads
@@ -2549,7 +2430,7 @@
       debugReport: state.debugReport || null,
       grid: grid,
       focusGroups: focusGroups,
-      focuses: settings.focuses, // not read by any renderer; kept for tests/panel.test.js — see code-map
+      focuses: settings.focuses,
       focusHealth: focusHealth,
       focusOpenCategories: Array.isArray(state.focusOpenCategories) ? state.focusOpenCategories : [],
       focusOpenCompletedCategories: Array.isArray(state.focusOpenCompletedCategories)
@@ -2565,25 +2446,18 @@
     };
   }
 
-  // Every field here is named explicitly. Adding a field to the report means
-  // adding it here and to buildDebugReport, which is the point — nothing
-  // reaches the report by being present on some object that got passed along.
+  // Every field in the report is named explicitly here, so nothing reaches it
+  // by riding along on some object that got passed in.
   //
-  // GM_info is read through a typeof guard and is deliberately NOT added to
-  // @grant: it is ambient in every manager, and a grant would widen the
-  // security surface for a diagnostic nicety. Absent, the report says so.
-  // navigator gets the same guard — it does not exist in the test sandbox,
-  // and an unguarded reference is a ReferenceError that blanks the panel.
-  // The same guard course.prefix gets, for the same reason. Every realistic
-  // producer of a reason/detail hands us a string, but the catch blocks build
-  // theirs from `(e && e.message)` — and a thrown value is whatever threw it.
-  // A non-string is dropped rather than coerced, so nothing reaches String()
-  // that could carry a toString we did not write.
+  // GM_info is read through a typeof guard rather than added to @grant: it is
+  // ambient in every manager, and a grant would widen the security surface for
+  // a diagnostic nicety. navigator and course.prefix are guarded the same way.
+  // Non-strings are dropped rather than coerced, so nothing reaches String()
+  // carrying a toString we did not write.
   //
-  // The bound is on the detail because parsePayload splices Torn's own
-  // `raw.error` into it whole, and that string is not ours to size. The report
-  // is pasted in public by hand; an unbounded server message in it is a wall
-  // of text at best. Truncation is marked, so nothing disappears silently.
+  // The length bound is on the detail because Torn's own error text is spliced
+  // into it whole, and that string is not ours to size. The report is pasted in
+  // public by hand. Truncation is marked, so nothing disappears silently.
   const MAX_DETAIL_CHARS = 300;
   function debugText(v, limit) {
     if (typeof v !== 'string') return null;
@@ -2843,19 +2717,10 @@
     return btn;
   }
 
-  // The shell only: chrome, the failure line, the nav row, and the view
-  // switch. Each view owns its own body content, so adding a view never grows
-  // this function.
-  //
-  // This summary said "the error short-circuit" for a release after the
-  // short-circuit was deleted, while the block below it described the removal
-  // in full — the fourth comment in this file to outlive the thing it
-  // described. They share a shape: each stated a *mechanism* ("it returns
-  // here", "it is shared with X") rather than an *invariant* ("the failure is
-  // always visible", "renderPanel is always handed a complete model"). A
-  // mechanism is true until someone changes it and silently false afterwards;
-  // an invariant is what the next reader actually needs, and a false one is
-  // usually caught because the code visibly contradicts it. Prefer invariants.
+  // The shell only: chrome, the failure line, the nav row, and the view switch.
+  // Each view owns its own body content, so adding a view never grows this
+  // function. It is always handed a complete model, and a failure is always
+  // visible.
   function renderPanel(doc, mount, model, handlers) {
     injectStyleOnce(doc);
 
@@ -3464,17 +3329,8 @@
     intro.textContent = 'Each box answers: if I did only this degree, starting now, when would it finish?';
     body.appendChild(intro);
 
-    // Its own full-width banner above the list, not a row inside it: this is
-    // the answer to a different question — everything at once — and sitting
-    // among the degrees it reads as one more of them rather than the total.
-    //
-    // That reasoning survived the v0.5.0 layout pass, which replaced the card
-    // grid this banner was originally lifted out of with .tes-degree-list. The
-    // previous version of this comment still explained the banner in terms of
-    // .tes-grid and .tes-cell-all, neither of which exists any more — it
-    // described a layout the reader could no longer find, which is the failure
-    // this file names elsewhere: prefer the invariant (the total is not one of
-    // the degrees) over the mechanism it was once expressed through.
+    // Its own full-width banner above the list, not a row inside it: the total
+    // is not one of the degrees, and sitting among them it would read as one.
     const banner = doc.createElement('div');
     banner.className = 'tes-all-banner';
     const bannerTitle = doc.createElement('div');
@@ -3526,32 +3382,20 @@
     }
     body.appendChild(list);
 
-    // The number on this screen that looks wrong, and it looks wrong every
-    // time: eleven degrees dated 2026 above an all-courses box dated 2029.
-    // Every box starts from today by design — that is the question the view
-    // answers — so the *dates* overlap and cannot be read in sequence.
-    //
-    // The *durations* are a different matter, and the second sentence used to
-    // get it wrong. It claimed doing everything takes "not the sum of the
-    // others", which is true only in a catalogue where degrees share courses.
-    // Today they do not: the twelve box durations add to the all-courses
-    // duration to the second (tests/grid.test.js pins the equality). A player
-    // who added them up and read that sentence would have caught the panel
-    // contradicting itself — the exact reaction this note exists to prevent.
-    // So it now says the durations do add up, and uses that to explain the
-    // date rather than to deny it.
+    // The number on this screen that looks wrong every time: eleven degrees
+    // dated 2026 above an all-courses box dated 2029. Every box starts from
+    // today by design, so the dates overlap and cannot be read in sequence.
+    // The durations, though, do add up to the second — so the note explains
+    // the date with that rather than denying it.
     const overlap = doc.createElement('div');
     overlap.className = 'tes-note';
     overlap.textContent = 'The dates overlap: each starts from today, as if you did that degree and nothing else, so they cannot be read as a sequence. The durations do add up — that is why doing all of them lands on the all-courses box’s date, years past any single degree.';
     body.appendChild(overlap);
 
-    // A separate fact, and currently a quiet one: Torn keeps a course's
-    // prerequisites inside its own category, so the boxes do sum today and
-    // this line does not appear. It is here for the catalogue where they stop
-    // doing that — a reader who adds the boxes up, gets a bigger number than
-    // the all-courses box and finds no explanation concludes the tool is
-    // broken. tests/grid.test.js drives both directions through the DOM
-    // against a real shared prerequisite, not by flipping the flag.
+    // Silent today: Torn keeps a course's prerequisites inside its own
+    // category, so the boxes do sum and this line does not appear. It is here
+    // for the catalogue where they stop doing that, so nobody adds the boxes
+    // up, gets a bigger number and concludes the tool is broken.
     if (model.grid.sumsDiffer) {
       const caveat = doc.createElement('div');
       caveat.className = 'tes-note';
@@ -3881,32 +3725,15 @@
       status: 'error', message: message, reductionLabel: null,
       queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
       collapsed: false, saveError: false, selectedCourseId: null, view: 'schedule',
-      // Unread today, but check the mechanism before trusting that: this model
-      // carries view: 'schedule', and renderPanel skips the schedule and grid
-      // renderers on an error model, so nothing reaches them. It is NOT the
-      // old short-circuit that keeps them unread — that was removed, and the
-      // comment saying so outlived the code by a whole review cycle. They are
-      // here so the fact stays incidental rather than load-bearing: a renderer
-      // handed this model must not meet an undefined.
+      // Every field below is filled even where nothing currently reads it, so
+      // that a renderer handed this model can never meet an undefined. The real
+      // orderModes list rather than an empty one, for the same reason: an empty
+      // one would draw an optionless dropdown.
       settings: normaliseSettings(null), settingsSaveError: false,
-      // The real list rather than an empty one, for the reason given directly
-      // above and for no stronger one. Check the mechanism before believing a
-      // claim of reachability here: BOTH errorModel call sites pass
-      // noopHandlers, renderPanel suppresses the nav row on an identity match
-      // with noopHandlers, and this model hardcodes view: 'schedule' — so the
-      // settings view is NOT reachable from a rendered error model and the
-      // empty array was never drawn. It is corrected because an empty list
-      // would draw an optionless dropdown if that ever changed, which is what
-      // this whole field group is here to prevent.
       perkInference: NO_INFERENCE, orderModes: ORDER_MODE_LABELS, debugReport: null, grid: null,
-      // Same trio buildPanelModel's failure model carries, for the same
-      // reason: no catalogue means no registry to check and no totals to
-      // state.
       focusGroups: null, focuses: null, focusHealth: null, focusOpenCategories: [],
       focusOpenCompletedCategories: [],
       consumables: null,
-      // Same pair buildPanelModel carries, for the reason the comment above
-      // gives: a renderer handed this model must not meet an undefined.
       shareText: '', importError: null,
     };
   }
@@ -4027,8 +3854,8 @@
     // Cleared by the next successful import, never persisted: it describes one
     // paste, and a stale reason beside a plan that imported fine is a lie.
     let importError = null;
-    // The reset control's arm/confirm state (v0.3.0 Task 2). Held here, not
-    // in plan or settings, and never written through savePlan/saveSettings —
+    // The reset control's arm/confirm state. Held here, not in plan or
+    // settings, and never written through savePlan/saveSettings —
     // every other handler sets this false before doing its own work, which
     // is what makes a view change, a collapse, or any other click disarm it.
     // A panel reopened later must never be found armed.
