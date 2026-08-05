@@ -23,9 +23,10 @@ function okState(queue, collapsed) {
   };
 }
 
-test('formats a timestamp as an unambiguous UTC string', () => {
+test('formats a timestamp as a Torn City Time date and time', () => {
   const { exports } = loadUserscript();
-  assert.strictEqual(exports.formatTimestamp(1767225600), 'Thu, 01 Jan 2026 00:00:00 UTC');
+  assert.strictEqual(exports.formatDate(1767225600), '2026-01-01');
+  assert.strictEqual(exports.formatTime(1767225600), '00:00');
 });
 
 test('formats durations in days and hours', () => {
@@ -73,7 +74,7 @@ test('a queued course carries its name and projected finish', () => {
   assert.strictEqual(model.queue.length, 1);
   assert.strictEqual(model.queue[0].prefix, 'BIO2380');
   assert.strictEqual(model.queue[0].finishesAt, 1768314240);
-  assert.strictEqual(model.finishLabel, exports.formatTimestamp(1768314240));
+  assert.strictEqual(model.finishLabel, `${exports.formatDate(1768314240)} · ${exports.formatTime(1768314240)} TCT`);
   assert.strictEqual(model.totalLabel, '12 days 14 hours');
 });
 
@@ -117,7 +118,7 @@ test('the in-progress course is dropped from the queue, not double counted', () 
   // 37 (BIO2370) is the active course; activeCourse.completedAt already
   // accounts for it, so queueing it too would count it twice.
   assert.deepStrictEqual(model.queue.map((q) => q.courseId), [38]);
-  assert.strictEqual(model.finishLabel, exports.formatTimestamp(1768314240));
+  assert.strictEqual(model.finishLabel, `${exports.formatDate(1768314240)} · ${exports.formatTime(1768314240)} TCT`);
   assert.deepStrictEqual(model.stale, [
     { courseId: 37, prefix: 'BIO2370', why: 'currently in progress' },
   ]);

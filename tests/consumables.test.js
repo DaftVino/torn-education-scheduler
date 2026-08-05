@@ -223,7 +223,7 @@ test('the schedule model carries the consumables block with both dates', () => {
   const c = model.consumables;
   assert.ok(c.ceiling > 0, 'the ceiling is zero on a 115-course queue');
   assert.strictEqual(c.floorBooks, c.ceiling);
-  assert.match(c.floorFinishLabel, /UTC/);
+  assert.match(c.floorFinishLabel, /TCT/);
   assert.match(c.floorCostLabel, /^\$/);
   // The floor is genuinely shorter than the unaided path, or the block says
   // nothing worth printing.
@@ -334,7 +334,7 @@ test('the clamped floor renders the Books it takes, not the Books the cooldown a
   const startsAt = exports.schedule({
     courses: data.courses, activeCourse: data.activeCourse, queue: [], now: NOW,
   }).startsAt;
-  assert.strictEqual(c.floorFinishLabel, exports.formatTimestamp(startsAt));
+  assert.strictEqual(c.floorFinishLabel, `${exports.formatDate(startsAt)} · ${exports.formatTime(startsAt)} TCT`);
   assert.ok(line.includes(c.floorFinishLabel), line);
 
   // Owning 500 Books cannot spend more than the path can absorb either.

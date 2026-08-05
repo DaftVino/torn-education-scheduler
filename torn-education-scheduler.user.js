@@ -1849,8 +1849,27 @@
       && /(\?|&)sid=education(&|$)/.test(location.search || '');
   }
 
-  function formatTimestamp(seconds) {
-    return new Date(seconds * 1000).toUTCString().replace(/GMT$/, 'UTC');
+  // Torn City Time is UTC+0, so these are the UTC getters and the instant is
+  // unchanged from the old toUTCString(). What changed is that the date and the
+  // time are separate values and the label says TCT — which is what the rest of
+  // the player's screen says while they read this.
+  //
+  // NEVER the local getters. A player on UTC+10 reading a bare local 21:00
+  // would be eleven hours wrong about when to log in, and the bug is invisible
+  // on any machine already set to UTC, including CI. tests/timezone.test.js pins
+  // a non-UTC TZ for exactly that reason.
+  function pad2(n) { return n < 10 ? `0${n}` : String(n); }
+
+  function formatDate(seconds) {
+    const d = new Date(seconds * 1000);
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+  }
+
+  // No seconds: a finish estimate derived from course durations is not accurate
+  // to the second, and a ":00" that never varies claims precision it lacks.
+  function formatTime(seconds) {
+    const d = new Date(seconds * 1000);
+    return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
   }
 
   function formatDuration(seconds) {
@@ -2033,7 +2052,7 @@
     // their account.
     // The grid is independent of the player's queue: each box starts from now
     // and answers its own question. Labels are built here rather than in the
-    // view, because formatDuration/formatTimestamp are runtime while
+    // view, because formatDuration/formatDate/formatTime are runtime while
     // buildDegreeGrid is engine.
     const rawGrid = buildDegreeGrid({
       courses: data.courses, categories: data.categories, completedIds: data.completedIds,
@@ -2046,7 +2065,7 @@
           key: b.key, name: b.name, bachelorPrefix: b.bachelorPrefix,
           courseCount: b.courseCount, totalSeconds: b.totalSeconds, finishesAt: b.finishesAt,
           durationLabel: formatDuration(b.totalSeconds),
-          finishLabel: formatTimestamp(b.finishesAt),
+          finishLabel: `${formatDate(b.finishesAt)} · ${formatTime(b.finishesAt)} TCT`,
         };
       }),
     };
@@ -2120,10 +2139,10 @@
     const consumablesModel = consumables ? {
       ceiling: consumables.ceiling,
       plannedBooks: consumables.plannedBooks,
-      plannedFinishLabel: formatTimestamp(result.startsAt + consumables.plannedSeconds),
+      plannedFinishLabel: `${formatDate(result.startsAt + consumables.plannedSeconds)} · ${formatTime(result.startsAt + consumables.plannedSeconds)} TCT`,
       plannedDurationLabel: formatDuration(consumables.plannedSeconds),
       floorBooks: consumables.floorBooks,
-      floorFinishLabel: formatTimestamp(result.startsAt + consumables.floorSeconds),
+      floorFinishLabel: `${formatDate(result.startsAt + consumables.floorSeconds)} · ${formatTime(result.startsAt + consumables.floorSeconds)} TCT`,
       floorDurationLabel: formatDuration(consumables.floorSeconds),
       // Withheld rather than rendered as "$0" when no price is set. The rule
       // this feature turns on is that the floor date never appears without its
@@ -2172,7 +2191,7 @@
           duration: course.duration,
           durationLabel: formatDuration(course.duration),
           finishesAt: finishById.get(id),
-          finishLabel: formatTimestamp(finishById.get(id)),
+          finishLabel: `${formatDate(finishById.get(id))} · ${formatTime(finishById.get(id))} TCT`,
         };
       }),
       problems: problems,
@@ -2181,7 +2200,9 @@
       // follow in order, so schedule()'s sum describes a fiction — withhold it
       // rather than print it. The problems list itself (rendered above) already
       // names what is missing.
-      finishLabel: (queue.length > 0 && problems.length === 0) ? formatTimestamp(result.finishesAt) : null,
+      finishLabel: (queue.length > 0 && problems.length === 0)
+        ? `${formatDate(result.finishesAt)} · ${formatTime(result.finishesAt)} TCT`
+        : null,
       totalLabel: (queue.length > 0 && problems.length === 0) ? formatDuration(result.totalSeconds) : null,
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,

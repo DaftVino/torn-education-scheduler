@@ -216,7 +216,7 @@ test('the panel model carries the grid with labels the view can print', () => {
   const biology = model.grid.boxes.find((b) => b.name === 'Biology');
   assert.strictEqual(typeof biology.durationLabel, 'string');
   assert.strictEqual(typeof biology.finishLabel, 'string');
-  assert.match(biology.finishLabel, /UTC/);
+  assert.match(biology.finishLabel, /TCT/);
 });
 
 test('the grid view renders a box per degree, naming the bachelor', () => {
@@ -239,7 +239,7 @@ test('the grid view renders a box per degree, naming the bachelor', () => {
   const biologyDetail = details.find((t) => t.indexOf(biology.finishLabel) !== -1);
   assert.ok(biologyDetail, `no cell carries Biology's finish date (${biology.finishLabel})`);
   assert.match(biologyDetail, /^6 courses — 84 days\n/, 'the cell does not lead with its count and duration');
-  assert.match(biologyDetail, /Thu, 26 Mar 2026 00:00:00 UTC$/, 'the cell does not end with the finish date');
+  assert.match(biologyDetail, /2026-03-26 · 00:00 TCT$/, 'the cell does not end with the finish date');
 
   // A finished degree is a box that says so, not a box reading "0 courses —
   // 0 hours" beside today's date, which reads as an estimate rather than a
