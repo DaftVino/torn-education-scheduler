@@ -362,6 +362,10 @@ test('the picker offers the all-remaining entry second and marks the bachelors',
   assert.strictEqual(picker.children[0].value, '');
   const all = picker.children[1];
   assert.strictEqual(all.value, exports.ALL_COURSES_OPTION, 'the all-remaining entry is buried');
+  // Unabbreviated on purpose (see the comment above formatDuration): the
+  // picker is prose, not a dense readout, and matches the all-remaining
+  // banner's own title rather than the grid's "crs". This assertion pins
+  // that decision, not an oversight lagging behind the grid's abbreviation.
   assert.match(all.textContent, /all remaining courses \(115\)/);
   assert.strictEqual(picker.children.length, model.addable.length + 2);
   // The marker has to survive into the option the player actually reads, not
