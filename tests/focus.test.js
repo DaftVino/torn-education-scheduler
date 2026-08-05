@@ -226,28 +226,118 @@ test('working-stat totals equal the catalogue figures and shrink as courses comp
 
 test('an unlock selection reports a count and never a magnitude', () => {
   const { x, data } = load();
-  const row = x.FOCUS_TAXONOMY.find((r) => r.category === 'Unlocks & Abilities');
-  const t = x.focusTotals({ category: row.category, selection: row.selection }, data.courses, new Set());
+  // Every Unlocks & Abilities row carries magnitude: null, so a regression
+  // that totals magnitude instead of forcing 1 per course would still total
+  // an integer (0) for a single-course selection -- picking one that spans
+  // more than one course is what makes the wrong number visibly wrong.
+  const grouped = new Map();
+  for (const r of x.FOCUS_TAXONOMY) {
+    if (r.category !== 'Unlocks & Abilities') continue;
+    if (!grouped.has(r.selection)) grouped.set(r.selection, new Set());
+    grouped.get(r.selection).add(r.courseId);
+  }
+  const multi = [...grouped.entries()].find(([, ids]) => ids.size > 1);
+  assert.ok(multi, 'expected at least one Unlocks & Abilities selection spanning more than one course, or this test has no teeth');
+  const [selection, courseIds] = multi;
+
+  const t = x.focusTotals({ category: 'Unlocks & Abilities', selection }, data.courses, new Set());
   assert.strictEqual(t.unit, 'count');
-  assert.ok(Number.isInteger(t.total) && Number.isInteger(t.remaining));
+  assert.strictEqual(t.total, courseIds.size,
+    'total must equal the distinct-course count, not a summed magnitude (null on every row here)');
+  assert.strictEqual(t.remaining, courseIds.size);
 });
 
-test('a split course counts once toward a total', () => {
+test("completing a course subtracts its own selection's magnitude, not the whole split outcome", () => {
   const { x, data } = load();
+  // Not a dedupe test: this course's outcome splits across two selections
+  // ("... to speed and strength" is two taxonomy rows sharing one courseId),
+  // but each (category, selection) pair still names the course exactly once,
+  // so this exercises magnitude subtraction, not focusTotals' by-course
+  // dedupe -- see the coverage test below for why that branch has no real
+  // data to exercise it at all.
   const dual = x.FOCUS_TAXONOMY.find((r) => r.category === 'Passive Stat Bonus' && / and /.test(r.outcome));
   const t = x.focusTotals({ category: dual.category, selection: dual.selection }, data.courses, new Set());
   const t2 = x.focusTotals({ category: dual.category, selection: dual.selection }, data.courses, new Set([dual.courseId]));
   assert.strictEqual(t.remaining - t2.remaining, dual.magnitude,
-    'completing a split course must subtract its magnitude exactly once');
+    'completing the course must subtract its magnitude exactly once from remaining');
+});
+
+test('focusTotals sums an independently-computed reference for every real selection, and no duplicate triple exists yet to exercise its by-course dedupe', () => {
+  const { x, data } = load();
+
+  // FOCUS_TAXONOMY is frozen and not injectable through focusTotals' public
+  // signature (courses/completedIds are the only parameters besides focus),
+  // so a test cannot manufacture a duplicate (category, selection, courseId)
+  // triple the way it can manufacture a duplicate completed course id.
+  // Confirmed across the whole taxonomy: none exists today, so focusTotals'
+  // by-course summing step is never exercised with more than one row per
+  // course, by any test -- including this one. The summing code is kept as
+  // defensive for future taxonomy growth, the same call made for
+  // focusScores' identical gap in Task 3. This assertion is the canary: the
+  // day a real duplicate triple is added to the taxonomy, it fails and says
+  // the dedupe branch finally has real data to write a direct test against.
+  const seen = new Set();
+  const dupes = [];
+  for (const row of x.FOCUS_TAXONOMY) {
+    const key = `${row.category} ${row.selection} ${row.courseId}`;
+    if (seen.has(key)) dupes.push(key);
+    seen.add(key);
+  }
+  assert.deepStrictEqual(dupes, [],
+    'a real duplicate triple now exists in the taxonomy -- write a test asserting focusTotals sums it rather than double-counting or overwriting it');
+
+  // Independently-computed reference: sum magnitudes by course id, by hand,
+  // for every real (category, selection) group, and check focusTotals agrees.
+  // This is also what makes "totals are never summed across selections"
+  // meaningful rather than tautological: the passive-strength and gym-gain
+  // reference figures for the same stat name are computed and asserted
+  // separately below, so a future implementation that merged them would fail
+  // this even though `a.total !== a.total + b.total` cannot.
+  const groups = new Map();
+  for (const row of x.FOCUS_TAXONOMY) {
+    const k = x.focusKey(row.category, row.selection);
+    if (!groups.has(k)) groups.set(k, { category: row.category, selection: row.selection, byCourse: new Map() });
+    const g = groups.get(k);
+    g.byCourse.set(row.courseId, (g.byCourse.get(row.courseId) || 0) + (Number.isFinite(row.magnitude) ? row.magnitude : 0));
+  }
+  let checked = 0;
+  for (const { category, selection, byCourse } of groups.values()) {
+    const t = x.focusTotals({ category, selection }, data.courses, new Set());
+    if (t.unit === 'count') continue; // magnitude is meaningless by design here
+    let reference = 0;
+    for (const v of byCourse.values()) reference += v;
+    assert.strictEqual(t.total, reference, `${category} / ${selection} total must match its independently summed reference`);
+    checked++;
+  }
+  assert.ok(checked > 0, 'expected at least one magnitude-bearing selection to check, or this test has no teeth');
 });
 
 test('totals are never summed across selections', () => {
   const { x, data } = load();
+  // The passive-strength and gym-gain totals for the same stat name are
+  // independently correct, not merely different: `a.total !== a.total +
+  // b.total` is true for any nonzero b.total regardless of what the
+  // implementation does, so each figure is checked against its own reference
+  // computed straight from the taxonomy rather than against the other.
+  function referenceTotal(category, selection) {
+    const byCourse = new Map();
+    for (const row of x.FOCUS_TAXONOMY) {
+      if (row.category !== category || row.selection !== selection) continue;
+      byCourse.set(row.courseId, (byCourse.get(row.courseId) || 0) + (Number.isFinite(row.magnitude) ? row.magnitude : 0));
+    }
+    let total = 0;
+    for (const v of byCourse.values()) total += v;
+    return total;
+  }
+
   const a = x.focusTotals({ category: 'Passive Stat Bonus', selection: 'Speed' }, data.courses, new Set());
   const b = x.focusTotals({ category: 'Gym Gain Bonus', selection: 'Speed' }, data.courses, new Set());
-  assert.notStrictEqual(a.total, a.total + b.total,
-    'a passive total and a gym total describe different quantities');
-  assert.ok(a.total > 0 && b.total > 0);
+  assert.strictEqual(a.total, referenceTotal('Passive Stat Bonus', 'Speed'),
+    'the passive-strength total must match its own catalogue figure, not a merge with gym gain');
+  assert.strictEqual(b.total, referenceTotal('Gym Gain Bonus', 'Speed'),
+    'the gym-gain total must match its own catalogue figure, not a merge with passive strength');
+  assert.notStrictEqual(a.total, b.total,
+    'the two reference figures must actually differ, or this test cannot tell a merge from a coincidence');
 });
 
 test('focusTotals never throws on rubbish', () => {
