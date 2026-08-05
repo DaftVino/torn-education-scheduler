@@ -110,3 +110,39 @@ test('workingStatsFor never throws on a malformed course', () => {
   assert.doesNotThrow(() => x.workingStatsFor(null));
   assert.doesNotThrow(() => x.workingStatsFor({ workingStatsGain: 'not an array' }));
 });
+
+test('a split course is reached by both its selections', () => {
+  const { x, data } = load();
+  const dual = x.FOCUS_TAXONOMY.filter((r) => /and/.test(r.outcome) && r.category === 'Passive Stat Bonus');
+  assert.ok(dual.length >= 2, 'expected at least one split passive outcome');
+  const id = dual[0].courseId;
+  const sels = x.FOCUS_TAXONOMY.filter((r) => r.courseId === id && r.outcome === dual[0].outcome);
+  assert.ok(sels.length >= 2, 'a combo outcome must appear under more than one selection');
+  for (const s of sels) {
+    const [scores] = x.focusScores([{ category: s.category, selection: s.selection }], data.courses);
+    assert.ok(scores.has(id), `${s.selection} must reach course ${id}`);
+  }
+});
+
+test('a course satisfying one selection twice is scored once per course', () => {
+  const { x, data } = load();
+  const [scores] = x.focusScores([{ category: 'Working Stats', selection: 'intelligence' }], data.courses);
+  const ids = [...scores.keys()];
+  assert.strictEqual(ids.length, new Set(ids).size, 'course ids must be unique in a score map');
+});
+
+test('a selection nobody offers scores nothing rather than throwing', () => {
+  const { x, data } = load();
+  const [scores] = x.focusScores([{ category: 'Nope', selection: 'Nope' }], data.courses);
+  assert.strictEqual(scores.size, 0);
+});
+
+test('focusScores returns one map per focus, in order', () => {
+  const { x, data } = load();
+  const maps = x.focusScores([
+    { category: 'Working Stats', selection: 'intelligence' },
+    { category: 'Working Stats', selection: 'endurance' },
+  ], data.courses);
+  assert.strictEqual(maps.length, 2);
+  assert.notDeepStrictEqual([...maps[0].keys()].sort(), [...maps[1].keys()].sort());
+});
