@@ -245,39 +245,40 @@ test('the panel model carries the grid with labels the view can print', () => {
   assert.match(model.grid.allBox.finishLabel, /TCT/);
 });
 
-test('the grid view renders a box per degree, naming the bachelor', () => {
+test('the degrees view renders a definition-list row per degree, naming the bachelor', () => {
   const { exports, model } = gridModel();
   const nodes = gridPanel(exports, model);
-  // Exact class name, not a prefix test: `tes-cell-title` starts with
-  // `tes-cell` too, and counting those would pass on a view that drew no boxes.
-  const cells = nodes.filter((n) => n.className === 'tes-cell');
-  assert.strictEqual(cells.length, 12, 'expected twelve degree boxes on screen, all-courses lifted into its own banner');
-  const titles = nodes.filter((n) => n.className === 'tes-cell-title').map((n) => n.textContent);
-  assert.ok(titles.includes('Biology (BIO3420)'), `no Biology box title: ${titles.join(' | ')}`);
-  const details = nodes.filter((n) => n.className === 'tes-cell-detail').map((n) => n.textContent);
+  const rows = nodes.filter((n) => /(?:^| )tes-degree-row(?: |$)/.test(n.className || ''));
+  assert.strictEqual(rows.length, 12, 'expected twelve quiet degree rows, all-courses kept in its own banner');
+  assert.strictEqual(nodes.filter((n) => n.className === 'tes-cell').length, 0, 'read-only degree cards still render');
+  assert.strictEqual(nodes.filter((n) => n.className === 'tes-grid').length, 0, 'the retired degree-card grid still renders');
+  const titles = nodes.filter((n) => n.className === 'tes-degree-identity').map((n) => n.textContent);
+  assert.ok(titles.includes('Biology (BIO3420)'), `no Biology row title: ${titles.join(' | ')}`);
+  const details = nodes.filter((n) => n.className === 'tes-degree-detail').map((n) => n.textContent);
+  const dates = nodes.filter((n) => n.className === 'tes-degree-date').map((n) => n.textContent);
 
   // The date is what this view is for, so it is asserted where the player
   // reads it rather than only on the model. Biology's box carries its own
   // count, its own duration and its own finish date, all three in one cell.
   const biology = model.grid.boxes.find((b) => b.name === 'Biology');
-  const biologyDetail = details.find((t) => t.indexOf(biology.finishLabel) !== -1);
-  assert.ok(biologyDetail, `no cell carries Biology's finish date (${biology.finishLabel})`);
-  assert.match(biologyDetail, /^6 crs — 84 days\n/, 'the cell does not lead with its count and duration');
-  assert.match(biologyDetail, /2026-03-26 · 00:00 TCT$/, 'the cell does not end with the finish date');
+  assert.ok(details.includes('6 crs · 84 days'), 'the Biology row does not preserve its count and duration');
+  assert.ok(dates.includes(biology.finishLabel), `no row carries Biology's finish date (${biology.finishLabel})`);
 
   // A finished degree is a box that says so, not a box reading "0 courses —
   // 0 hours" beside today's date, which reads as an estimate rather than a
   // completion. Sports Science is complete in the fixture.
   const sports = model.grid.boxes.find((b) => b.name === 'Sports Science');
   assert.strictEqual(sports.courseCount, 0, 'the fixture no longer has a completed degree to check');
-  assert.ok(details.includes('Already complete'), 'a completed degree does not say so on screen');
+  assert.ok(dates.includes('Already complete'), 'a completed degree does not say so on screen');
+  const completed = rows.find((r) => /(?:^| )tes-degree-complete(?: |$)/.test(r.className || ''));
+  assert.ok(completed, 'the completed degree row has no muted-state class');
   // \b0, not a bare /0 crs/: category sizes are 6-15 today, so this would
   // false-positive on a fixture refresh landing exactly on "10 crs" or
   // "20 crs" with an actively misleading failure message.
   assert.ok(!details.some((t) => /\b0 crs/.test(t)), 'a completed degree renders as an empty estimate');
 });
 
-test('it renders as a banner before the grid, titled all remaining courses', () => {
+test('it renders as a banner before the degree list, titled all remaining courses', () => {
   const { exports, model } = gridModel();
   const doc = makeFakeDocument();
   const mount = doc.createElement('div');
@@ -293,16 +294,25 @@ test('it renders as a banner before the grid, titled all remaining courses', () 
   // by joining its descendants — same pattern as panel.test.js's allText().
   const bannerText = descendants(banner).map((n) => n.textContent || '').join(' ');
   assert.match(bannerText, /all remaining courses/);
+  assert.ok(descendants(banner).find((n) => n.className === 'tes-all-title'),
+    'the banner has no prominent identity label');
+  assert.ok(descendants(banner).find((n) => n.className === 'tes-all-finish'),
+    'the banner has no prominent finish figure');
+  assert.ok(descendants(banner).find((n) => n.className === 'tes-all-meta'),
+    'the banner does not keep count and duration as compact supporting detail');
+  const figures = descendants(banner).find((n) => n.className === 'tes-all-figures');
+  assert.deepStrictEqual(figures.children.map((n) => n.className), ['tes-all-meta', 'tes-all-finish'],
+    'count and duration must lead into the finish date');
   const nodes = descendants(panel);
   assert.strictEqual(nodes.filter((n) => n.className === 'tes-cell-all').length, 0, '.tes-cell-all must be gone');
   assert.strictEqual(nodes.filter((n) => n.className === 'tes-cell tes-cell-all').length, 0);
 
-  // Before the grid, not after: both are direct children of the body, in
+  // Before the list, not after: both are direct children of the body, in
   // that order.
   const bannerIndex = body.children.indexOf(banner);
-  const gridIndex = body.children.findIndex((c) => c.className === 'tes-grid');
-  assert.ok(bannerIndex !== -1 && gridIndex !== -1, 'banner or grid missing from the body');
-  assert.ok(bannerIndex < gridIndex, 'the banner does not come before the grid');
+  const listIndex = body.children.findIndex((c) => c.className === 'tes-degree-list');
+  assert.ok(bannerIndex !== -1 && listIndex !== -1, 'banner or degree list missing from the body');
+  assert.ok(bannerIndex < listIndex, 'the banner does not come before the degree list');
 
   // The count, duration and finish date the all-courses box always carried,
   // now printed in the banner instead of a grid cell.

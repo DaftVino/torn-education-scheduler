@@ -17,6 +17,29 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ### Changed
 
+- **Degrees now read as a compact definition list** instead of a card grid:
+  two columns when space allows, one on narrow panels, with the existing
+  all-remaining summary kept above the twelve degree rows. Completed degrees
+  stay visible as muted rows labelled `Already complete`.
+- **Queue entries now use two compact lines** — course identity first, then
+  duration, finish date and the full Torn-provided bonus — with one remove
+  action spanning the row.
+- **Book and job-point projections are structured scenarios** rather than a
+  prose block. Each scenario aligns its finish date with its supporting detail,
+  and the maximum-Books floor keeps date, count and cost together.
+- **Settings is grouped into five named sections with short role labels:**
+  Boosters, Planning, Education perks, Help and Share this plan. The controls,
+  saved values and calculations are unchanged.
+- Comparable figures use tabular numerals, long Torn-owned names and bonuses
+  wrap safely, and read-only rows remain visually quiet with no card fill,
+  shadow or hover treatment. Panel text continues to use the existing light
+  theme tokens; no text is black.
+- Schedule calculations and Focus guidance now sit in matching green-outlined
+  overview surfaces, separating explanatory content from course rows. The
+  wrapped Schedule summary no longer draws a redundant divider after its total.
+  The all-remaining banner uses a compact label/figures layout where the
+  existing small count/duration lead into the larger finish date, and Settings
+  section headers use the theme's dark-green fill.
 - **A fresh install's queue order is no longer "as listed".** It was, by
   design, until this release; the balanced default now applies instead. The
   finish date is unchanged — courses run one at a time, so the total is a sum.
