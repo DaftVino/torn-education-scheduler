@@ -1,7 +1,9 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { loadUserscript, loadFixture } = require('./load-userscript');
+const {
+  loadUserscript, loadFixture, RESOLVED_GREASY_FORK_URL, RESOLVED_FORUM_POST_URL,
+} = require('./load-userscript');
 // The shared fake DOM: the sandbox document stub is too inert to record what a
 // view actually appended. One copy, in tests/fake-document.js — three copies is
 // how the picker's default selection went unmodelled everywhere but here.
@@ -247,6 +249,56 @@ test('the report is rendered in full before the copy button appears beside it', 
   const copyIndex = nodes.findIndex((n) => n.textContent === 'copy');
   assert.ok(copyIndex !== -1, 'no copy button beside a rendered report');
   assert.ok(copyIndex > nodes.indexOf(pre), 'the copy button precedes the report it copies');
+});
+
+// The other direction, and the one that actually matters at launch. Everything
+// else about § K1 asserts that nothing renders while the URLs are placeholders
+// — which is true today and will be false on the day it counts. These load the
+// script with the URLs resolved exactly as the owner will resolve them (replace
+// the whole string) and check the links appear and point at the right place.
+//
+// Without them, "the wiring works once you fill the URL in" is a claim nothing
+// tests, on a path nobody can see, and the first person to find out otherwise
+// would be a user.
+test('resolving the guide URL makes the settings view render a real link', () => {
+  const { exports: x } = loadUserscript({ resolveLaunchUrls: true });
+  assert.strictEqual(x.isResolvedUrl(x.FORUM_POST_URL), true, 'the launch-day lever did not resolve the URL');
+  const doc = makeFakeDocument();
+  const body = doc.createElement('div');
+  x.renderSettingsView(doc, body, settingsModel(x, null), {});
+  const links = flatten(body).filter((node) => node.tagName === 'a');
+  assert.strictEqual(links.length, 1, 'the guide link did not appear once the URL resolved');
+  assert.strictEqual(links[0].attributes.href, RESOLVED_FORUM_POST_URL);
+  // A link into someone else's tab opens in a new one, and rel is what stops
+  // the opened page reaching back through window.opener.
+  assert.strictEqual(links[0].attributes.target, '_blank');
+  assert.strictEqual(links[0].attributes.rel, 'noopener noreferrer');
+  assert.ok(links[0].textContent.length > 0, 'the link rendered with no text to click');
+});
+
+test('resolving the guide URL makes the schedule view render its foot link', () => {
+  const { exports: x } = loadUserscript({ resolveLaunchUrls: true });
+  const doc = makeFakeDocument();
+  const body = doc.createElement('div');
+  x.renderScheduleView(doc, body, {
+    status: 'ok', message: null, reductionLabel: '40% off',
+    queue: [], addable: [], stale: [], problems: [],
+    finishLabel: null, totalLabel: null, collapsed: false,
+    saveError: false, selectedCourseId: null, view: 'schedule',
+  }, { onAdd() {}, onRemove() {}, onPickerChange() {} });
+  const links = flatten(body).filter((node) => node.tagName === 'a');
+  assert.strictEqual(links.length, 1, 'the foot link did not appear once the URL resolved');
+  assert.strictEqual(links[0].attributes.href, RESOLVED_FORUM_POST_URL);
+  assert.strictEqual(links[0].attributes.rel, 'noopener noreferrer');
+});
+
+test('resolving the Greasy Fork URL puts it in the debug report', () => {
+  const { exports: x } = loadUserscript({ resolveLaunchUrls: true });
+  const report = x.buildDebugReport(sampleInput(x));
+  assert.ok(report.includes(RESOLVED_GREASY_FORK_URL), `the report carries no contact URL:\n${report}`);
+  // The instruction stays useful either way — it is the URL that is appended,
+  // not the sentence that is swapped.
+  assert.ok(/greasy fork/i.test(report));
 });
 
 test('the settings view renders no link element while the guide URL is unresolved', () => {

@@ -81,6 +81,64 @@ test('no opacity is used for text hierarchy', () => {
     'opacity dims against whatever is behind it; --tm-muted and --tm-meta are measured');
 });
 
+test('no panel text is black or painted with a background token', () => {
+  const outside = outsideTokenBlock(css());
+  assert.ok(!/color\s*:\s*black\b/i.test(outside), 'black text is outside the selected dark theme');
+  assert.ok(!/color\s*:\s*#0{3,8}\b/i.test(outside), 'black hex text is outside the selected dark theme');
+  assert.ok(!/color\s*:\s*var\(--tm-bg(?:-[a-z0-9]+)?\)/i.test(outside),
+    'a background token is being used as text');
+});
+
+test('selected read-only layouts reflow without card or hover treatment', () => {
+  const text = css();
+  assert.match(text, /\.tes-degree-list[^}]*repeat\(auto-fit,\s*minmax\(/,
+    'the degree list does not collapse from two columns naturally');
+  assert.match(text, /\.tes-degree-row[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto/);
+  assert.match(text, /\.tes-queue-row[^}]*grid-template-columns:\s*1fr auto/);
+  assert.match(text, /\.tes-booster-row[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto/);
+  for (const name of ['tes-degree-row', 'tes-queue-row', 'tes-booster-row']) {
+    const bodies = [...text.matchAll(new RegExp(`\\.${name}[^:{]*\\{([^}]*)\\}`, 'g'))]
+      .map((m) => m[1]).join('\n');
+    assert.ok(!/background\s*:|box-shadow\s*:/.test(bodies), `${name} gained card-like treatment`);
+    assert.ok(!new RegExp(`\\.${name}:hover`).test(text), `${name} gained a hover cue despite being read-only`);
+  }
+});
+
+test('overview surfaces, aggregate banner, and Settings bars have clear hierarchy', () => {
+  const text = css();
+  assert.match(text, /\.tes-overview[^}]*border:[^;]*var\(--tm-good-text\)/,
+    'Schedule and Focus overview surfaces need the shared green outline');
+  assert.match(text, /\.tes-overview[^}]*background:\s*var\(--tm-bg-3\)/,
+    'overview surfaces need a distinct dark fill');
+  assert.match(text, /\.tes-focus-rank-toggle[^}]*margin-bottom:/,
+    'Focus guidance still crowds its sorting button');
+  assert.match(text, /\.tes-all-banner[^}]*display:\s*grid/,
+    'the all-remaining banner is not using its horizontal space');
+  assert.match(text, /\.tes-all-figures[^}]*display:\s*flex/,
+    'the aggregate metadata and finish date should share one wrapping line');
+  assert.match(text, /\.tes-all-title[^}]*font-size:\s*var\(--tes-text-lg\)/);
+  assert.match(text, /\.tes-all-finish[^}]*font-size:\s*var\(--tes-text-lg\)/);
+  assert.match(text, /\.tes-section-header[^}]*background:\s*var\(--tm-good-bg\)/,
+    'Settings headers need the selected dark-green bar');
+  assert.match(text, /\.tes-section-title[^}]*color:\s*var\(--tm-text\)/,
+    'Settings titles must stay light on the green bar');
+  assert.match(text, /\.tes-section-role[^}]*color:\s*var\(--tm-text\)/,
+    'small Settings role labels need full-contrast light text on the green bar');
+});
+
+test('comparable numbers align and Torn-owned text cannot force overflow', () => {
+  const text = css();
+  for (const name of ['tes-degree-date', 'tes-booster-finish', 'tes-booster-detail']) {
+    assert.match(text, new RegExp(`\\.${name}[^}]*font-variant-numeric:\\s*tabular-nums`),
+      `${name} does not use tabular figures`);
+  }
+  assert.match(text, /input\[type="number"\][^}]*font-variant-numeric:\s*tabular-nums/);
+  for (const name of ['tes-degree-main', 'tes-queue-main', 'tes-queue-detail']) {
+    assert.match(text, new RegExp(`\\.${name}[^}]*min-width:\\s*0[^}]*overflow-wrap:\\s*anywhere`),
+      `${name} can be forced wider by Torn-owned text`);
+  }
+});
+
 test('the finish line and error lines use the text-safe tokens', () => {
   const text = css();
   assert.match(text, /\.tes-finish[^}]*var\(--tm-good-text\)/);

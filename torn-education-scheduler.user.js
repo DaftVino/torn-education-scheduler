@@ -30,12 +30,21 @@
   // DIFFERENT moments — the script is listed on Greasy Fork before the forum
   // post is written — so expect two passes, not one.
   //
-  // Placeholders rather than null, at the owner's request, so the wiring they
-  // feed is visible and can be QA'd before either URL exists. The token is
-  // deliberately shouty and deliberately not a valid destination: a plausible
-  // but wrong link is worse than an obvious placeholder, because it looks like
-  // it works. `tests/metadata.test.js` fails the build if one of these is
-  // still present when @version is a release, so a placeholder cannot ship.
+  // Placeholders rather than null, at the owner's request, so resolving them
+  // at launch is swapping a string rather than reintroducing a value.
+  //
+  // What that does NOT mean, because the first version of this comment claimed
+  // it and was wrong: the placeholders are not visible anywhere in the panel
+  // and cannot be QA'd by looking. Nothing renders while a URL is unresolved —
+  // see isResolvedUrl below — because a link to a dead address is worse than no
+  // link, and shipping one is the exact failure the token is shouty to prevent.
+  // The rendered-link path is covered by tests instead, which load this file
+  // with both URLs resolved (tests/load-userscript.js' resolveLaunchUrls) and
+  // assert the links appear with the right href; asserting only that nothing
+  // renders today would leave launch day untested.
+  //
+  // `tests/metadata.test.js` also fails the build if a placeholder is still
+  // present once @downloadURL/@updateURL are added, so one cannot ship.
   //
   // To resolve: replace the whole string. Do not edit around the token — the
   // guard test matches on it, and a half-edited URL would pass.
@@ -2649,16 +2658,10 @@
       '#tes-panel {',
       '  --tm-bg: #1f1f1f; --tm-bg-3: #111111; --tm-hover: #292929;',
       '  --tm-border-2: #555555; --tm-text: #ffffff; --tm-muted: #b8b8b8; --tm-meta: #cfcfcf;',
-      // Bookie's raw --tm-good/--tm-bad fills (#2a6b3a/#aa3333) are deliberately
-      // not carried over: nothing below needs a green or red FILL, only their
-      // -text variants, because --tm-good measures 2.56:1 as text on --tm-bg
-      // and fails AA — the panel's existing green and red already clear AA at
-      // 10.44:1 and 7.02:1, so only those two survive. A token nothing
-      // references is dead weight (same reasoning as the spec's "Not adopted"
-      // list, applied to Task 1's leftovers): --tm-bg-2 and --tm-border went
-      // for the same reason — no rule below ever needed a second background or
-      // border shade.
-      '  --tm-good-text: #7ee081; --tm-bad-text: #ff8080;',
+      // Bookie's green fill now distinguishes Settings header bars; it is never
+      // used as text. The measured -text variants remain the only green/red
+      // text colours because they clear AA against the panel background.
+      '  --tm-good-bg: #2a6b3a; --tm-good-text: #7ee081; --tm-bad-text: #ff8080;',
       '  --tes-text-sm: 12px; --tes-text: 14px; --tes-text-lg: 1.25em;',
       '  --tes-gap-xs: 4px; --tes-gap-sm: 6px; --tes-gap: 8px; --tes-gap-lg: 14px;',
       '  --tes-focus-ring: 2px solid var(--tm-good-text);',
@@ -2680,33 +2683,32 @@
       '#tes-panel .tes-save-error { color: var(--tm-bad-text); font-weight: bold; margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-error { color: var(--tm-bad-text); margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-summary { margin-bottom: var(--tes-gap); }',
-      // The separator divides the whole summary from the queue rows below it,
-      // not one line of the summary from another. Owner decision at the v0.3.0
-      // QA gate: a top border on .tes-summary-result drew the line between
-      // "Perk reduction" and the total, which read as though the total belonged
-      // with the queue rather than with the assumptions above it.
-      //
-      // It is on the container, not a bottom border on .tes-summary-result,
-      // because .tes-summary-diagnostics renders AFTER the result whenever a
-      // stale entry was dropped or a prerequisite is missing — a bottom border
-      // on the result line would land mid-summary in exactly the case where the
-      // summary has the most to say.
-      //
-      // .tes-summary-queue, not .tes-summary: that class is shared with the
-      // Books block above and with the grid and focus views' no-data messages,
-      // and none of those wants a rule underneath it.
-      '#tes-panel .tes-summary-queue { border-bottom: 1px solid var(--tm-border-2); padding-bottom: 6px; }',
+      '#tes-panel .tes-overview { border: 1px solid var(--tm-good-text); border-radius: 4px;',
+      '  background: var(--tm-bg-3); padding: var(--tes-gap); margin-bottom: var(--tes-gap-lg); }',
+      '#tes-panel .tes-overview > :last-child { margin-bottom: 0; }',
+      // The overview outline now separates assumptions from course rows, so
+      // the old divider below Total queued time would be a doubled boundary.
       '#tes-panel .tes-summary-result { margin-top: var(--tes-gap-sm); }',
       '#tes-panel .tes-summary-diagnostics { white-space: pre-line; margin-top: var(--tes-gap-sm); }',
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
-      // A queue row is its own grid, not .tes-row (other views still use the
-      // flex layout): two lines in column 1, the remove button spanning both
-      // in column 2, so the button never doubles or drifts from the row it
-      // belongs to.
+      // Queue entries and booster scenarios are quiet divided rows, never card
+      // surfaces: no background or hover treatment to imply interaction.
       '#tes-panel .tes-queue-row { display: grid; grid-template-columns: 1fr auto;',
-      '  align-items: center; gap: 2px 8px; padding: 4px 0; }',
-      '#tes-panel .tes-queue-bonus { grid-column: 1; padding-left: 12px; font-size: var(--tes-text-sm); }',
+      '  align-items: center; gap: 2px 8px; padding: var(--tes-gap-sm) 0;',
+      '  border-bottom: 1px solid var(--tm-border-2); }',
+      '#tes-panel .tes-queue-main { min-width: 0; overflow-wrap: anywhere; font-weight: bold; }',
+      '#tes-panel .tes-queue-detail { grid-column: 1; min-width: 0; overflow-wrap: anywhere;',
+      '  color: var(--tm-meta); font-size: var(--tes-text-sm); }',
       '#tes-panel .tes-queue-row button { grid-column: 2; grid-row: 1 / span 2; }',
+      '#tes-panel .tes-boosters { margin-bottom: var(--tes-gap); }',
+      '#tes-panel .tes-booster-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;',
+      '  gap: 2px var(--tes-gap); padding: var(--tes-gap-sm) 0;',
+      '  border-bottom: 1px solid var(--tm-border-2); }',
+      '#tes-panel .tes-booster-name { min-width: 0; overflow-wrap: anywhere; font-weight: bold; }',
+      '#tes-panel .tes-booster-finish { text-align: right; white-space: nowrap;',
+      '  font-variant-numeric: tabular-nums; }',
+      '#tes-panel .tes-booster-detail { grid-column: 1 / -1; color: var(--tm-meta);',
+      '  font-size: var(--tes-text-sm); font-variant-numeric: tabular-nums; }',
       // padding, not font-size, carries the button to a 44px touch target —
       // density (font-size, line-height) is unchanged by this pass.
       '#tes-panel button, #tes-panel select { color: var(--tm-text); background: var(--tm-hover); border: 1px solid var(--tm-border-2);',
@@ -2722,7 +2724,11 @@
       '#tes-panel input:focus-visible, #tes-panel textarea:focus-visible {',
       '  outline: var(--tes-focus-ring); outline-offset: 2px; }',
       '#tes-panel .tes-section { margin-bottom: var(--tes-gap-lg); }',
-      '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); color: var(--tm-meta); }',
+      '#tes-panel .tes-section-header { display: flex; align-items: baseline; justify-content: space-between;',
+      '  flex-wrap: wrap; gap: var(--tes-gap-xs) var(--tes-gap); padding: var(--tes-gap-sm) var(--tes-gap);',
+      '  margin-bottom: var(--tes-gap); border-radius: 4px; background: var(--tm-good-bg); }',
+      '#tes-panel .tes-section-title { font-weight: bold; color: var(--tm-text); }',
+      '#tes-panel .tes-section-role { color: var(--tm-text); font-size: var(--tes-text-sm); }',
       '#tes-panel .tes-focus-section { border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; margin-bottom: var(--tes-gap-lg); }',
       '#tes-panel .tes-focus-section-header { display: grid; grid-template-columns: 2.5em 1fr auto; align-items: center; gap: 8px; }',
       '#tes-panel .tes-focus-section-title { width: 100%; text-align: left; }',
@@ -2736,24 +2742,42 @@
       '  background: var(--tm-bg-3); font-size: var(--tes-text-sm); }',
       '#tes-panel .tes-focus-remaining { justify-self: end; text-align: right; }',
       '#tes-panel .tes-focus-priority { box-sizing: border-box; width: 2.5em; }',
+      '#tes-panel .tes-focus-rank-toggle { margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-note { color: var(--tm-muted); margin-bottom: var(--tes-gap-sm); font-size: var(--tes-text-sm); }',
       '#tes-panel input { color: var(--tm-text); background: var(--tm-hover); border: 1px solid var(--tm-border-2);',
       '  border-radius: 4px; padding: 3px 6px; font-size: inherit; width: 10em; }',
+      '#tes-panel input[type="number"] { font-variant-numeric: tabular-nums; }',
       // The report is shown before it can be copied, so it needs to be
       // readable in place: wrapped, scrollable, and visibly a block of text
       // the player is about to hand to someone else.
       '#tes-panel .tes-report { white-space: pre-wrap; word-break: break-word; background: var(--tm-bg-3);',
       '  border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; margin: var(--tes-gap) 0; max-height: 240px; overflow: auto; }',
-      // auto-fill rather than a fixed column count: the panel sits inside
-      // Torn's own column, whose width the script does not control.
-      '#tes-panel .tes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: var(--tes-gap) 0; }',
-      '#tes-panel .tes-cell { border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; }',
-      '#tes-panel .tes-all-banner { border: 1px solid var(--tm-good-text); border-radius: 4px;',
-      '  padding: 8px; margin: var(--tes-gap) 0; }',
-      '#tes-panel .tes-cell-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); }',
-      // pre-line, because the detail carries a newline between the duration
-      // and the finish date rather than two elements.
-      '#tes-panel .tes-cell-detail { white-space: pre-line; color: var(--tm-meta); font-size: var(--tes-text-sm); }',
+      // auto-fit rather than a viewport query: the width that matters belongs
+      // to Torn's column, so tracks collapse naturally from two to one.
+      '#tes-panel .tes-degree-list { display: grid;',
+      '  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));',
+      '  column-gap: var(--tes-gap-lg); margin: var(--tes-gap) 0; }',
+      '#tes-panel .tes-degree-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;',
+      '  align-items: center; gap: var(--tes-gap); padding: var(--tes-gap-sm) 0;',
+      '  border-bottom: 1px solid var(--tm-border-2); }',
+      '#tes-panel .tes-degree-main { min-width: 0; overflow-wrap: anywhere; }',
+      '#tes-panel .tes-degree-identity { font-weight: bold; }',
+      '#tes-panel .tes-degree-detail { color: var(--tm-meta); font-size: var(--tes-text-sm); }',
+      '#tes-panel .tes-degree-date { text-align: right; white-space: nowrap;',
+      '  font-variant-numeric: tabular-nums; }',
+      '#tes-panel .tes-degree-complete .tes-degree-identity,',
+      '#tes-panel .tes-degree-complete .tes-degree-date { color: var(--tm-muted); }',
+      '#tes-panel .tes-all-banner { display: grid; grid-template-columns: minmax(0, 1fr) auto;',
+      '  align-items: center; gap: var(--tes-gap); border: 1px solid var(--tm-good-text);',
+      '  border-radius: 4px; background: var(--tm-bg-3); padding: var(--tes-gap); margin: var(--tes-gap) 0; }',
+      '#tes-panel .tes-all-title { min-width: 0; overflow-wrap: anywhere; font-size: var(--tes-text-lg);',
+      '  font-weight: bold; color: var(--tm-text); }',
+      '#tes-panel .tes-all-figures { display: flex; align-items: baseline; justify-content: flex-end;',
+      '  flex-wrap: wrap; gap: var(--tes-gap-xs) var(--tes-gap); text-align: right; }',
+      '#tes-panel .tes-all-finish { color: var(--tm-good-text); font-size: var(--tes-text-lg);',
+      '  font-weight: bold; white-space: nowrap; font-variant-numeric: tabular-nums; }',
+      '#tes-panel .tes-all-meta { color: var(--tm-meta); font-size: var(--tes-text-sm);',
+      '  font-variant-numeric: tabular-nums; }',
       '#tes-panel .tes-share { width: 100%; box-sizing: border-box; color: var(--tm-text); background: var(--tm-hover);',
       '  border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 6px; font-family: monospace; font-size: 0.95em; }',
       '#tes-panel .tes-foot { margin-top: var(--tes-gap); color: var(--tm-muted); font-size: var(--tes-text-sm); }',
@@ -2940,14 +2964,23 @@
   ];
 
   // A labelled section per group, not a flat list: later releases add fields
-  // and the shell has to absorb them without restructuring.
-  function settingsSection(doc, body, title) {
+  // and the shell has to absorb them without restructuring. The short role is
+  // layout copy: it says whether the section affects dates/order or is a tool,
+  // without forcing the heading itself to carry a warning sentence.
+  function settingsSection(doc, body, title, role) {
     const section = doc.createElement('div');
     section.className = 'tes-section';
+    const header = doc.createElement('div');
+    header.className = 'tes-section-header';
     const heading = doc.createElement('div');
     heading.className = 'tes-section-title';
     heading.textContent = title;
-    section.appendChild(heading);
+    header.appendChild(heading);
+    const roleLabel = doc.createElement('div');
+    roleLabel.className = 'tes-section-role';
+    roleLabel.textContent = role;
+    header.appendChild(roleLabel);
+    section.appendChild(header);
     body.appendChild(section);
     return section;
   }
@@ -3090,7 +3123,7 @@
       body.appendChild(saveError);
     }
 
-    const boosters = settingsSection(doc, body, 'Boosters');
+    const boosters = settingsSection(doc, body, 'Boosters', 'Affects dates');
     // First in the section because it is first in the arithmetic
     // (planConsumables): points come off the path, and the Book figures are
     // computed against what they leave behind. Reading the section top to
@@ -3112,7 +3145,7 @@
     resetNote.textContent = 'Resetting to defaults clears what you typed. The perk fields will refill with what the panel inferred from your reduction — typing over them is what makes a value yours.';
     boosters.appendChild(resetNote);
 
-    const planning = settingsSection(doc, body, 'Planning');
+    const planning = settingsSection(doc, body, 'Planning', 'Affects order');
     const modeRow = doc.createElement('div');
     modeRow.className = 'tes-row';
     const modeLabel = doc.createElement('span');
@@ -3141,7 +3174,24 @@
     orderNote.textContent = 'Order does not change the finish date — courses run one at a time, so the total is the same either way. It changes how soon each course’s bonus starts paying off. It can also turn a queue with no date into one with a date: a queue whose courses are all valid but listed out of sequence can fail as-listed and succeed under the other two modes, which reorder to something followable.';
     planning.appendChild(orderNote);
 
-    const help = settingsSection(doc, body, 'Help');
+    const recorded = settingsSection(
+      doc, body, 'Education perks', 'Saved only · not used in dates'
+    );
+    const recordedNote = doc.createElement('div');
+    recordedNote.className = 'tes-note';
+    recordedNote.textContent = 'These fields do not change any date the panel shows: Torn has already applied your education perks to the course durations it sends, so the panel reads those durations rather than rebuilding them from these values. They are kept so they travel with a shared plan and a debug report. Job points are not among them — they are spent by you, on courses you have not started yet, so they live in Boosters and do move the dates.';
+    recorded.appendChild(recordedNote);
+    // The note carries the honesty: it names the inference as an inference, so
+    // a prefilled field is never mistaken for something we read off the account.
+    const note = doc.createElement('div');
+    note.className = 'tes-note';
+    note.textContent = model.perkInference.note;
+    recorded.appendChild(note);
+    numberField(doc, recorded, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
+    triStateField(doc, recorded, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
+    triStateField(doc, recorded, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
+
+    const help = settingsSection(doc, body, 'Help', 'Troubleshooting');
 
     // One compact line, and nothing at all while the URL is unresolved — not a
     // dead link, not a "#" href, not placeholder text pretending to be a link.
@@ -3182,27 +3232,12 @@
       help.appendChild(copy);
     }
 
-    const recorded = settingsSection(doc, body, 'Recorded with this plan — not calculated');
-    const recordedNote = doc.createElement('div');
-    recordedNote.className = 'tes-note';
-    recordedNote.textContent = 'These fields do not change any date the panel shows: Torn has already applied your education perks to the course durations it sends, so the panel reads those durations rather than rebuilding them from these values. They are kept so they travel with a shared plan and a debug report. Job points are not among them — they are spent by you, on courses you have not started yet, so they live in Boosters and do move the dates.';
-    recorded.appendChild(recordedNote);
-    // The note carries the honesty: it names the inference as an inference, so
-    // a prefilled field is never mistaken for something we read off the account.
-    const note = doc.createElement('div');
-    note.className = 'tes-note';
-    note.textContent = model.perkInference.note;
-    recorded.appendChild(note);
-    numberField(doc, recorded, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
-    triStateField(doc, recorded, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
-    triStateField(doc, recorded, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
-
     // The one place in this script that takes text from outside the player's
     // own browser. Everything it can produce is data: the box is a textarea
     // written through `.value`, the error below it goes in through
     // textContent, and decodePlan validates every id against the live
     // catalogue before any of it reaches a plan.
-    const share = settingsSection(doc, body, 'Share this plan');
+    const share = settingsSection(doc, body, 'Share this plan', 'Export or import');
     const shareBox = doc.createElement('textarea');
     shareBox.className = 'tes-share';
     shareBox.value = model.shareText || '';
@@ -3246,12 +3281,14 @@
     const rankBasis = FOCUS_RANK_BASIS_LABELS.find(function (basis) {
       return basis.id === model.settings.focusRankBasis;
     }) || FOCUS_RANK_BASIS_LABELS[0];
+    const overview = doc.createElement('div');
+    overview.className = 'tes-overview tes-focus-overview';
     const rankToggle = handlers.onFocusRankToggle || function () {};
     const rankButton = doc.createElement('button');
     rankButton.className = 'tes-focus-rank-toggle';
     rankButton.textContent = `sorting: ${rankBasis.label}`;
     if (rankButton.addEventListener) rankButton.addEventListener('click', rankToggle);
-    body.appendChild(rankButton);
+    overview.appendChild(rankButton);
 
     // The one thing this view must not be left to imply — see the settings
     // view's identical worry about Queue order in general. Focus reorders;
@@ -3263,7 +3300,7 @@
     if (Array.isArray(model.focuses) && model.focuses.length === 0) {
       orderNote.textContent += ' With nothing selected, the queue uses a balanced default: gain multipliers first, then courses with the largest measurable benefit per day, then unlocks. It is a starting point, not a claim about what is optimal for you.';
     }
-    body.appendChild(orderNote);
+    overview.appendChild(orderNote);
 
     // Torn does not attach a learningOutcomes entry to every course. Silence
     // on 31 of them would read as "these have nothing," which is wrong for
@@ -3272,7 +3309,7 @@
     const outcomeNote = doc.createElement('div');
     outcomeNote.className = 'tes-note';
     outcomeNote.textContent = '31 courses grant no learning outcome at all. Working Stats is the only focus category that can still reach them.';
-    body.appendChild(outcomeNote);
+    overview.appendChild(outcomeNote);
 
     // A stale or unmapped count names a live disagreement between the
     // taxonomy and today's payload — shown, never swallowed, because a silent
@@ -3282,8 +3319,9 @@
       const healthNote = doc.createElement('div');
       healthNote.className = 'tes-note';
       healthNote.textContent = `Focus data health: ${model.focusHealth.stale} classification${model.focusHealth.stale === 1 ? '' : 's'} out of date, ${model.focusHealth.unmapped} outcome${model.focusHealth.unmapped === 1 ? '' : 's'} not yet classified.`;
-      body.appendChild(healthNote);
+      overview.appendChild(healthNote);
     }
+    body.appendChild(overview);
 
     const toggle = handlers.onFocusToggle || function () {};
     const reprioritise = handlers.onFocusPriority || function () {};
@@ -3412,35 +3450,53 @@
     const banner = doc.createElement('div');
     banner.className = 'tes-all-banner';
     const bannerTitle = doc.createElement('div');
-    bannerTitle.className = 'tes-cell-title';
+    bannerTitle.className = 'tes-all-title';
     bannerTitle.textContent = model.grid.allBox.name;
     banner.appendChild(bannerTitle);
-    const bannerDetail = doc.createElement('div');
-    bannerDetail.className = 'tes-cell-detail';
-    bannerDetail.textContent = model.grid.allBox.courseCount === 0
+    const bannerFigures = doc.createElement('div');
+    bannerFigures.className = 'tes-all-figures';
+    const bannerMeta = doc.createElement('div');
+    bannerMeta.className = 'tes-all-meta';
+    bannerMeta.textContent = model.grid.allBox.courseCount === 0
+      ? 'No courses remaining'
+      : `${model.grid.allBox.courseCount} crs · ${model.grid.allBox.durationLabel}`;
+    bannerFigures.appendChild(bannerMeta);
+    const bannerFinish = doc.createElement('div');
+    bannerFinish.className = 'tes-all-finish';
+    bannerFinish.textContent = model.grid.allBox.courseCount === 0
       ? 'Already complete'
-      : `${model.grid.allBox.courseCount} crs — ${model.grid.allBox.durationLabel}\n${model.grid.allBox.finishLabel}`;
-    banner.appendChild(bannerDetail);
+      : model.grid.allBox.finishLabel;
+    bannerFigures.appendChild(bannerFinish);
+    banner.appendChild(bannerFigures);
     body.appendChild(banner);
 
-    const grid = doc.createElement('div');
-    grid.className = 'tes-grid';
+    const list = doc.createElement('div');
+    list.className = 'tes-degree-list';
     for (const box of model.grid.boxes) {
-      const cell = doc.createElement('div');
-      cell.className = 'tes-cell';
-      const title = doc.createElement('div');
-      title.className = 'tes-cell-title';
-      title.textContent = box.bachelorPrefix ? `${box.name} (${box.bachelorPrefix})` : box.name;
-      cell.appendChild(title);
-      const detail = doc.createElement('div');
-      detail.textContent = box.courseCount === 0
-        ? 'Already complete'
-        : `${box.courseCount} crs — ${box.durationLabel}\n${box.finishLabel}`;
-      detail.className = 'tes-cell-detail';
-      cell.appendChild(detail);
-      grid.appendChild(cell);
+      const row = doc.createElement('div');
+      row.className = box.courseCount === 0
+        ? 'tes-degree-row tes-degree-complete'
+        : 'tes-degree-row';
+      const main = doc.createElement('div');
+      main.className = 'tes-degree-main';
+      const identity = doc.createElement('div');
+      identity.className = 'tes-degree-identity';
+      identity.textContent = box.bachelorPrefix ? `${box.name} (${box.bachelorPrefix})` : box.name;
+      main.appendChild(identity);
+      if (box.courseCount !== 0) {
+        const detail = doc.createElement('div');
+        detail.className = 'tes-degree-detail';
+        detail.textContent = `${box.courseCount} crs · ${box.durationLabel}`;
+        main.appendChild(detail);
+      }
+      row.appendChild(main);
+      const date = doc.createElement('div');
+      date.className = 'tes-degree-date';
+      date.textContent = box.courseCount === 0 ? 'Already complete' : box.finishLabel;
+      row.appendChild(date);
+      list.appendChild(row);
     }
-    body.appendChild(grid);
+    body.appendChild(list);
 
     // The number on this screen that looks wrong, and it looks wrong every
     // time: eleven degrees dated 2026 above an all-courses box dated 2029.
@@ -3485,6 +3541,9 @@
       body.appendChild(saveError);
     }
 
+    const overview = doc.createElement('div');
+    overview.className = 'tes-overview tes-schedule-overview';
+
     // The finish date is the number this whole tool exists to produce, so
     // it gets its own prominent line rather than sitting mid-paragraph in
     // the summary below.
@@ -3492,7 +3551,7 @@
       const finish = doc.createElement('div');
       finish.className = 'tes-finish';
       finish.textContent = `Queue fin: ${model.finishLabel}`;
-      body.appendChild(finish);
+      overview.appendChild(finish);
     }
 
     // Null whenever the finish date is withheld (buildPanelModel), so this
@@ -3500,36 +3559,63 @@
     if (model.consumables) {
       const c = model.consumables;
       const boost = doc.createElement('div');
-      boost.className = 'tes-summary';
-      // .tes-summary itself no longer carries white-space: pre-line (Task
-      // 7 — the queue summary below needed a border on just its middle
-      // section, which pre-line on the whole class would not allow). This
-      // block still joins several lines with '\n' and needs them to wrap,
-      // so it asks for that directly rather than depending on the class.
-      boost.style.whiteSpace = 'pre-line';
-      const lines = [];
+      boost.className = 'tes-boosters';
+      const scenario = function (nameText, finishText, detailText) {
+        const row = doc.createElement('div');
+        row.className = 'tes-booster-row';
+        const name = doc.createElement('div');
+        name.className = 'tes-booster-name';
+        name.textContent = nameText;
+        row.appendChild(name);
+        const finish = doc.createElement('div');
+        finish.className = 'tes-booster-finish';
+        finish.textContent = finishText;
+        row.appendChild(finish);
+        const detail = doc.createElement('div');
+        detail.className = 'tes-booster-detail';
+        detail.textContent = detailText;
+        row.appendChild(detail);
+        boost.appendChild(row);
+      };
       // First, because it is first in the arithmetic: the Books lines below
       // are computed against the path this one leaves behind, not against the
       // raw queue total. Rendering them the other way round would read as two
       // independent savings off the same number.
       if (c.jobPoints > 0) {
-        lines.push(`With ${c.jobPoints} job point${c.jobPoints === 1 ? '' : 's'} (30 mins each): ${c.jobPointFinishLabel} (${c.jobPointDurationLabel})`);
+        scenario(
+          `${c.jobPoints} job point${c.jobPoints === 1 ? '' : 's'}`,
+          c.jobPointFinishLabel,
+          `30 minutes each · ${c.jobPointDurationLabel}`
+        );
       }
       if (c.plannedBooks > 0) {
-        lines.push(`With ${c.plannedBooks} Book${c.plannedBooks === 1 ? '' : 's'} of Carols: ${c.plannedFinishLabel} (${c.plannedDurationLabel})`);
+        scenario(
+          `${c.plannedBooks} Book${c.plannedBooks === 1 ? '' : 's'} owned`,
+          c.plannedFinishLabel,
+          `Planned from what you have · ${c.plannedDurationLabel}`
+        );
       }
       // The cost is not decoration. A floor date without it is a number
       // nobody can act on — and "$0", which is what an unset price would
       // arithmetically produce, is worse than no figure at all: it reads as
       // "the floor is free". Name the gap instead, and say how to close it.
       const costText = c.floorCostLabel || 'cost unknown, no Book price set';
-      lines.push(`Floor with maximum Books (${c.floorBooks} — ${costText}): ${c.floorFinishLabel} (${c.floorDurationLabel})`);
+      scenario(
+        'Maximum Books floor',
+        c.floorFinishLabel,
+        `${c.floorBooks} Books · ${costText} · ${c.floorDurationLabel}`
+      );
       if (!c.floorCostLabel) {
-        lines.push('Set a Book price in settings to see what that floor would cost.');
+        const priceNote = doc.createElement('div');
+        priceNote.className = 'tes-note tes-booster-note';
+        priceNote.textContent = 'Set a Book price in settings to see what that floor would cost.';
+        boost.appendChild(priceNote);
       }
-      lines.push('Job points are spent first, at 30 minutes each, and the Book figures above are what is left after them. Both shorten queued course time. Time already running on your current course is not affected.');
-      boost.textContent = lines.join('\n');
-      body.appendChild(boost);
+      const caveat = doc.createElement('div');
+      caveat.className = 'tes-note tes-booster-note';
+      caveat.textContent = 'Job points apply first; Book figures use the time left after them. Both shorten queued course time. Time already running on your current course is not affected.';
+      boost.appendChild(caveat);
+      overview.appendChild(boost);
     }
 
     // Three real child elements, not one text node joined with '\n', so each
@@ -3580,25 +3666,23 @@
       summary.appendChild(diagnostics);
     }
 
-    body.appendChild(summary);
+    overview.appendChild(summary);
+    body.appendChild(overview);
 
-    // Two lines per queued course, sharing one grid row with the remove
-    // button (.tes-queue-row in the injected CSS): the existing info line,
-    // then an indented, smaller line naming what the course actually gives —
-    // never inferred from its name (see bonusLabel). Both lines are
-    // textContent, never innerHTML: bonusLabel's text comes straight from
-    // Torn's own payload and is not ours to trust into markup.
+    // Two compact lines per queued course, sharing one grid row with the remove
+    // button: identity first, then timing and the bonus in one secondary line.
+    // Torn owns both name and bonus, so both wrap and both use textContent.
     for (const item of model.queue) {
       const row = doc.createElement('div');
       row.className = 'tes-queue-row';
       const main = doc.createElement('span');
       main.className = 'tes-queue-main';
-      main.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — fin ${item.finishLabel}`;
+      main.textContent = `${item.prefix} · ${item.name}`;
       row.appendChild(main);
-      const bonus = doc.createElement('span');
-      bonus.className = 'tes-queue-bonus';
-      bonus.textContent = item.bonusLabel;
-      row.appendChild(bonus);
+      const detail = doc.createElement('span');
+      detail.className = 'tes-queue-detail';
+      detail.textContent = `${item.durationLabel} · fin ${item.finishLabel} · ${item.bonusLabel}`;
+      row.appendChild(detail);
       const remove = doc.createElement('button');
       remove.textContent = 'remove';
       remove.dataset.courseId = String(item.courseId);

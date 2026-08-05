@@ -4,7 +4,7 @@ The one gate the harness cannot run. `/qa` and `/browse` are off for this repo
 (`CLAUDE.md`): the app under test is a third-party site behind a real login, so
 every case here is run by hand, in a real browser, signed into a real account.
 
-476 automated tests pass against a scrubbed fixture. Everything below exists
+553 automated tests pass against a scrubbed fixture. Everything below exists
 because a fixture cannot prove it: the live DOM, Torn's real React tree,
 Tampermonkey's sandbox, and whether the words on screen are true.
 
@@ -14,7 +14,32 @@ likely to be caught by the suite; § M (Focus view) and § N (reset controls)
 are two whole features that shipped this release with **zero** live-browser
 coverage of any kind.
 
-## Before you start: three visible changes, not one
+## v0.5.0 layout pass
+
+This branch deliberately changes four presentation areas without changing
+their calculations or saved values:
+
+1. Degrees is a divided definition list: two columns at normal width and one
+   at narrow width, with the all-remaining banner still first.
+2. Queue items are two compact lines: identity, then timing/date/bonus.
+3. Booster projections are aligned scenario rows, including one coherent
+   maximum-Books floor row.
+4. Settings has five sections with short role labels beside their titles.
+
+At both normal and narrow panel widths, confirm long course names and bonus
+strings wrap without clipping or horizontal scrolling; dates, durations,
+costs and numeric inputs align with tabular figures; completed degree rows are
+muted but still say `Already complete`; and read-only degree, queue and booster
+rows gain no card fill, shadow or hover response. No panel text should render
+black.
+
+The post-implementation correction pass adds three hierarchy checks: Schedule's
+finish/booster/assumption content is enclosed in one green-outlined overview;
+Focus's sorting button and guidance paragraphs are enclosed in a matching
+overview with visible internal spacing; and every Settings title/role pair sits
+on a dark-green header bar with light text.
+
+## Before you start: three earlier visible changes, not one
 
 This release also retouched the panel's whole visual surface — colour,
 spacing, type — adopting Torn Bookie Live Scores' tokens. Expect **three**
@@ -57,7 +82,8 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 4. **The nav row is static** — every planner button renders on every view now,
    rather than the row showing only the views you were not on.
 5. **The Focus view is restructured** — § M2, § M2a, § M2b, § M3a, § M3b.
-6. **The schedule summary's separator moved** — § C8, § C9, § C9a.
+6. **The schedule summary's old separator is gone** — § C8, § C9, § C9a.
+   The green overview outline now provides the boundary around the whole area.
 
 ## Setup
 
@@ -105,7 +131,7 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 | C1 | Open the course picker | ~115 options, no `[bachelor]` text anywhere. Tier-3 courses render in green (`#7ee081`, the same green as the finish-line total), not as plain text. |
 | C1a | Same picker, on macOS specifically | The OS draws the `<select>` menu itself and commonly ignores an option's colour, so bachelor courses show **no green marker at all** there — no prefix either, since none is kept as a fallback. This is expected on macOS, not a defect: confirm the picker still works (count, selection, add) even though the marker is invisible. On Windows/Linux Chrome or Firefox, confirm the green **is** visible — that is the platform the colour is for. |
 | C2 | Look at the picker's **first** option before touching anything | The "all remaining courses" sentinel must not be sitting there as the browser's default selection — a stray `add` click would queue everything with no bulk undo. This was a real bug; confirm the fix held in a real `<select>`. |
-| C3 | Add a single tier-1 course | Appears in the queue **as two lines sharing one row**: the main line (`prefix name — duration — fin <date>`) and, below it, a second, smaller, indented line naming what the course actually gives. A finish date and a total print in the summary above. |
+| C3 | Add a single tier-1 course | Appears in the queue **as two compact lines sharing one row**: `prefix · name` first, then a smaller line containing `duration · fin <date> · <bonus>`. A finish date and a total print in the summary above. |
 | C3a | Read the second line for a course whose payload carries a `learningOutcomes` entry | Names the real benefit, in Torn's own words — never inferred or guessed from the course's name. |
 | C3b | Add one of the **31 courses with no `learningOutcomes` at all** | The second line reads `Bonus: not listed by Torn` (or, if the course also grants a working stat, the stat figure plus `· other bonus not listed by Torn`) — never blank, never a made-up benefit. |
 | C3c | Click `remove` on a two-line row | The whole row — both lines — disappears from one click. The button visually spans the row rather than sitting beside only the top line. |
@@ -113,9 +139,10 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 | C5 | Add "all remaining courses" | Everything queues, appended *after* what you already had — your hand-built order is not reordered or discarded. |
 | C6 | Add a course already in the queue | No duplicate. |
 | C7 | Reload | Queue survives. |
-| C8 | On a clean, followable queue, look at the summary block above the queue rows | Exactly **two** parts — a perk-reduction line, then a total-time line below it — with **no line between them**, and a single separator running **underneath the whole block**, between the summary and the first queue row. The separator moved here at the v0.3.0 QA gate; it used to sit above the total. |
-| C9 | Build a queue that drops a stale entry or carries a missing prerequisite (see § D) | A **third** part appears below the total, naming the problem(s). The separator stays **below all three** — it must not end up between the total and the new diagnostics line. This is the case the placement was chosen for, so it is the one worth checking. |
-| C9a | Empty the queue and look at the same area | The separator still renders, now dividing the summary from the course picker. That is correct, not a stray line. |
+| C8 | On a clean, followable queue, look at the summary block above the queue rows | Exactly **two** parts — a perk-reduction line, then a total-time line below it — with **no separator after the total**. The green overview outline is the only boundary around this area. |
+| C9 | Build a queue that drops a stale entry or carries a missing prerequisite (see § D) | A **third** part appears below the total, naming the problem(s), with no internal divider before or after it. |
+| C9a | Empty the queue and look at the same area | The overview ends cleanly after the empty-queue message. No leftover separator appears before the course picker. |
+| C10 | Compare everything above the first course row with the queue below | Finish date, booster scenarios and queue assumptions form one green-outlined dark overview surface. Course rows begin outside it, so the two areas are unmistakable. |
 
 ## D. Prerequisites and the withheld date
 
@@ -126,23 +153,24 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 | D3 | Add a course gated on the course you are **currently taking** | It is *followable* — the active course finishes before the queue starts — so a date **does** print. This is the two-notions-of-completed fix; withholding here would be the regression in the other direction. |
 | D4 | Re-add the missing prerequisite from D2 | Date and total come back. |
 
-## E. Degrees grid
+## E. Degrees list
 
 | # | Steps | Expected |
 |---|---|---|
-| E1 | Open Degrees | **Twelve boxes, one per category — no all-courses box among them.** Above the grid, before it in reading order, a full-width banner titled **"all remaining courses"** carries the same count, duration and finish date the old thirteenth box used to. `document.querySelectorAll('.tes-cell-all').length` must be `0` — that class was retired; count the on-screen boxes yourself rather than trusting a stale memory of "one per category plus one more." |
-| E1a | Confirm the banner's position | It renders **before** `.tes-grid` in the DOM, visually above the grid of degree boxes, not sorted into the grid as a last cell. |
-| E2 | Read the dates across boxes | Every box starts from **today**, independently. Eleven degrees finishing in 2026 beside an all-courses banner in 2029 is **expected**, not a bug — confirm the on-screen caveat says so clearly. |
+| E1 | Open Degrees at normal panel width | **Twelve divided rows, one per category, arranged in two columns.** Above the list, before it in reading order, a compact full-width banner titled **"all remaining courses"** uses the width horizontally: label left; existing small count/duration followed by the larger finish date on one wrapping line to the right. There are no degree cards or retired `.tes-grid`/`.tes-cell` elements. |
+| E1a | Confirm the banner's position, then narrow the panel | The banner renders **before** `.tes-degree-list` in the DOM. The twelve rows reflow to one column without clipping, horizontal scrolling or truncated text. |
+| E2 | Read the dates across rows | Every row starts from **today**, independently. Eleven degrees finishing in 2026 beside an all-courses banner in 2029 is **expected**, not a bug — confirm the on-screen caveat says so clearly. |
 | E3 | Read the note about durations summing | It claims the boxes add up. Against today's catalogue that is true; confirm the sentence is present and reads honestly. |
-| E4 | Check a box for a category holding two tier-3 courses | No degree name in the title (it would be false of both). A missing label here is correct. |
-| E5 | Check a box for a category you have already finished | No phantom "missing prerequisite". |
+| E4 | Check a row for a category holding two tier-3 courses | No degree name in the identity (it would be false of both). A missing label here is correct. |
+| E5 | Check a row for a category you have already finished | It is visually muted, still says **Already complete**, and shows no phantom "missing prerequisite". |
 
 ## F. Settings, and the honest-copy check
 
 | # | Steps | Expected |
 |---|---|---|
-| **F1** | Open ⚙ settings and read the copy around **Job points available**, **Merits reduction (%)**, **Principal rank (10%)** and **WSU stock block (10%)** | **These four drive no arithmetic, by design** — Torn already applies job points to the course in progress, and the reduction is read from the payload rather than reconstructed from perks. That is correct behaviour. **The question is whether the screen says so.** The release notes originally claimed the opposite. A player who types their merits in and sees no number move will file a bug unless the copy already told them. This is the finding most likely to be hit on day one. |
-| F2 | Change **Max booster cooldown (hours)**, **Books of Carols owned**, **Book of Carols price** | Each visibly moves the arithmetic. These four (with Queue order) are the ones that do. |
+| F0 | Read the section headers from top to bottom | Exactly **Boosters — Affects dates**, **Planning — Affects order**, **Education perks — Saved only · not used in dates**, **Help — Troubleshooting**, **Share this plan — Export or import**. Every title/role pair sits on a dark-green bar with light text. At narrow width the role may wrap below its title, but controls and copy stay in their section. |
+| **F1** | Open ⚙ settings and read the copy around **Merits reduction (%)**, **Principal rank (10%)** and **WSU stock block (10%)** | **These three drive no arithmetic, by design** — Torn has already applied education perks to the durations it sends, so the panel reads those durations rather than reconstructing them. The section role and explanatory note must say so before a player edits them. |
+| F2 | Change **Job points available**, **Max booster cooldown (hours)**, **Books of Carols owned** and **Book of Carols price** | Each visibly moves the relevant booster projection. Queue order changes sequence rather than total duration. |
 | F3 | Read the perk-inference note at the top of Education perks | It names itself **as an inference** from your observed reduction — not as something read off your account. If any perk field is prefilled, the note must be present and unambiguous. |
 | F4 | Set a perk field by hand, reload, check it | Your typed value is never overwritten by inference. Inference fills only fields you have left at "Not set". |
 | F5 | Check the tri-state selects (Principal rank, WSU stock block) | **Not set / Yes / No.** "Not set" is a real, distinct state — not a blank, not an unticked box implying "no". |
@@ -153,7 +181,7 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 
 | # | Steps | Expected |
 |---|---|---|
-| G1 | With a queue and a cooldown budget set, read the ceiling and floor lines | A maximum Book count, a shortest-possible finish date, and a cost. |
+| G1 | With a queue and a cooldown budget set, read the booster scenarios | Job points (when present), owned Books (when present) and the maximum-Books floor appear as quiet divided rows with right-aligned dates. The floor's shortest finish date, Book count and cost stay together in one row. |
 | G2 | Leave **Book of Carols price** unset or `0` | Reads **"cost unknown, no Book price set"** — never `$0`. "$0" would tell the player the floor is free. |
 | G3 | Set a real price | A real cost appears. Check the Book count is plausible against your cooldown — an overstated count was a caught bug (up to 43×). |
 | G4 | Queue a plan with an unmet prerequisite | The Book lines disappear too, on the same rule as the finish date. |
@@ -219,6 +247,7 @@ but nobody has watched a real queue re-sort in a real browser yet.
 |---|---|---|
 | M1 | On a **fresh install**, look at the nav row before touching Settings | The `focus` button is present and **enabled**. Focus is now the default Queue order, so the feature is available out of the box. The queue itself is unchanged from as-listed, because focus ordering degrades to as-listed until you pick a focus — confirm the queue order matches what as-listed gives. |
 | M1a | In Settings, change Queue order to anything other than "My focus first", then look at the nav row | The `focus` button is **gone** — not greyed out, absent. Changing it back makes the button reappear. This replaced the disabled-button-with-a-title behaviour: the button is present by default now, so there is no longer a discoverability problem for a disabled state to solve. |
+| M1b | Open Focus and inspect the area immediately below the nav | The sorting button and both guidance paragraphs sit inside one green-outlined dark overview. There is clear space below the sorting button, and the first category begins outside the overview. |
 | M2 | Click the `focus` button | The Focus view opens. **All ten category sections are collapsed**, each an outlined box using the same border as the degrees-page cards. No selection names are visible yet. |
 | M2a | Read the collapsed section headings | Each names its category and how many selections in it you have chosen — so you can see where your focuses are without opening all ten. Each heading is a real button and responds to a click; opening one leaves the other nine closed. |
 | M2b | Open a section, leave the Focus view, come back | Sections are collapsed again. Open/closed state is deliberately not remembered — it is transient, like which view you were last on, not a standing preference like the panel's own collapsed state. |
