@@ -3696,9 +3696,20 @@
               draw(currentPlan, saveFailed === true);
               return;
             }
-            // view === 'focus': a later task. Redraw disarms the button
-            // regardless, so a stray confirm on an unwired view is inert
-            // rather than stuck armed.
+            if (view === 'focus') {
+              // Priority is the array index, not a stored field — clearing
+              // focuses to [] removes every number with it. Same
+              // normalise/save/redraw commit onFocusToggle uses, so a failed
+              // write surfaces as settingsSaveFailed rather than being lost.
+              const next = Object.assign({}, settings, { focuses: [] });
+              settings = normaliseSettings(next);
+              settingsSaveFailed = !saveSettings(settings);
+              draw(currentPlan, saveFailed === true);
+              return;
+            }
+            // No other view is reset-armable; redraw disarms the button
+            // regardless, so a stray confirm here is inert rather than stuck
+            // armed.
             draw(currentPlan, saveFailed === true);
           },
         });

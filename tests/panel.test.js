@@ -1903,3 +1903,59 @@ test('resetting settings leaves the queue alone', async () => {
   assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 24,
     'the settings reset must actually restore the default, not silently no-op');
 });
+
+// Task 3: the focus view's own reset. The focus nav entry is disabled unless
+// Queue order is 'focus' (see the "disabled until Queue order selects focus"
+// test above), so every test here seeds that or the view is unreachable and
+// findReset() below would find the schedule view's button instead.
+//
+// The brief's own version of these two tests used
+// `doc.querySelectorAll('.tes-nav button')` and
+// `btn().dispatchEvent({ type: 'click' })` — tests/fake-document.js returns
+// `[]` from querySelectorAll and implements no dispatchEvent at all, so both
+// would silently assert against nothing. Adapted to this file's real idioms,
+// descendants()/fire(), the same substitution every other end-to-end test in
+// this file already makes. The brief also read a `stored` field off
+// bootInit's return value; bootInit (defined above) returns `gmStore`, not
+// `stored` — adapted to `gmStore.get(x.SETTINGS_KEY)`/`gmStore.get(x.STORAGE_KEY)`,
+// what the schedule- and settings-reset e2e tests above already read.
+test('the focus view resets its selections and nothing else', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [34, 35] }, {
+    orderMode: 'focus',
+    focuses: [
+      { category: 'Working Stats', selection: 'intelligence' },
+      { category: 'Passive Stat Bonus', selection: 'Speed' },
+    ],
+  });
+  const panelEl = () => doc.querySelector('#tes-panel');
+  const findNavBtn = (pattern) => {
+    const nav = descendants(panelEl()).find((c) => c.className === 'tes-nav');
+    return nav.children.find((b) => pattern.test(b.textContent));
+  };
+  fire(findNavBtn(/focus/i), 'click');
+  const findReset = () => descendants(panelEl()).find((c) => /tes-reset/.test(c.className));
+  fire(findReset(), 'click');
+  fire(findReset(), 'click');
+  assert.deepStrictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).focuses, []);
+  assert.deepStrictEqual(JSON.parse(gmStore.get(x.STORAGE_KEY)).queue, [34, 35],
+    'the focus page does not own the queue');
+});
+
+test('every focus number is gone after a focus reset, not just the selections', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [] }, {
+    orderMode: 'focus',
+    focuses: [{ category: 'Working Stats', selection: 'intelligence' }],
+  });
+  const panelEl = () => doc.querySelector('#tes-panel');
+  const findNavBtn = (pattern) => {
+    const nav = descendants(panelEl()).find((c) => c.className === 'tes-nav');
+    return nav.children.find((b) => pattern.test(b.textContent));
+  };
+  fire(findNavBtn(/focus/i), 'click');
+  const findReset = () => descendants(panelEl()).find((c) => /tes-reset/.test(c.className));
+  fire(findReset(), 'click');
+  fire(findReset(), 'click');
+  assert.strictEqual(
+    descendants(panelEl()).filter((c) => c.className === 'tes-focus-priority').length,
+    0);
+});
