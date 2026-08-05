@@ -4,6 +4,43 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+
+- **A balanced default ordering**, used when Queue order is "My focus first"
+  and you have selected no focuses. Gain multipliers first — the courses that
+  multiply a *rate* of future gain, so taking them early compounds over
+  everything queued behind them — then courses by measurable benefit per day,
+  then unlocks. Any explicit Queue order still overrides it, and choosing any
+  focus replaces it entirely.
+- `focus-taxonomy.xlsx` gains a **Default order** sheet showing how every
+  course scores, with a per-course breakdown of what each contribution is worth.
+
+### Changed
+
+- **A fresh install's queue order is no longer "as listed".** It was, by
+  design, until this release; the balanced default now applies instead. The
+  finish date is unchanged — courses run one at a time, so the total is a sum.
+- The two launch URLs hold obvious `REPLACE_BEFORE_LAUNCH` placeholders rather
+  than `null`, so the wiring they feed can be checked before either URL exists.
+  **Nothing renders until a URL is real** — every consumer tests whether it
+  resolves, not whether the constant is set.
+
+### Notes
+
+- **Benefit types are normalised against the catalogue maximum before they are
+  summed.** Without that, a course granting 50 manual labor would outrank one
+  granting 100% unarmed damage purely because 50 and 100 sit on no shared
+  scale. The resulting scores are comparable *for ranking* and are not
+  quantities — nothing displays them as such.
+- **Only one percentage in the catalogue can honestly be converted to an
+  absolute number**: the education working-stat reward, whose base is the
+  working stats you have already earned. The payload carries no battle stats,
+  no company data and no jail record, so every other percentage is a rank hint.
+- **The "unlocks last" group is empty against today's catalogue**, because all
+  131 courses grant a working-stat gain and so none is unlock-only. Unlocks
+  still contribute nothing to a course's score, so unlock-heavy courses sink on
+  their own merits rather than by rule.
+
 ## [0.4.0] - 2026-08-05
 
 There is no 0.3.0 release. This work carried that number while it was being
