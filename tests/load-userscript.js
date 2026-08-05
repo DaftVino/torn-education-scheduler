@@ -48,7 +48,7 @@ const EXPORT_NAMES = [
   // working stats
   'WORKING_STATS', 'WORKING_STAT_RE', 'workingStatsFor', 'bonusLabel',
   // focus scoring
-  'focusKey', 'focusScores', 'FOCUS_WORKING_STATS', 'focusTotals', 'FOCUS_UNSTATABLE',
+  'focusKey', 'focusScores', 'balancedScores', 'FOCUS_WORKING_STATS', 'focusTotals', 'FOCUS_UNSTATABLE',
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
   // settings

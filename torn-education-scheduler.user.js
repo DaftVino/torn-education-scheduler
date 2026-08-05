@@ -505,6 +505,27 @@
     Object.freeze({ category: "Medical Effectiveness", selection: "Needle Effectiveness", unit: "percent", magnitude: 10, courseId: 48, outcome: "Gain a 10% increase in needle effectiveness" }),
   ]);
 
+  // These rows multiply a future rate of gain, so taking them early lets them
+  // compound over work still ahead. A passive stat percentage is deliberately
+  // absent: it is a one-off percentage of stats already held, not a multiplier
+  // on future earning. Combat bonuses are one-off effects for the same reason.
+  const BALANCED_GAIN_MULTIPLIER_KEYS = Object.freeze([
+    'Gym Gain Bonus Defense',
+    'Gym Gain Bonus Dexterity',
+    'Gym Gain Bonus Speed',
+    'Gym Gain Bonus Strength',
+    'General Progression Bonuses Education Working Stat Rewards',
+    'Crime & Jail Bonuses Crime Experience Gain',
+    'Crime & Jail Bonuses Crime Skill Progression',
+  ]);
+
+  // Higher sorts earlier — orderQueue negates, so this is the same convention
+  // focusScores uses. A separate rank per group rather than an offset added to
+  // the score: see balancedScores' return for why an offset cannot work here.
+  const BALANCED_GROUP_RANKS = Object.freeze([2, 1, 0]);
+  const EDUCATION_WORKING_STAT_REWARDS_KEY =
+    'General Progression Bonuses Education Working Stat Rewards';
+
   // A course in the catalogue whose outcome strings the taxonomy does not
   // account for. Reported, never guessed at: a silent zero here would rank a
   // real benefit as worthless.
@@ -556,6 +577,115 @@
       out.set(stat, (out.get(stat) || 0) + n);
     }
     return out;
+  }
+
+  // The fresh-install focus order: gain multipliers, then quantified benefits,
+  // then unlocks/unscored courses. Contributions are normalised per type before
+  // they are summed, so a unit that happens to use large numbers cannot buy a
+  // higher rank than a different kind of benefit.
+  // Returns a VECTOR of two maps — `[group, score]` — for orderQueue's existing
+  // lexicographic comparison, not one combined number.
+  //
+  // The combined number was tried first and is a trap worth recording, because
+  // it passes every test that checks a score and still orders by the wrong
+  // thing. Adding a large per-group offset (1e12 / 1e6 / 0) does keep the
+  // groups disjoint — but orderQueue then divides the WHOLE value by the
+  // course's duration, and the offset divides with it. Across the real
+  // catalogue the offset term spans 238,095 down to 34,014 while the
+  // normalised score spans 0.3, so the score contributes about one part in a
+  // million and the result is shortest-first wearing a scoring feature's
+  // clothes. Every score-level assertion still passed.
+  //
+  // Lexicographically the group is simply compared first and never mixed into
+  // the score's magnitude, so no offset is needed and nothing can drown
+  // anything else out.
+  //
+  // `basis` is applied HERE, to the score element only — a group is not a rate
+  // and dividing it by days is meaningless. Callers must therefore ask
+  // orderQueue for 'total' so it does not divide a second time.
+  function balancedScores(courses, completedIds, basis) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const done = (completedIds instanceof Set) ? completedIds : new Set();
+    const registry = focusRegistry(map);
+    const rowsByCourse = new Map();
+    for (const row of registry.entries) {
+      if (!rowsByCourse.has(row.courseId)) rowsByCourse.set(row.courseId, []);
+      rowsByCourse.get(row.courseId).push(row);
+    }
+
+    let completedWorkingStats = 0;
+    for (const id of done) {
+      for (const n of workingStatsFor(map.get(id)).values()) completedWorkingStats += n;
+    }
+
+    // courseId -> (type key -> summed value). Summing here means a course
+    // reached twice under one type is still one contribution from one course,
+    // matching focusTotals' course-level dedupe rather than double-counting it.
+    const byCourse = new Map();
+    function addContribution(courseId, type, value) {
+      if (!Number.isFinite(value) || value < 0) return;
+      if (!byCourse.has(courseId)) byCourse.set(courseId, new Map());
+      const contributions = byCourse.get(courseId);
+      contributions.set(type, (contributions.get(type) || 0) + value);
+    }
+
+    for (const course of map.values()) {
+      for (const [stat, value] of workingStatsFor(course)) {
+        addContribution(course.id, `stat:${stat}`, value);
+      }
+    }
+
+    for (const row of registry.entries) {
+      if (!Number.isFinite(row.magnitude)) continue;
+      const type = focusKey(row.category, row.selection);
+      let value = row.magnitude;
+      if (type === EDUCATION_WORKING_STAT_REWARDS_KEY) {
+        // This is the one percentage whose base exists in the payload: working
+        // stats already earned from completed educations. Ten percent of that
+        // total is the best available approximation of future education gains.
+        value = completedWorkingStats * (row.magnitude / 100);
+      } else if (row.unit === 'percent') {
+        // No base exists in this payload for any other percentage — no battle
+        // stats, company figures, jail record or crime stats. Its normalised
+        // magnitude below is only a rank hint, not an absolute quantity;
+        // inventing a base would repeat the summed-exchange-rate error. In
+        // particular, this code never guesses the player's strength.
+      }
+      addContribution(row.courseId, type, value);
+    }
+
+    const maxForType = new Map();
+    for (const contributions of byCourse.values()) {
+      for (const [type, value] of contributions) {
+        const old = maxForType.get(type);
+        if (old === undefined || value > old) maxForType.set(type, value);
+      }
+    }
+
+    const groups = new Map();
+    const scores = new Map();
+    for (const course of map.values()) {
+      const rows = rowsByCourse.get(course.id) || [];
+      const multiplier = rows.some(function (row) {
+        return BALANCED_GAIN_MULTIPLIER_KEYS.indexOf(focusKey(row.category, row.selection)) !== -1;
+      });
+      const contributions = byCourse.get(course.id) || new Map();
+      const group = multiplier ? 0 : contributions.size > 0 ? 1 : 2;
+      let normalised = 0;
+      for (const [type, value] of contributions) {
+        const maximum = maxForType.get(type) || 0;
+        if (maximum > 0) normalised += value / maximum;
+      }
+      // Same guard orderQueue uses on a malformed catalogue: an absent or zero
+      // duration becomes one day rather than leaking NaN/Infinity into a
+      // comparator.
+      const durationDays = (Number.isFinite(course.duration) && course.duration > 0)
+        ? course.duration / 86400
+        : 1;
+      groups.set(course.id, BALANCED_GROUP_RANKS[group]);
+      scores.set(course.id, basis === 'total' ? normalised : normalised / durationDays);
+    }
+    return [groups, scores];
   }
 
   // What a course actually gives, from the two payload fields that say so.
@@ -2122,15 +2252,23 @@
     // omitting this made 'My focus first' silently behave as 'as-listed'.
     // Computed only in focus mode: focusScores walks the registry, and the
     // other three modes have no use for the result.
+    const balanced = settings.orderMode === 'focus' && settings.focuses.length === 0;
     const scoreMaps = settings.orderMode === 'focus'
-      ? focusScores(settings.focuses, data.courses)
+      ? (balanced
+        ? balancedScores(data.courses, data.completedIds, settings.focusRankBasis)
+        : focusScores(settings.focuses, data.courses))
       : null;
+    // balancedScores has already applied the basis to its score element, and
+    // its group element is a rank rather than a rate — so orderQueue must be
+    // told 'total' here, or it divides both by duration a second time and the
+    // group stops being a group. See balancedScores' own note.
+    const rankBasis = balanced ? 'total' : settings.focusRankBasis;
     // The player's chosen ordering is applied once, here, and everything
     // downstream — schedule, validateQueue, finishById, the rendered rows —
     // reads the ordered queue. It cannot move the finish date (a sum does not
     // care about order); it moves which course finishes when, which is the
     // whole point of offering the choice.
-    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses, scoreMaps, settings.focusRankBasis);
+    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses, scoreMaps, rankBasis);
     const result = schedule({
       courses: data.courses, activeCourse: data.activeCourse, queue: queue, now: state.now,
     });
@@ -3102,6 +3240,9 @@
     const orderNote = doc.createElement('div');
     orderNote.className = 'tes-note';
     orderNote.textContent = 'Choosing a focus changes the order courses are queued in — it does not change the finish date. The total time is the same either way; a focus just moves the courses that earn it earlier, so that benefit starts paying off sooner. Most per day banks the stat fastest in real time; biggest total finishes the largest single courses first, and the button above switches between them.';
+    if (Array.isArray(model.focuses) && model.focuses.length === 0) {
+      orderNote.textContent += ' With nothing selected, the queue uses a balanced default: gain multipliers first, then courses with the largest measurable benefit per day, then unlocks. It is a starting point, not a claim about what is optimal for you.';
+    }
     body.appendChild(orderNote);
 
     // Torn does not attach a learningOutcomes entry to every course. Silence
