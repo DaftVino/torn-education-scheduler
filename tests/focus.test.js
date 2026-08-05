@@ -209,3 +209,49 @@ test('focusScores returns one map per focus, in order', () => {
   assert.deepStrictEqual([...reversed[0].keys()].sort(), [...maps[1].keys()].sort());
   assert.deepStrictEqual([...reversed[1].keys()].sort(), [...maps[0].keys()].sort());
 });
+
+test('working-stat totals equal the catalogue figures and shrink as courses complete', () => {
+  const { x, data } = load();
+  const f = { category: 'Working Stats', selection: 'intelligence' };
+  const all = x.focusTotals(f, data.courses, new Set());
+  assert.strictEqual(all.total, 8560);
+  assert.strictEqual(all.remaining, 8560);
+  assert.strictEqual(all.unit, 'flat');
+
+  const one = [...data.courses.values()].find((c) => x.workingStatsFor(c).get('intelligence'));
+  const some = x.focusTotals(f, data.courses, new Set([one.id]));
+  assert.strictEqual(some.total, 8560, 'the catalogue total never moves');
+  assert.strictEqual(some.remaining, 8560 - x.workingStatsFor(one).get('intelligence'));
+});
+
+test('an unlock selection reports a count and never a magnitude', () => {
+  const { x, data } = load();
+  const row = x.FOCUS_TAXONOMY.find((r) => r.category === 'Unlocks & Abilities');
+  const t = x.focusTotals({ category: row.category, selection: row.selection }, data.courses, new Set());
+  assert.strictEqual(t.unit, 'count');
+  assert.ok(Number.isInteger(t.total) && Number.isInteger(t.remaining));
+});
+
+test('a split course counts once toward a total', () => {
+  const { x, data } = load();
+  const dual = x.FOCUS_TAXONOMY.find((r) => r.category === 'Passive Stat Bonus' && / and /.test(r.outcome));
+  const t = x.focusTotals({ category: dual.category, selection: dual.selection }, data.courses, new Set());
+  const t2 = x.focusTotals({ category: dual.category, selection: dual.selection }, data.courses, new Set([dual.courseId]));
+  assert.strictEqual(t.remaining - t2.remaining, dual.magnitude,
+    'completing a split course must subtract its magnitude exactly once');
+});
+
+test('totals are never summed across selections', () => {
+  const { x, data } = load();
+  const a = x.focusTotals({ category: 'Passive Stat Bonus', selection: 'Speed' }, data.courses, new Set());
+  const b = x.focusTotals({ category: 'Gym Gain Bonus', selection: 'Speed' }, data.courses, new Set());
+  assert.notStrictEqual(a.total, a.total + b.total,
+    'a passive total and a gym total describe different quantities');
+  assert.ok(a.total > 0 && b.total > 0);
+});
+
+test('focusTotals never throws on rubbish', () => {
+  const { x, data } = load();
+  assert.doesNotThrow(() => x.focusTotals(null, data.courses, new Set()));
+  assert.doesNotThrow(() => x.focusTotals({ category: 'x', selection: 'y' }, null, null));
+});

@@ -589,6 +589,59 @@
     });
   }
 
+  // Selections whose catalogue total cannot honestly be stated. Each is a
+  // property of Torn's own wording, recorded here rather than inferred:
+  // weapon experience has no ceiling, overclocking values are successive
+  // limits rather than additive bonuses, and a "further" bonus may be
+  // cumulative in a way its magnitude alone does not say.
+  const FOCUS_UNSTATABLE = Object.freeze(['Weapon Experience Damage', 'Weapon Experience Accuracy']);
+
+  // What a focus still has left, out of its catalogue total — per selection,
+  // never summed across selections (a percent row and a flat-stat row are
+  // incomparable units, the same defect focusScores exists to avoid).
+  // `completedIds` is the "already banked" set, deliberately not
+  // `plannedCompletions`: this states what has actually been earned, not what
+  // will have been earned once a plan starts.
+  function focusTotals(focus, courses, completedIds) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const done = (completedIds instanceof Set) ? completedIds : new Set();
+    const category = focus && focus.category;
+    const selection = focus && focus.selection;
+
+    if (category === FOCUS_WORKING_STATS) {
+      let total = 0;
+      let remaining = 0;
+      for (const course of map.values()) {
+        const n = workingStatsFor(course).get(selection) || 0;
+        total += n;
+        if (!done.has(course.id)) remaining += n;
+      }
+      return { unit: 'flat', total, remaining, statable: true };
+    }
+
+    const rows = focusRegistry(map).entries.filter(function (r) {
+      return r.category === category && r.selection === selection;
+    });
+    const statable = FOCUS_UNSTATABLE.indexOf(selection) === -1;
+    const unit = (!statable || rows.some(function (r) { return r.unit === 'none'; })) ? 'count' : (rows[0] ? rows[0].unit : 'count');
+
+    // By course, not by row: a course reached twice by one selection is one
+    // course, and counting its magnitude twice would overstate the total.
+    const byCourse = new Map();
+    for (const r of rows) {
+      byCourse.set(r.courseId, (byCourse.get(r.courseId) || 0) + (isFinite(r.magnitude) ? r.magnitude : 0));
+    }
+
+    let total = 0;
+    let remaining = 0;
+    for (const [id, magnitude] of byCourse) {
+      const value = (unit === 'count') ? 1 : magnitude;
+      total += value;
+      if (!done.has(id)) remaining += value;
+    }
+    return { unit, total, remaining, statable };
+  }
+
   // Everything that has to be done before this course can be: the parentId
   // chain, plus the one rule the payload does not carry in parentId — a tier-3
   // bachelor requires every tier-2 course in its own category.
