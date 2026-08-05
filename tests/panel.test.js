@@ -587,13 +587,17 @@ function descendants(el) {
 
 const hasText = (el, text) => descendants(el).some((c) => c.textContent === text);
 
-test('the shell renders the requested view and offers nav to the other three', () => {
+test('the shell renders the requested view with every available nav button', () => {
   const { exports, state } = okState([]);
   const doc = makeFakeDocument();
 
-  function draw(view) {
+  function draw(view, orderMode) {
     const mount = doc.createElement('div');
-    const model = exports.buildPanelModel({ ...state, view: view });
+    const model = exports.buildPanelModel({
+      ...state,
+      view: view,
+      settings: orderMode ? { orderMode: orderMode } : undefined,
+    });
     const panel = exports.renderPanel(doc, mount, model, noopHandlers);
     const body = panel.children[1];
     return { panel: panel, body: body, nav: body.children.find((c) => c.className === 'tes-nav') };
@@ -632,19 +636,26 @@ test('the shell renders the requested view and offers nav to the other three', (
   assert.ok(hasText(focus.body, 'Working Stats'), 'the focus view did not render its categories');
   assert.ok(!hasText(focus.body, 'Education perks'), 'the focus view rendered settings content');
 
-  // The nav always offers exactly the three planner/focus views you are not
-  // looking at, so there is no toggle button that redraws the view already
-  // on screen. Settings is the one exception (Task 4): a permanent landmark
-  // rather than a fourth toggle target, so the settings draw carries it as a
-  // fourth button alongside the three it does not skip. v0.3.0 Task 2 adds a
-  // reset button after the landmark on schedule, focus and settings — never
-  // grid, which owns no player data — so those three grew by one nav child
-  // and grid did not.
-  assert.strictEqual(fallback.nav.children.length, 4);
-  assert.strictEqual(grid.nav.children.length, 3);
-  assert.strictEqual(focus.nav.children.length, 4);
+  // Planner destinations are fixed controls, including the current view.
+  // v0.3.0 Task 2 adds a reset button after settings on schedule, focus and
+  // settings — never grid, which owns no player data.
+  assert.strictEqual(fallback.nav.children.length, 5);
+  assert.strictEqual(grid.nav.children.length, 4);
+  assert.strictEqual(focus.nav.children.length, 5);
   assert.strictEqual(settings.nav.children.length, 5);
-  assert.ok(!fallback.nav.children.some((b) => b.textContent === 'schedule'), 'the current view is offered as a target');
+  for (const [view, rendered] of [['schedule', fallback], ['grid', grid], ['focus', focus], ['settings', settings]]) {
+    const label = view === 'grid' ? 'degrees' : view;
+    const current = rendered.nav.children.find((b) => b.textContent === label || (view === 'settings' && /settings/i.test(b.textContent)));
+    assert.ok(current, `the current ${view} view is missing from its nav`);
+    assert.strictEqual(current.attributes['aria-current'], 'page');
+  }
+
+  const noFocusSchedule = draw('schedule', 'shortest-first');
+  const noFocusGrid = draw('grid', 'shortest-first');
+  const noFocusSettings = draw('settings', 'shortest-first');
+  assert.strictEqual(noFocusSchedule.nav.children.length, 4);
+  assert.strictEqual(noFocusGrid.nav.children.length, 3);
+  assert.strictEqual(noFocusSettings.nav.children.length, 4);
 });
 
 // Task 4: settings becomes a permanent right-aligned landmark rather than a
@@ -658,16 +669,13 @@ function navLabels(panel) {
   return nav ? nav.children.map((b) => b.textContent) : [];
 }
 
-test('schedule shows degrees, degrees shows schedule, settings shows both', () => {
+test('every view shows planner buttons in schedule, degrees, focus order', () => {
   const { x } = load();
   const doc = makeDocument();
   const on = (v) => navLabels(x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: v })), handlers()));
-  assert.ok(on('schedule').some((l) => /degrees/i.test(l)));
-  assert.ok(!on('schedule').some((l) => /^schedule$/i.test(l)));
-  assert.ok(on('grid').some((l) => /schedule/i.test(l)));
-  assert.ok(!on('grid').some((l) => /degrees/i.test(l)));
-  const s = on('settings');
-  assert.ok(s.some((l) => /schedule/i.test(l)) && s.some((l) => /degrees/i.test(l)));
+  for (const view of ['schedule', 'grid', 'focus', 'settings']) {
+    assert.deepStrictEqual(on(view).slice(0, 3), ['schedule', 'degrees', 'focus']);
+  }
 });
 
 test('settings is present on every view, enabled, and identically styled', () => {
@@ -1237,24 +1245,17 @@ test('the nav row offers the focus view and titles it', () => {
   assert.ok(labels.some((l) => /focus/i.test(l)));
 });
 
-test('the focus button is disabled until Queue order selects focus', () => {
+test('focus navigation is visible by default and absent outside focus ordering', () => {
   const { x } = load();
   const doc = makeDocument();
-  const panel = x.renderPanel(doc, doc.body,
-    x.buildPanelModel(state({ settings: { orderMode: 'shortest-first' } })), handlers());
-  const btn = focusNavButton(panel);
-  assert.ok(btn, 'the button must render, not vanish — a missing button is a puzzle');
-  assert.strictEqual(btn.disabled, true);
-});
+  const defaultPanel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ settings: x.freshSettings() })), handlers());
+  assert.ok(focusNavButton(defaultPanel), 'the default settings shape must expose focus navigation');
+  assert.notStrictEqual(focusNavButton(defaultPanel).disabled, true);
 
-test('the disabled focus button names what turns it on', () => {
-  const { x } = load();
-  const doc = makeDocument();
-  const panel = x.renderPanel(doc, doc.body,
-    x.buildPanelModel(state({ settings: { orderMode: 'as-listed' } })), handlers());
-  const title = focusNavButton(panel).attributes.title || '';
-  assert.ok(/queue order/i.test(title),
-    'the answer must travel with the question, not live in a changelog');
+  const noFocusPanel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ settings: { orderMode: 'shortest-first' } })), handlers());
+  assert.strictEqual(focusNavButton(noFocusPanel), undefined);
 });
 
 test('selecting focus in Queue order enables the button', () => {
@@ -1265,19 +1266,25 @@ test('selecting focus in Queue order enables the button', () => {
   assert.ok(!focusNavButton(panel).disabled);
 });
 
-test('a disabled focus button does not navigate when clicked', () => {
-  const { x } = load();
-  const doc = makeDocument();
-  const seen = [];
-  const h = Object.assign({}, handlers(), { onViewChange: (v) => seen.push(v) });
-  const panel = x.renderPanel(doc, doc.body,
-    x.buildPanelModel(state({ settings: { orderMode: 'as-listed' } })), h);
-  // dispatchEvent does not exist on the fake DOM; fire() calls the
-  // registered listener directly, which is exactly the case this guard
-  // exists for — "some fake-document harnesses dispatch regardless of
-  // disabled" (task brief). The guard lives inside the listener itself.
-  fire(focusNavButton(panel), 'click');
-  assert.deepStrictEqual(seen, [], 'a disabled control must not act');
+test('a programmatic focus route falls back to schedule outside focus ordering', async () => {
+  const { doc } = await bootInit({ queue: [34] }, { orderMode: 'focus' });
+  const panel = doc.querySelector('#tes-panel');
+  const focus = focusNavButton(panel);
+  assert.ok(focus, 'focus must exist before this programmatic-route check');
+
+  const settings = panel.children[1].children.find((c) => c.className === 'tes-nav')
+    .children.find((b) => /settings/i.test(b.textContent));
+  fire(settings, 'click');
+  const orderSelect = fieldFor(doc.querySelector('#tes-panel').children[1], 'Queue order');
+  orderSelect.value = 'shortest-first';
+  fire(orderSelect, 'change');
+
+  // The detached button still invokes init()'s onViewChange('focus') handler,
+  // which is the programmatic route that remains after focus disappears.
+  fire(focus, 'click');
+  const after = doc.querySelector('#tes-panel');
+  assert.match(after.children[0].children[0].textContent, /^Education Scheduler/);
+  assert.strictEqual(focusNavButton(after), undefined);
 });
 
 // The brief's version of this test looked up the Queue-order <select> AFTER

@@ -139,7 +139,7 @@ test('decodePlan treats untrusted settings as untrusted', () => {
   assert.strictEqual(out.ok, true);
   assert.strictEqual(out.settings.maxCooldownHours, 24);
   assert.strictEqual(out.settings.bookPrice, 13500000);
-  assert.strictEqual(out.settings.orderMode, 'as-listed');
+  assert.strictEqual(out.settings.orderMode, 'focus');
   assert.strictEqual(out.settings.perks.meritsPercent, null);
 });
 
@@ -188,7 +188,7 @@ test('the prefix alone is a valid, empty plan — and anything else without a de
   const bare = x.decodePlan('TES1', courses);
   assert.strictEqual(bare.ok, true, 'the prefix on its own is a plan with nothing in it');
   assert.deepStrictEqual(bare.queue, []);
-  assert.strictEqual(bare.settings.orderMode, 'as-listed');
+  assert.strictEqual(bare.settings.orderMode, 'focus');
   // No pipe and not the prefix: there is nothing here to parse.
   assert.strictEqual(x.decodePlan('hello', courses).reason, 'bad-prefix');
   assert.strictEqual(x.decodePlan('   ', courses).reason, 'bad-prefix');

@@ -1061,7 +1061,10 @@
     booksOwned: 0,
     bookPrice: 13500000,
     jobPoints: 0,
-    orderMode: 'as-listed',
+    // Focus is the default so its view is available out of the box. With no
+    // focuses selected, focus ordering deliberately degrades to as-listed,
+    // so a fresh install's queue is unchanged; only the nav entry appears.
+    orderMode: 'focus',
   };
   // Generous ceilings, present only to reject nonsense — a negative price or a
   // cooldown of a million hours is a typo, not a preference.
@@ -2501,22 +2504,14 @@
   // panel is not ambiguous about what it is showing.
   const VIEW_TITLES = { schedule: 'Education Scheduler', settings: 'Settings', grid: 'Degrees', focus: 'Focus' };
 
-  // One nav button: label, click wiring, and the disabled guard, shared by
-  // every button the nav row renders (toggle targets and the settings
-  // landmark alike). Callers set `.disabled`/`title`/`className`/
-  // `aria-current` themselves — this only owns what every button has in
-  // common.
+  // One nav button: label and click wiring, shared by every button the nav
+  // row renders. Callers set `className`/`aria-current` themselves — this
+  // only owns what every button has in common.
   function navButton(doc, target, label, handlers) {
     const btn = doc.createElement('button');
     btn.textContent = label;
     if (btn.addEventListener && handlers.onViewChange) {
-      // Guarded explicitly on btn.disabled: some fake-document harnesses
-      // (and a native button carrying only the disabled attribute rather
-      // than the property) still dispatch a click event, and a disabled
-      // control must not act regardless of whether the host is a real
-      // browser suppressing it for us.
       btn.addEventListener('click', function () {
-        if (btn.disabled) return;
         handlers.onViewChange(target);
       });
     }
@@ -2598,25 +2593,16 @@
         const nav = doc.createElement('div');
         nav.className = 'tes-nav';
 
-        // Planner destinations toggle one another — each skips itself, same
-        // as before. Focus keeps its existing gating untouched: disabled
-        // until Queue order (in the settings view) selects it, title naming
-        // what turns it on. Settings is handled separately below; it is a
-        // landmark, not a fourth toggle target, so it is never skipped.
+        // Planner destinations are fixed controls, including the current
+        // view. Focus is normally present because it is the default Queue
+        // order; an empty focus list still orders as listed, so a new player
+        // sees the same queue. It disappears only after a player deliberately
+        // selects another ordering, when they already know the feature exists.
         for (const target of ['schedule', 'grid', 'focus']) {
-          if (target === view) continue;
+          if (target === 'focus' && model.settings.orderMode !== 'focus') continue;
           const label = target === 'grid' ? 'degrees' : target === 'focus' ? 'focus' : 'schedule';
           const btn = navButton(doc, target, label, handlers);
-
-          // Focus mode has one switch — Queue order, in the settings view —
-          // and this is the same switch, not a second one. Disabled rather
-          // than absent: a missing button is a puzzle, a disabled one says
-          // the feature exists and that something turns it on. The title
-          // says what.
-          if (target === 'focus' && model.settings.orderMode !== 'focus') {
-            btn.disabled = true;
-            btn.setAttribute('title', 'Set Queue order to "My focus first" in settings to use this');
-          }
+          if (target === view) btn.setAttribute('aria-current', 'page');
           nav.appendChild(btn);
         }
 
@@ -3619,7 +3605,10 @@
           },
           onViewChange: function (next) {
             resetArmed = false;
-            view = next;
+            // The focus button is absent outside focus ordering, but callers
+            // can still invoke this route directly. Keep that route from
+            // stranding the panel on a view whose entry is unavailable.
+            view = next === 'focus' && settings.orderMode !== 'focus' ? 'schedule' : next;
             draw(currentPlan, saveFailed === true);
           },
           // The view emits dotted `perks.*` paths for the nested group and a
