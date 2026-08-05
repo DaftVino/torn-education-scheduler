@@ -491,7 +491,7 @@ test('a panel with no live handlers renders no controls that do nothing', () => 
 
 // ─── focus registry health ──────────────────────────────────────────────
 //
-// focusStale/focusUnmapped/focusUnmapped/focusSelections join the allowlist
+// focusStale/focusUnmapped/focusSelections join the allowlist
 // as counts only. The allowlist IS the signature: a field reaching the
 // report at all is the claim that it is safe, so these three must never
 // carry anything but a number, and the label + value pinned below is what

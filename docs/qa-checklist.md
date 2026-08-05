@@ -4,13 +4,37 @@ The one gate the harness cannot run. `/qa` and `/browse` are off for this repo
 (`CLAUDE.md`): the app under test is a third-party site behind a real login, so
 every case here is run by hand, in a real browser, signed into a real account.
 
-342 automated tests pass against a scrubbed fixture. Everything below exists
+473 automated tests pass against a scrubbed fixture. Everything below exists
 because a fixture cannot prove it: the live DOM, Torn's real React tree,
 Tampermonkey's sandbox, and whether the words on screen are true.
 
-Work top to bottom. **§ A, § B and § F1 are the highest-value cases** — they
-cover the three things most likely to be wrong and least likely to be caught by
-the suite.
+Work top to bottom. **§ A, § B, § F1, § M and § N are the highest-value
+cases** — the first three cover the things most likely to be wrong and least
+likely to be caught by the suite; § M (Focus view) and § N (reset controls)
+are two whole features that shipped this release with **zero** live-browser
+coverage of any kind.
+
+## Before you start: three visible changes, not one
+
+This release also retouched the panel's whole visual surface — colour,
+spacing, type — adopting Torn Bookie Live Scores' tokens. Expect **three**
+distinct, independent differences from earlier screenshots. A tester who
+notices only one of these may wrongly file the other two as new regressions:
+
+1. **Greys shift slightly** — panel background, borders and hover states move
+   to Bookie's exact values. A few points of luminance; near-invisible on its
+   own.
+2. **Sections sit visibly further apart.** The gap between grouped sections
+   (`--tes-gap-lg`) grew from 8px to 14px — the panel should now read as
+   grouped, where before every line sat equally far from every other line.
+3. **Body text is a point larger, and several notes gained an explicit
+   smaller size.** Base text moved 13px → 14px. Several previously
+   relative-sized lines — `.tes-note`, `.tes-cell-detail`, `.tes-foot`, and
+   the new queue bonus line — now carry an explicit 12px instead of an
+   inherited or `em`-based size.
+
+None of the three is a bug. Confirm all three are present, together, rather
+than reporting the first one you notice and moving on.
 
 ## Setup
 
@@ -49,6 +73,7 @@ the suite.
 | B4 | While blocked, confirm the data is right | Same courses and durations as B1/B2. Wrong-but-plausible data is worse than the failure line. |
 | B5 | Block the endpoint **and** confirm the fallback fails (e.g. on a Torn layout with no matching fiber) | A visible failure line naming the failure. Never a blank panel, never a silent `undefined`. |
 | B6 | Unblock, reload | Recovers on its own. |
+| B7 | Open Torn's own in-game clock (or any page that shows Torn City Time) next to the panel's finish line, e.g. `2026-08-04 · 21:00 TCT` | The two agree. This is the one thing only a live account can prove — a fixture has no live clock to check against — and the spec that introduced the split date/time/TCT label explicitly demands this comparison. |
 
 ## C. Schedule view
 
@@ -57,11 +82,16 @@ the suite.
 | C1 | Open the course picker | ~115 options, no `[bachelor]` text anywhere. Tier-3 courses render in green (`#7ee081`, the same green as the finish-line total), not as plain text. |
 | C1a | Same picker, on macOS specifically | The OS draws the `<select>` menu itself and commonly ignores an option's colour, so bachelor courses show **no green marker at all** there — no prefix either, since none is kept as a fallback. This is expected on macOS, not a defect: confirm the picker still works (count, selection, add) even though the marker is invisible. On Windows/Linux Chrome or Firefox, confirm the green **is** visible — that is the platform the colour is for. |
 | C2 | Look at the picker's **first** option before touching anything | The "all remaining courses" sentinel must not be sitting there as the browser's default selection — a stray `add` click would queue everything with no bulk undo. This was a real bug; confirm the fix held in a real `<select>`. |
-| C3 | Add a single tier-1 course | Appears in the queue. A finish date and a total print. |
+| C3 | Add a single tier-1 course | Appears in the queue **as two lines sharing one row**: the main line (`prefix name — duration — fin <date>`) and, below it, a second, smaller, indented line naming what the course actually gives. A finish date and a total print in the summary above. |
+| C3a | Read the second line for a course whose payload carries a `learningOutcomes` entry | Names the real benefit, in Torn's own words — never inferred or guessed from the course's name. |
+| C3b | Add one of the **31 courses with no `learningOutcomes` at all** | The second line reads `Bonus: not listed by Torn` (or, if the course also grants a working stat, the stat figure plus `· other bonus not listed by Torn`) — never blank, never a made-up benefit. |
+| C3c | Click `remove` on a two-line row | The whole row — both lines — disappears from one click. The button visually spans the row rather than sitting beside only the top line. |
 | C4 | Sanity-check that date by hand against the course duration and your reduction | Agrees. |
 | C5 | Add "all remaining courses" | Everything queues, appended *after* what you already had — your hand-built order is not reordered or discarded. |
 | C6 | Add a course already in the queue | No duplicate. |
 | C7 | Reload | Queue survives. |
+| C8 | On a clean, followable queue, look at the summary block above the queue rows | Exactly **two** parts: a perk-reduction line, then a bordered total-time line below it (a visible top border on that second line only). |
+| C9 | Build a queue that drops a stale entry or carries a missing prerequisite (see § D) | A **third** part appears below the bordered line, naming the problem(s). The border stays on the total-time line — it does not move to the new bottom line. |
 
 ## D. Prerequisites and the withheld date
 
@@ -76,8 +106,9 @@ the suite.
 
 | # | Steps | Expected |
 |---|---|---|
-| E1 | Open Degrees | One box per category, plus an all-courses box that sorts **last**. |
-| E2 | Read the dates across boxes | Every box starts from **today**, independently. Eleven degrees finishing in 2026 beside an all-courses box in 2029 is **expected**, not a bug — confirm the on-screen caveat says so clearly. |
+| E1 | Open Degrees | **Twelve boxes, one per category — no all-courses box among them.** Above the grid, before it in reading order, a full-width banner titled **"all remaining courses"** carries the same count, duration and finish date the old thirteenth box used to. `document.querySelectorAll('.tes-cell-all').length` must be `0` — that class was retired; count the on-screen boxes yourself rather than trusting a stale memory of "one per category plus one more." |
+| E1a | Confirm the banner's position | It renders **before** `.tes-grid` in the DOM, visually above the grid of degree boxes, not sorted into the grid as a last cell. |
+| E2 | Read the dates across boxes | Every box starts from **today**, independently. Eleven degrees finishing in 2026 beside an all-courses banner in 2029 is **expected**, not a bug — confirm the on-screen caveat says so clearly. |
 | E3 | Read the note about durations summing | It claims the boxes add up. Against today's catalogue that is true; confirm the sentence is present and reads honestly. |
 | E4 | Check a box for a category holding two tier-3 courses | No degree name in the title (it would be false of both). A missing label here is correct. |
 | E5 | Check a box for a category you have already finished | No phantom "missing prerequisite". |
@@ -121,6 +152,7 @@ the suite.
 | I4 | Import garbage (`hello`, truncated string, a valid string with an invalid course id) | Refused with a reason on screen. **Your existing plan and settings are untouched** — a refusal must commit nothing. |
 | I5 | Import a string containing `<img src=x onerror=alert(1)>` | Renders as **text**. No alert, no injected node. |
 | I6 | Edit the textarea by hand, then click import | It imports what is *in the box*, not what the panel was showing. |
+| I7 | Pick two or three focuses on the Focus view (§ M), with priorities set, then open the share box, copy it, reset storage, and import it back | The same focuses return, in the same category/selection pairs, **with the same priority numbers** — not just the queue and the four settings fields I2 already checks. |
 
 ## J. Debug report and privacy
 
@@ -152,6 +184,50 @@ the suite.
 eyeball the installed header once, because what Tampermonkey actually loaded is
 the thing users get.
 
+## M. Focus view
+
+Brand new this release: pick what you want out of education and the queue
+re-sorts to deliver it first. Ten categories, 79 selections. **Zero automated
+browser coverage** — the model and ranking are unit-tested against a fixture,
+but nobody has watched a real queue re-sort in a real browser yet.
+
+| # | Steps | Expected |
+|---|---|---|
+| M1 | With Queue order left at anything **other than** "My focus first", look at the nav row | The `focus` button is present but **disabled**, with a title explaining that Queue order must be set to "My focus first" in Settings first. Clicking it does nothing. |
+| M2 | In Settings, set Queue order to "My focus first" | The `focus` nav button becomes clickable. Click it. |
+| M3 | On the Focus view, tick one selection's checkbox, under any category | It shows priority `1` beside it, and a remaining-out-of-total figure specific to that selection — e.g. `12 of 40 left`, `35% left of 60%` for a percent-based one, or `N courses left, no fixed total` for a selection (like weapon experience) with no stated ceiling. |
+| M4 | Tick a second selection under any category, then type `1` into its priority field | The two swap priorities. Numbers are never duplicated and never skip — always a dense 1..N over however many you have chosen. |
+| M5 | With two focuses chosen at different priorities, watch the Schedule queue re-sort | Courses serving the priority-1 focus move earliest. A course that serves only the priority-2 focus never jumps ahead of a priority-1 course purely by having a bigger secondary score — **ranking is lexicographic, never summed.** Picking two selections that visibly disagree (a course with a huge secondary score but a lower primary one) is the case that actually proves this; a queue where the two never conflict cannot. |
+| M6 | Watch the **finish date** while doing M5 | It does not move — same rule as § H: focus changes order, never the total. |
+| M7 | While standing on the Focus view, go to Settings and change Queue order to anything else | The panel falls back to **Schedule** — there is no dead end where a disabled nav button strands you on a view its own switch just turned off. |
+| M8 | Complete a course that fed a selection you have chosen (or check the panel again after Torn credits one) | That selection's remaining figure decreases by exactly that course's own contribution — never by more than one course's worth, even for a course whose Torn-given outcome text splits across two selections (e.g. "...to speed and strength" counts once per selection, not once total). |
+| M9 | Read the note under the focus controls, and the separate note about outcome-less courses | The first states plainly that focus reorders and never changes the finish date. The second says that 31 courses grant no learning outcome at all, and that Working Stats is the only focus category that can still reach them. |
+
+See § I7 for the focus share/import round-trip.
+
+## N. Reset controls
+
+Brand new this release, and — because there is no undo anywhere in this
+panel — the two-click arm/confirm is the only thing standing between a
+misclick and a lost queue or lost focus selections.
+
+| # | Steps | Expected |
+|---|---|---|
+| N1 | On Schedule, with a non-empty queue, click `reset` once | The button changes to a warning-coloured **`reset — sure?`** state rather than acting immediately. |
+| N2 | With it armed, click any **other** control instead — add a course, switch views, collapse the panel, change a setting | The button reverts to plain `reset`, unarmed. **Nothing was cleared.** Confirm this for at least two different kinds of "other click," not just one — the arm has to disarm on any redraw, not on a specific button. |
+| N3 | Arm `reset` again, then click it a second time | The queue empties. Settings, Focus selections and everything else are untouched. |
+| N4 | Repeat N1–N3 on the Focus view (its button also reads `reset`) | Only your focus selections and priorities clear. The queue you built on Schedule is untouched. |
+| N5 | Repeat N1–N3 on Settings, where the button reads `defaults` | Every setting — cooldown, Books owned/price, perk fields, Queue order — returns to its shipped default. **Your chosen focuses survive this reset** — `defaults` deliberately does not touch `focuses`, since a focus is what you are building toward, not a setting to reset. |
+| N6 | Open Degrees and look for a reset button | **None renders.** Degrees owns no player-editable state, so nothing there is arm-able. |
+
+## O. The permanent settings landmark and the header
+
+| # | Steps | Expected |
+|---|---|---|
+| O1 | Visit Schedule, Degrees, Focus and Settings in turn, and look at the nav row each time | `⚙ settings` sits in the **same right-aligned position** on all four, always enabled — never greyed out, absent, or shifted by how many other buttons sit to its left. |
+| O2 | While on Settings, inspect the gear button in devtools | It carries `aria-current="page"`, but is **not visually restyled** to look different from the other three views' gear button — it stays a landmark, not a fourth toggle target that happens to be selected. |
+| O3 | Click the panel's header title — the text naming the current view, to the left of `hide`/`show` | **Nothing happens.** Only the real button on the right (labelled `hide` or `show`) toggles the panel. This used to be a single clickable header; it is now two elements and only one of them responds. |
+
 ---
 
 ## Recording results
@@ -159,4 +235,7 @@ the thing users get.
 A defect found here is fixed on a branch off `main`, with a note in
 `docs/designs/`'s handoff log. A defect **deferred** goes in the same log with
 the reason. Anything in § A2, § A7, § B3 or § F1 is worth writing up even when
-it passes — those four are the cases with the least automated cover behind them.
+it passes — those four are the cases with the least automated cover behind
+them. § M (Focus view) and § N (reset controls) join that list this release:
+both are whole features with no live-browser coverage of any kind, so a pass
+there is itself new information worth recording, not just a defect to avoid.
