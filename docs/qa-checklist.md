@@ -36,6 +36,29 @@ notices only one of these may wrongly file the other two as new regressions:
 None of the three is a bug. Confirm all three are present, together, rather
 than reporting the first one you notice and moving on.
 
+## What changed after the first QA round (2026-08-05)
+
+The first browser pass found seven defects. All seven are fixed on
+`feat/v0.3.0-focus-and-ui`, and the cases below were rewritten to match. **The
+fixes themselves have not been seen in a browser.** Highest-value re-checks:
+
+1. **Focus ordering actually reorders now** — § M5, and § H2's finish-date rule.
+   Every Unlocks & Abilities selection was a provable no-op: the scores were all
+   zero, so the sort returned its input unchanged. Company and Crime & Jail did
+   reorder, but the first change landed at queue index 85 and 87, far below the
+   fold, which is why they read as broken. Both are now near the top.
+2. **Working Stats and Passive Stat Bonus sort differently than they did** —
+   not a reported defect, but the rank now divides by course duration, so a long
+   course with a big gain no longer automatically beats a short one with a small
+   gain. Nothing was wrong with these categories before; they still need a look.
+3. **Focus is the default Queue order** — § M1, § M1a, § N5. A fresh install's
+   *queue* is unchanged, because focus ordering with no focuses chosen falls back
+   to as-listed. Only the nav entry is new.
+4. **The nav row is static** — every planner button renders on every view now,
+   rather than the row showing only the views you were not on.
+5. **The Focus view is restructured** — § M2, § M2a, § M2b, § M3a, § M3b.
+6. **The schedule summary's separator moved** — § C8, § C9, § C9a.
+
 ## Setup
 
 - Install the raw `torn-education-scheduler.user.js` in Tampermonkey.
@@ -90,8 +113,9 @@ than reporting the first one you notice and moving on.
 | C5 | Add "all remaining courses" | Everything queues, appended *after* what you already had — your hand-built order is not reordered or discarded. |
 | C6 | Add a course already in the queue | No duplicate. |
 | C7 | Reload | Queue survives. |
-| C8 | On a clean, followable queue, look at the summary block above the queue rows | Exactly **two** parts: a perk-reduction line, then a bordered total-time line below it (a visible top border on that second line only). |
-| C9 | Build a queue that drops a stale entry or carries a missing prerequisite (see § D) | A **third** part appears below the bordered line, naming the problem(s). The border stays on the total-time line — it does not move to the new bottom line. |
+| C8 | On a clean, followable queue, look at the summary block above the queue rows | Exactly **two** parts — a perk-reduction line, then a total-time line below it — with **no line between them**, and a single separator running **underneath the whole block**, between the summary and the first queue row. The separator moved here at the v0.3.0 QA gate; it used to sit above the total. |
+| C9 | Build a queue that drops a stale entry or carries a missing prerequisite (see § D) | A **third** part appears below the total, naming the problem(s). The separator stays **below all three** — it must not end up between the total and the new diagnostics line. This is the case the placement was chosen for, so it is the one worth checking. |
+| C9a | Empty the queue and look at the same area | The separator still renders, now dividing the summary from the course picker. That is correct, not a stray line. |
 
 ## D. Prerequisites and the withheld date
 
