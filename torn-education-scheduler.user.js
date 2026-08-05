@@ -362,6 +362,7 @@
     { id: 'as-listed', label: 'As listed' },
     { id: 'shortest-first', label: 'Shortest first' },
     { id: 'unlocks-first', label: 'Unlocks the most first' },
+    { id: 'focus', label: 'My focus first' },
   ];
 
   // The focus taxonomy: which courses deliver which player-facing benefit.
@@ -717,7 +718,7 @@
   // algorithm rather than a sort-then-repair, so the result is followable by
   // construction and an unsatisfiable queue degrades to appending the
   // remainder rather than looping.
-  function orderQueue(queue, mode, courses) {
+  function orderQueue(queue, mode, courses, scoreMaps) {
     const chosen = ORDER_MODE_LABELS.some(function (m) { return m.id === mode; }) ? mode : 'as-listed';
     if (chosen === 'as-listed') return queue.slice();
 
@@ -727,11 +728,21 @@
     // queued course over a cold cache would walk the same chains 115 times.
     const upstream = new Map();
 
+    // focus reads scoreMaps only when the mode is actually focus, so a caller
+    // that forgets the fourth argument (or every other mode, which does not
+    // take one) degrades to an empty vector rather than throwing.
+    const maps = (chosen === 'focus' && Array.isArray(scoreMaps)) ? scoreMaps : [];
+
     // A course is ready when every prerequisite of it that is also in this
     // queue has already been placed. Both this and the rank read the same
     // closure, so readiness and "unlocks the most" cannot describe different
     // graphs.
     const rank = new Map();
+    // A vector, not a number: lexicographic comparison is the only way to use
+    // two focuses without inventing an exchange rate between them. Negated so
+    // that "more of what you asked for" sorts first, matching shortest-first's
+    // existing convention of a smaller rank winning.
+    const rankVector = new Map();
     const prerequisitesIn = new Map();
     for (const id of queue) {
       const needed = [];
@@ -739,10 +750,16 @@
         if (inQueue.has(up)) needed.push(up);
       }
       prerequisitesIn.set(id, needed);
-      const course = courses.get(id);
-      rank.set(id, chosen === 'shortest-first'
-        ? (course ? course.duration : 0)
-        : -dependentCount(id, courses, upstream));
+      if (chosen === 'focus') {
+        // dependentCount is O(catalogue) per call; focus has its own
+        // ranking and never reads `rank`, so it must not pay for it.
+        rankVector.set(id, maps.map(function (m) { return -(m.get(id) || 0); }));
+      } else {
+        const course = courses.get(id);
+        rank.set(id, chosen === 'shortest-first'
+          ? (course ? course.duration : 0)
+          : -dependentCount(id, courses, upstream));
+      }
     }
 
     const placed = new Set();
@@ -767,6 +784,18 @@
       }
 
       ready.sort(function (a, b) {
+        if (chosen === 'focus') {
+          // Lexicographic: compare the first focus, and only on a tie fall to
+          // the next. Never summed — summing would invent an exchange rate
+          // between two focuses that answer different questions, which is the
+          // exact defect this feature exists to avoid.
+          const va = rankVector.get(queue[a]);
+          const vb = rankVector.get(queue[b]);
+          for (let i = 0; i < va.length; i += 1) {
+            if (va[i] !== vb[i]) return va[i] - vb[i];
+          }
+          return a - b;
+        }
         const byRank = rank.get(queue[a]) - rank.get(queue[b]);
         if (byRank !== 0) return byRank;
         // The player's own ordering breaks a rank tie, so a queue whose courses

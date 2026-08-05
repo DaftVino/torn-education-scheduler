@@ -866,8 +866,8 @@ test('the queue order is stored as its id, not coerced into a number', async () 
   // production offered one — which meant it could not have caught that.)
   assert.deepStrictEqual(
     select.children.map((o) => o.value),
-    ['as-listed', 'shortest-first', 'unlocks-first'],
-    'the rendered dropdown does not offer exactly the three shipped modes',
+    ['as-listed', 'shortest-first', 'unlocks-first', 'focus'],
+    'the rendered dropdown does not offer exactly the four shipped modes',
   );
   // The handler must carry a string through intact, or every choice arrives as
   // NaN and normaliseSettings silently restores the default.
