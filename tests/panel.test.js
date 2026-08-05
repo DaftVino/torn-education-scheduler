@@ -1366,17 +1366,19 @@ test('focus section headings are buttons with matching expanded state', () => {
   const model = x.buildPanelModel(state({ view: 'focus' }));
   const doc = makeDocument();
   let panel = x.renderPanel(doc, doc.body, model, handlers());
-  let heading = descendants(panel).find((c) => c.className === 'tes-focus-section-title');
+  let header = descendants(panel).find((c) => c.className === 'tes-focus-section-header');
+  let heading = header.children[1];
   assert.strictEqual(heading.tagName, 'button');
   assert.strictEqual(heading['aria-expanded'], 'false');
 
   model.focusOpenCategories = ['Working Stats'];
   panel = x.renderPanel(doc, doc.body, model, handlers());
-  heading = descendants(panel).find((c) => c.className === 'tes-focus-section-title');
+  header = descendants(panel).find((c) => c.className === 'tes-focus-section-header');
+  heading = header.children[1];
   assert.strictEqual(heading['aria-expanded'], 'true');
 });
 
-test('every open focus row reserves its priority slot before the checkbox', () => {
+test('the header priority slot precedes its toggle and rows have only three tracks', () => {
   const { x } = load();
   const model = x.buildPanelModel(state({
     view: 'focus',
@@ -1389,14 +1391,94 @@ test('every open focus row reserves its priority slot before the checkbox', () =
   const doc = makeDocument();
   const panel = x.renderPanel(doc, doc.body, model, handlers());
   const rows = descendants(panel).filter((c) => c.className === 'tes-focus-row');
-  const slots = descendants(panel).filter((c) => c.className === 'tes-focus-priority-slot');
-  const inputs = descendants(panel).filter((c) => c.className === 'tes-focus-priority');
-  assert.strictEqual(slots.length, rows.length);
-  assert.strictEqual(inputs.length, 2);
-  const chosenRow = rows.find((row) => row.children[0].children.length === 1);
-  assert.strictEqual(chosenRow.children[0].className, 'tes-focus-priority-slot');
-  assert.strictEqual(chosenRow.children[0].children[0].className, 'tes-focus-priority');
-  assert.strictEqual(chosenRow.children[1].type, 'checkbox');
+  const headers = descendants(panel).filter((c) => c.className === 'tes-focus-section-header');
+  assert.ok(headers.every((header) => header.children[0].className === 'tes-focus-priority-slot'));
+  assert.ok(headers.every((header) => header.children[1].className === 'tes-focus-section-title'));
+  assert.ok(rows.every((row) => row.children.length === 3));
+  assert.ok(rows.every((row) => row.children[0].type === 'checkbox'));
+  assert.ok(rows.every((row) => !descendants(row).some((c) => c.className === 'tes-focus-priority-slot')));
+  assert.match(x.panelStyleText(), /\.tes-focus-row\s*\{[^}]*grid-template-columns:\s*1\.5em 1fr auto/);
+});
+
+test('an unchosen focus section renders an empty header priority slot', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ view: 'focus' })), handlers());
+  const header = descendants(panel).find((c) => c.className === 'tes-focus-section-header');
+  const slot = header.children[0];
+  assert.strictEqual(slot.className, 'tes-focus-priority-slot');
+  assert.strictEqual(slot.children.length, 0);
+  assert.strictEqual(descendants(slot).some((c) => c.className === 'tes-focus-priority'), false);
+});
+
+test('a chosen focus section renders its priority and selection name in the header', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [{ category: 'Working Stats', selection: 'manual labor' }] },
+  }));
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const heading = descendants(panel).find((c) => c.className === 'tes-focus-section-title'
+    && c.textContent.includes('Working Stats'));
+  const header = descendants(panel).find((c) => c.className === 'tes-focus-section-header'
+    && c.children[1] === heading);
+  assert.strictEqual(heading.textContent, 'Working Stats — manual labor');
+  assert.strictEqual(header.children[0].children[0].className, 'tes-focus-priority');
+});
+
+test('the header priority input is a sibling of the toggle, never its descendant', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [{ category: 'Working Stats', selection: 'intelligence' }] },
+  }));
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const input = descendants(panel).find((c) => c.className === 'tes-focus-priority');
+  const header = descendants(panel).find((c) => c.className === 'tes-focus-section-header'
+    && descendants(c.children[0]).includes(input));
+  const heading = header.children[1];
+  assert.strictEqual(descendants(heading).includes(input), false);
+  assert.strictEqual(header.children[0].children[0], input);
+});
+
+test('changing a header priority commits its category chosen selection and value', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const calls = [];
+  const h = Object.assign({}, handlers(), {
+    onFocusPriority: (category, selection, value) => calls.push([category, selection, value]),
+  });
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [{ category: 'Working Stats', selection: 'manual labor' }] },
+  }));
+  const panel = x.renderPanel(doc, doc.body, model, h);
+  const heading = descendants(panel).find((c) => c.className === 'tes-focus-section-title'
+    && c.textContent.includes('Working Stats'));
+  assert.strictEqual(heading['aria-expanded'], 'false');
+  const input = descendants(panel).find((c) => c.className === 'tes-focus-priority');
+  input.value = '3';
+  fire(input, 'change');
+  assert.deepStrictEqual(calls, [['Working Stats', 'manual labor', 3]]);
+});
+
+test('every focus section renders exactly one priority slot, chosen or not', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [{ category: 'Working Stats', selection: 'intelligence' }] },
+  }));
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const sections = descendants(panel).filter((c) => c.className === 'tes-focus-section');
+  assert.strictEqual(sections.length, model.focusGroups.length);
+  for (const section of sections) {
+    const slots = descendants(section).filter((c) => c.className === 'tes-focus-priority-slot');
+    assert.strictEqual(slots.length, 1);
+  }
 });
 
 test('a selection shows what is left, and unlocks show a count not a percentage', () => {
@@ -1450,7 +1532,7 @@ function renderedFocusRow(x, settings, category, selection) {
   const doc = makeDocument();
   const panel = x.renderPanel(doc, doc.body, model, handlers());
   return descendants(panel).find((row) => row.className === 'tes-focus-row'
-    && row.children[2].textContent === selection);
+    && row.children[1].textContent === selection);
 }
 
 test('a completed unchosen focus is disabled, titled, and muted', () => {
@@ -1458,8 +1540,8 @@ test('a completed unchosen focus is disabled, titled, and muted', () => {
   const row = renderedFocusRow(x, { orderMode: 'focus' },
     'Unlocks & Abilities', 'Sports Shop Access');
   assert.ok(row, 'the real completed fixture selection did not render');
-  assert.strictEqual(row.children[3].textContent, 'complete');
-  assert.strictEqual(row.children[1].disabled, true);
+  assert.strictEqual(row.children[2].textContent, 'complete');
+  assert.strictEqual(row.children[0].disabled, true);
   assert.match(row.title, /already complete/i);
   assert.strictEqual(row['data-disabled'], 'true');
   assert.match(x.panelStyleText(), /\.tes-focus-row\[data-disabled="true"\]\s*\{\s*color:\s*var\(--tm-muted\)/);
@@ -1471,20 +1553,20 @@ test('a completed chosen focus stays enabled so it can be unticked', () => {
     orderMode: 'focus',
     focuses: [{ category: 'Unlocks & Abilities', selection: 'Sports Shop Access' }],
   }, 'Unlocks & Abilities', 'Sports Shop Access');
-  assert.strictEqual(row.children[3].textContent, 'complete');
-  assert.strictEqual(row.children[1].checked, true);
-  assert.notStrictEqual(row.children[1].disabled, true);
+  assert.strictEqual(row.children[2].textContent, 'complete');
+  assert.strictEqual(row.children[0].checked, true);
+  assert.notStrictEqual(row.children[0].disabled, true);
   assert.strictEqual(row['data-disabled'], undefined);
-  assert.ok((row.children[1].listeners.change || []).length > 0, 'the chosen checkbox cannot be unticked');
+  assert.ok((row.children[0].listeners.change || []).length > 0, 'the chosen checkbox cannot be unticked');
 });
 
 test('an incomplete focus remains enabled and selectable', () => {
   const { x } = load();
   const row = renderedFocusRow(x, { orderMode: 'focus' }, 'Working Stats', 'manual labor');
-  assert.notStrictEqual(row.children[3].textContent, 'complete');
-  assert.notStrictEqual(row.children[1].disabled, true);
+  assert.notStrictEqual(row.children[2].textContent, 'complete');
+  assert.notStrictEqual(row.children[0].disabled, true);
   assert.strictEqual(row['data-disabled'], undefined);
-  assert.ok((row.children[1].listeners.change || []).length > 0, 'the incomplete checkbox lost its handler');
+  assert.ok((row.children[0].listeners.change || []).length > 0, 'the incomplete checkbox lost its handler');
 });
 
 test('an unchosen selection shows no number at all', () => {
@@ -1517,7 +1599,7 @@ test('chosen focuses are numbered 1..n with no gaps and no repeats', () => {
   assert.deepStrictEqual(nums.slice().sort((a, b) => a - b), [1, 2]);
 });
 
-test('the priority control commits through the handler and changes nothing by itself', () => {
+test('the priority control remains reachable while its section is collapsed', () => {
   const { x } = load();
   const doc = makeDocument();
   const calls = [];
@@ -1528,10 +1610,12 @@ test('the priority control commits through the handler and changes nothing by it
     view: 'focus',
     settings: { focuses: [{ category: 'Working Stats', selection: 'intelligence' }] },
   }));
-  model.focusOpenCategories = ['Working Stats'];
   const panel = x.renderPanel(doc, doc.body, model, h);
   const input = descendants(panel).find((c) => c.className === 'tes-focus-priority');
   assert.ok(input, 'a chosen focus must offer a way to change its number');
+  const heading = descendants(panel).find((c) => c.className === 'tes-focus-section-title'
+    && c.textContent.includes('Working Stats'));
+  assert.strictEqual(heading['aria-expanded'], 'false');
   input.value = '1';
   fire(input, 'change');
   assert.strictEqual(calls.length, 1);
@@ -2104,13 +2188,14 @@ test('the focus view resets its selections and nothing else', async () => {
     return nav.children.find((b) => pattern.test(b.textContent));
   };
   fire(findNavBtn(/focus/i), 'click');
-  const focusHeading = descendants(panelEl()).find((c) => c.className === 'tes-focus-section-title'
-    && c.children[0].textContent === 'Working Stats');
-  fire(focusHeading, 'click');
+  const priority = descendants(panelEl()).find((c) => c.className === 'tes-focus-priority');
+  const header = descendants(panelEl()).find((c) => c.className === 'tes-focus-section-header'
+    && descendants(c).includes(priority));
+  assert.ok(header, 'the chosen number must render in its collapsed section header');
   assert.strictEqual(
     descendants(panelEl()).filter((c) => c.className === 'tes-focus-priority').length,
-    1,
-    'the chosen number must be visible before reset removes it');
+    2,
+    'every chosen number must be visible before reset removes the focus list');
   const findReset = () => descendants(panelEl()).find((c) => /tes-reset/.test(c.className));
   fire(findReset(), 'click');
   fire(findReset(), 'click');
@@ -2130,9 +2215,10 @@ test('every focus number is gone after a focus reset, not just the selections', 
     return nav.children.find((b) => pattern.test(b.textContent));
   };
   fire(findNavBtn(/focus/i), 'click');
-  const focusHeading = descendants(panelEl()).find((c) => c.className === 'tes-focus-section-title'
-    && c.children[0].textContent === 'Working Stats');
-  fire(focusHeading, 'click');
+  const priority = descendants(panelEl()).find((c) => c.className === 'tes-focus-priority');
+  const header = descendants(panelEl()).find((c) => c.className === 'tes-focus-section-header'
+    && descendants(c).includes(priority));
+  assert.ok(header, 'the chosen number must render in its collapsed section header');
   assert.strictEqual(
     descendants(panelEl()).filter((c) => c.className === 'tes-focus-priority').length,
     1,
