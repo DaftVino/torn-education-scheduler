@@ -1054,13 +1054,15 @@ function makeDocument() { return makeFakeDocument(); }
 // `overrides.settings` is a partial settings object — normaliseSettings
 // fills in whatever it omits, so a test only has to name what it cares
 // about. `overrides.fetchFailed` swaps in a failure model instead.
+// `overrides.queue` seeds plan.queue (default: empty), for tests that need
+// buildPanelModel to actually order something rather than an empty list.
 function state(overrides) {
   const o = overrides || {};
   const { exports: x } = loadUserscript();
   const data = x.parsePayload(loadFixture());
   return {
     fetchResult: o.fetchFailed ? { ok: false, reason: 'network', detail: 'offline' } : { ok: true, data: data },
-    plan: { queue: [], collapsed: false },
+    plan: { queue: o.queue || [], collapsed: false },
     now: NOW,
     view: o.view,
     settings: o.settings || {},
@@ -1282,4 +1284,52 @@ test('the focus view renders without a payload and withholds totals', () => {
   const model = x.buildPanelModel(state({ view: 'focus', fetchFailed: true }));
   assert.doesNotThrow(() => x.renderPanel(doc, doc.body, model, handlers()));
   assert.strictEqual(model.focusGroups, null);
+});
+
+// Task 7b: orderQueue gained a focus mode and a scoreMaps argument in Task 6,
+// and Task 7 built the settings UI that lets a player choose focuses — but
+// nothing ever computed scoreMaps and handed it to the buildPanelModel call
+// site. Selecting "My focus first" reordered nothing; it silently behaved
+// like as-listed. Task 6's and ordering.test.js's own focus tests call
+// orderQueue directly and so never exercised the gap — this is the first
+// test that goes through buildPanelModel itself, the only place the wiring
+// could have been dropped.
+test('the rendered queue actually reorders under focus mode', () => {
+  const { x } = load();
+  const data = x.parsePayload(loadFixture());
+  // The same 20-course slice ordering.test.js's own focus tests use: enough
+  // courses, with intelligence gains that differ widely enough across the
+  // catalogue, to guarantee as-listed and focus disagree (confirmed by hand
+  // against this fixture, not merely hoped for).
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 20);
+  const focusSettings = { orderMode: 'focus', focuses: [{ category: 'Working Stats', selection: 'intelligence' }] };
+
+  const asListed = x.buildPanelModel(state({ queue: queue, settings: { orderMode: 'as-listed' } }));
+  const focused = x.buildPanelModel(state({ queue: queue, settings: focusSettings }));
+
+  const asListedIds = asListed.queue.map((i) => i.courseId);
+  const focusedIds = focused.queue.map((i) => i.courseId);
+
+  // Guard against vacuity in both directions: the two orders must actually
+  // differ (proving the scores reached orderQueue), and must contain exactly
+  // the same course ids (proving the reorder is a reorder, not a dropped or
+  // invented course — the failure mode a careless fix could introduce).
+  assert.notDeepStrictEqual(focusedIds, asListedIds, 'focus mode did not reorder the rendered queue');
+  assert.deepStrictEqual(
+    new Set(focusedIds), new Set(asListedIds),
+    'focus mode changed which courses are in the queue'
+  );
+});
+
+test('reordering the rendered queue by focus does not move the finish date', () => {
+  const { x } = load();
+  const data = x.parsePayload(loadFixture());
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).slice(0, 20);
+  const focusSettings = { orderMode: 'focus', focuses: [{ category: 'Working Stats', selection: 'intelligence' }] };
+
+  const asListed = x.buildPanelModel(state({ queue: queue, settings: { orderMode: 'as-listed' } }));
+  const focused = x.buildPanelModel(state({ queue: queue, settings: focusSettings }));
+
+  assert.strictEqual(focused.finishLabel, asListed.finishLabel);
+  assert.strictEqual(focused.totalLabel, asListed.totalLabel);
 });
