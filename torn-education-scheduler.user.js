@@ -2369,7 +2369,14 @@
       '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
       '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
       '#tes-panel .tes-error { color: #ff8080; margin-bottom: 8px; }',
-      '#tes-panel .tes-summary { white-space: pre-line; margin-bottom: 8px; }',
+      '#tes-panel .tes-summary { margin-bottom: 8px; }',
+      // .tes-summary-result carries the queue total (or the empty-queue /
+      // unfollowable-plan message) — the number this restructure exists to
+      // set apart from the perk-reduction assumption above it. The border
+      // is that separator.
+      '#tes-panel .tes-summary-result { border-top: 1px solid #4a4a4a;',
+      '  padding-top: 6px; margin-top: 6px; }',
+      '#tes-panel .tes-summary-diagnostics { white-space: pre-line; margin-top: 6px; }',
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
       // A queue row is its own grid, not .tes-row (other views still use the
       // flex layout): two lines in column 1, the remove button spanning both
@@ -3011,6 +3018,12 @@
       const c = model.consumables;
       const boost = doc.createElement('div');
       boost.className = 'tes-summary';
+      // .tes-summary itself no longer carries white-space: pre-line (Task
+      // 7 — the queue summary below needed a border on just its middle
+      // section, which pre-line on the whole class would not allow). This
+      // block still joins several lines with '\n' and needs them to wrap,
+      // so it asks for that directly rather than depending on the class.
+      boost.style.whiteSpace = 'pre-line';
       const lines = [];
       if (c.plannedBooks > 0) {
         lines.push(`With ${c.plannedBooks} Book${c.plannedBooks === 1 ? '' : 's'} of Carols: ${c.plannedFinishLabel} (${c.plannedDurationLabel})`);
@@ -3029,29 +3042,50 @@
       body.appendChild(boost);
     }
 
+    // Three real child elements, not one text node joined with '\n' — the
+    // structure a border can attach to just the middle one (Task 7). Each
+    // piece is set through textContent only; course names come from Torn
+    // and are not ours to trust into markup.
     const summary = doc.createElement('div');
     summary.className = 'tes-summary';
-    const lines = [`Perk reduction: ${model.reductionLabel}`];
+
+    const inputs = doc.createElement('div');
+    inputs.className = 'tes-summary-inputs';
+    inputs.textContent = `Perk reduction: ${model.reductionLabel}`;
+    summary.appendChild(inputs);
+
+    const result = doc.createElement('div');
+    result.className = 'tes-summary-result';
     if (model.finishLabel) {
-      lines.push(`Total queued time: ${model.totalLabel}`);
+      result.textContent = `Total queued time: ${model.totalLabel}`;
     } else if (model.queue.length === 0) {
-      lines.push('Queue is empty. Add a course below.');
+      result.textContent = 'Queue is empty. Add a course below.';
     } else {
       // finishLabel is withheld (buildPanelModel) whenever problems is
       // non-empty — a queue with unmet prerequisites is not a plan the
       // player can actually follow, so no total is safe to print. The
-      // per-course detail lands below via the problems loop.
-      lines.push('This queue cannot be followed as ordered — missing prerequisites below.');
+      // per-course detail lands below via the diagnostics block.
+      result.textContent = 'This queue cannot be followed as ordered — missing prerequisites below.';
     }
-    for (const entry of model.stale) {
-      lines.push(`Removed ${entry.prefix || entry.courseId} from your queue — ${entry.why}.`);
+    summary.appendChild(result);
+
+    // Rendered only when there is something to diagnose, so a clean queue's
+    // summary is exactly two sections and nothing hints at a problem that
+    // does not exist.
+    if (model.stale.length || model.problems.length) {
+      const diagnostics = doc.createElement('div');
+      diagnostics.className = 'tes-summary-diagnostics';
+      const diagLines = [];
+      for (const entry of model.stale) {
+        diagLines.push(`Removed ${entry.prefix || entry.courseId} from your queue — ${entry.why}.`);
+      }
+      for (const problem of model.problems) {
+        diagLines.push(`${problem.prefix} needs ${problem.missing.map(function (m) { return m.prefix; }).join(', ')}`);
+      }
+      diagnostics.textContent = diagLines.join('\n');
+      summary.appendChild(diagnostics);
     }
-    for (const problem of model.problems) {
-      lines.push(`${problem.prefix} needs ${problem.missing.map(function (m) { return m.prefix; }).join(', ')}`);
-    }
-    // textContent throughout, never innerHTML: course names come from Torn
-    // and are not ours to trust into markup.
-    summary.textContent = lines.join('\n');
+
     body.appendChild(summary);
 
     // Two lines per queued course, sharing one grid row with the remove
