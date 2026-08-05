@@ -762,6 +762,27 @@ test('the settings view shows the inference as an inference, not as a reading', 
   assert.match(note.textContent, /Correct it if it is wrong/);
 });
 
+test('the settings view says the perk fields do not change dates and explains what they are for', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  const panel = exports.renderPanel(
+    doc,
+    doc.createElement('div'),
+    exports.buildPanelModel({ ...state, view: 'settings' }),
+    noopHandlers,
+  );
+  const sections = descendants(panel.children[1]).filter((c) => c.className === 'tes-section');
+  const perks = sections.find((c) => c.children[0] && c.children[0].textContent === 'Education perks');
+  const boosters = sections.find((c) => c.children[0] && c.children[0].textContent === 'Boosters');
+
+  assert.match(allText(perks), /These fields do not change any date the panel shows/);
+  assert.match(allText(perks), /Torn already applies these perks to the course durations it sends/);
+  assert.match(allText(perks), /reduction is read from Torn rather than rebuilt from what is typed here/);
+  assert.match(allText(perks), /shared plan and a debug report/);
+  assert.match(allText(boosters), /Job points do not change any date the panel shows/);
+  assert.match(allText(boosters), /like the perk fields below/);
+});
+
 test('an ambiguous reduction prefills nothing and says why', () => {
   const { exports } = loadUserscript();
   const data = exports.parsePayload(loadFixture());
@@ -850,13 +871,13 @@ test('switching view redraws the panel without persisting the choice', async () 
 
 // Boots init() against the real fixture with a live-looking session cookie, so
 // acquisition path 1 succeeds and the perk inference has data to work from.
-async function initWithFixture(seedSettings, seedPlan) {
+async function initWithFixture(seedSettings, seedPlan, fixture) {
   const doc = makeFakeDocument();
   doc.cookie = 'rfc_v=abcdefghijklm';
   const loaded = loadUserscript({
     location: { search: '' }, // keeps the bootstrap from auto-running init()
     document: doc,
-    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(fixture || loadFixture()) }),
   });
   if (seedSettings !== undefined) {
     loaded.gmStore.set(loaded.exports.SETTINGS_KEY, JSON.stringify(seedSettings));
@@ -938,6 +959,23 @@ test('editing a settings field stores it, and a rejected value falls back to its
   fire(price, 'change');
   assert.strictEqual(stored().bookPrice, 13500000, 'a negative price was stored instead of rejected');
   assert.strictEqual(stored().maxCooldownHours, 12, 'one bad field reset an unrelated good one');
+});
+
+test('changing a perk field leaves the schedule reduction read from Torn unchanged', async () => {
+  const { doc, stored } = await initWithFixture();
+  const reductionLine = () => descendants(doc.querySelector('#tes-panel'))
+    .find((c) => c.className === 'tes-summary-inputs').textContent;
+  assert.strictEqual(reductionLine(), 'Perk reduction: 40% off');
+
+  const merits = fieldFor(openSettings(doc), 'Merits reduction (%)');
+  merits.value = '0';
+  fire(merits, 'change');
+  assert.strictEqual(stored().perks.meritsPercent, 0, 'the perk edit did not reach settings');
+
+  const panel = doc.querySelector('#tes-panel');
+  const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+  fire(nav.children.find((b) => /schedule/i.test(b.textContent)), 'click');
+  assert.strictEqual(reductionLine(), 'Perk reduction: 40% off');
 });
 
 test('clearing a perk field returns it to "has not said" rather than zero', async () => {
@@ -2385,6 +2423,67 @@ test('resetting settings leaves the queue alone', async () => {
     'the settings reset must not touch the stored queue');
   assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 24,
     'the settings reset must actually restore the default, not silently no-op');
+});
+
+test('a settings defaults reset replaces answered perks with the inferred values', async () => {
+  const { doc, stored } = await initWithFixture({
+    perks: { meritsPercent: 4, principal: false, wsuBlock: false },
+  });
+  openSettings(doc);
+  const findReset = () => descendants(doc.querySelector('#tes-panel')).find((c) => /tes-reset/.test(c.className));
+  fire(findReset(), 'click');
+  fire(findReset(), 'click');
+
+  assert.deepStrictEqual(stored().perks, {
+    meritsPercent: 20,
+    principal: true,
+    wsuBlock: true,
+  });
+});
+
+test('a settings defaults reset redraws the inferred perk values into the fields', async () => {
+  const { doc } = await initWithFixture({
+    perks: { meritsPercent: 4, principal: false, wsuBlock: false },
+  });
+  openSettings(doc);
+  const findReset = () => descendants(doc.querySelector('#tes-panel')).find((c) => /tes-reset/.test(c.className));
+  fire(findReset(), 'click');
+  fire(findReset(), 'click');
+
+  const body = doc.querySelector('#tes-panel').children[1];
+  assert.strictEqual(fieldFor(body, 'Merits reduction (%)').value, '20');
+  assert.strictEqual(fieldFor(body, 'Principal rank (10%)').value, 'yes');
+  assert.strictEqual(fieldFor(body, 'WSU stock block (10%)').value, 'yes');
+});
+
+test('an ambiguous reduction still refills no perks after a settings defaults reset', async () => {
+  const fixture = loadFixture();
+  for (const category of fixture.categories) {
+    for (const course of category.courses) {
+      course.actualDuration = course.originDuration * 0.8;
+    }
+  }
+  const { doc, stored } = await initWithFixture({
+    perks: { meritsPercent: 4, principal: false, wsuBlock: false },
+  }, undefined, fixture);
+  openSettings(doc);
+  const findReset = () => descendants(doc.querySelector('#tes-panel')).find((c) => /tes-reset/.test(c.className));
+  fire(findReset(), 'click');
+  fire(findReset(), 'click');
+
+  assert.deepStrictEqual(stored().perks, {
+    meritsPercent: null,
+    principal: null,
+    wsuBlock: null,
+  });
+  const body = doc.querySelector('#tes-panel').children[1];
+  assert.strictEqual(fieldFor(body, 'Merits reduction (%)').value, '');
+  assert.strictEqual(fieldFor(body, 'Principal rank (10%)').value, '');
+  assert.strictEqual(fieldFor(body, 'WSU stock block (10%)').value, '');
+  const perks = descendants(body).find(
+    (c) => c.className === 'tes-section' && c.children[0] && c.children[0].textContent === 'Education perks'
+  );
+  assert.match(allText(perks), /4 possible combinations/);
 });
 
 // Task 3: the focus view's own reset. The focus nav entry is disabled unless
