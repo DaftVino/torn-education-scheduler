@@ -73,3 +73,40 @@ test('focusRegistry never throws on a hostile catalogue', () => {
   assert.doesNotThrow(() => x.focusRegistry(new Map()));
   assert.doesNotThrow(() => x.focusRegistry(null));
 });
+
+test('every working-stat line in the catalogue parses', () => {
+  const { x, data } = load();
+  let lines = 0;
+  for (const c of data.courses.values()) {
+    const gains = Array.isArray(c.workingStatsGain) ? c.workingStatsGain : [];
+    lines += gains.length;
+    assert.strictEqual(x.workingStatsFor(c).size > 0, gains.length > 0);
+  }
+  assert.strictEqual(lines, 294, 'fixture shape changed; re-measure before editing this');
+});
+
+test('catalogue working-stat totals match the measured figures', () => {
+  const { x, data } = load();
+  const totals = new Map();
+  for (const c of data.courses.values()) {
+    for (const [stat, n] of x.workingStatsFor(c)) {
+      totals.set(stat, (totals.get(stat) || 0) + n);
+    }
+  }
+  assert.strictEqual(totals.get('intelligence'), 8560);
+  assert.strictEqual(totals.get('endurance'), 3695);
+  assert.strictEqual(totals.get('manual labor'), 3015);
+});
+
+test('a malformed working-stat line is dropped, not coerced', () => {
+  const { x } = load();
+  const got = x.workingStatsFor({ workingStatsGain: ['Gain lots of intelligence', 'Gain 5 endurance upon completion'] });
+  assert.strictEqual(got.size, 1);
+  assert.strictEqual(got.get('endurance'), 5);
+});
+
+test('workingStatsFor never throws on a malformed course', () => {
+  const { x } = load();
+  assert.doesNotThrow(() => x.workingStatsFor(null));
+  assert.doesNotThrow(() => x.workingStatsFor({ workingStatsGain: 'not an array' }));
+});
