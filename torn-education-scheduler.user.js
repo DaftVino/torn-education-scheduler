@@ -2390,37 +2390,46 @@
       // No --tm-font. The panel inherits Torn's font, which is what makes it
       // look like part of the page rather than bolted on.
       '#tes-panel {',
-      '  --tm-bg: #1f1f1f; --tm-bg-2: #242424; --tm-bg-3: #111111;',
-      '  --tm-hover: #292929; --tm-border: #3a3a3a; --tm-border-2: #555555;',
-      '  --tm-text: #ffffff; --tm-muted: #b8b8b8; --tm-meta: #cfcfcf;',
-      // Fills and borders keep Bookie's values; type needs its own, because
-      // --tm-good measures 2.56:1 as text on --tm-bg and fails AA. The panel's
-      // existing green and red already pass at 10.44:1 and 7.02:1, so they stay.
-      '  --tm-good: #2a6b3a; --tm-good-text: #7ee081;',
-      '  --tm-bad: #aa3333; --tm-bad-text: #ff8080;',
+      '  --tm-bg: #1f1f1f; --tm-bg-3: #111111; --tm-hover: #292929;',
+      '  --tm-border-2: #555555; --tm-text: #ffffff; --tm-muted: #b8b8b8; --tm-meta: #cfcfcf;',
+      // Bookie's raw --tm-good/--tm-bad fills (#2a6b3a/#aa3333) are deliberately
+      // not carried over: nothing below needs a green or red FILL, only their
+      // -text variants, because --tm-good measures 2.56:1 as text on --tm-bg
+      // and fails AA — the panel's existing green and red already clear AA at
+      // 10.44:1 and 7.02:1, so only those two survive. A token nothing
+      // references is dead weight (same reasoning as the spec's "Not adopted"
+      // list, applied to Task 1's leftovers): --tm-bg-2 and --tm-border went
+      // for the same reason — no rule below ever needed a second background or
+      // border shade.
+      '  --tm-good-text: #7ee081; --tm-bad-text: #ff8080;',
       '  --tes-text-sm: 12px; --tes-text: 14px; --tes-text-lg: 1.25em;',
       '  --tes-gap-xs: 4px; --tes-gap-sm: 6px; --tes-gap: 8px; --tes-gap-lg: 14px;',
       '  --tes-focus-ring: 2px solid var(--tm-good-text);',
       '}',
-      '#tes-panel { border: 1px solid #4a4a4a; background: #1c1c1c; color: #e6e6e6;',
-      '  padding: 12px 14px; margin: 12px 0; border-radius: 6px; font-size: 13px; line-height: 1.5; }',
-      '#tes-panel .tes-header { font-weight: bold; margin-bottom: 8px;',
+      '#tes-panel { border: 1px solid var(--tm-border-2); background: var(--tm-bg); color: var(--tm-text);',
+      // No 4px/8px step sums to 12px, so the outer margin is the one place a
+      // token is a sum rather than a single step — this keeps the panel's
+      // distance from the rest of the page pixel-identical to before, rather
+      // than snapping to the nearest single gap and shifting it either way.
+      '  padding: 12px 14px; margin: calc(var(--tes-gap) + var(--tes-gap-xs)) 0; border-radius: 6px;',
+      '  font-size: var(--tes-text); line-height: 1.5; }',
+      '#tes-panel .tes-header { font-weight: bold; margin-bottom: var(--tes-gap);',
       '  display: flex; align-items: center; justify-content: space-between; gap: 8px; }',
       '#tes-panel .tes-header-toggle { font-weight: normal; }',
-      '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: 8px; }',
+      '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-nav .tes-settings { margin-left: auto; }',
-      '#tes-panel .tes-reset-armed { border-color: #ff8080; color: #ff8080; }',
-      '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
-      '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
-      '#tes-panel .tes-error { color: #ff8080; margin-bottom: 8px; }',
-      '#tes-panel .tes-summary { margin-bottom: 8px; }',
+      '#tes-panel .tes-reset-armed { border-color: var(--tm-bad-text); color: var(--tm-bad-text); }',
+      '#tes-panel .tes-finish { font-size: var(--tes-text-lg); font-weight: bold; color: var(--tm-good-text); margin-bottom: var(--tes-gap); }',
+      '#tes-panel .tes-save-error { color: var(--tm-bad-text); font-weight: bold; margin-bottom: var(--tes-gap); }',
+      '#tes-panel .tes-error { color: var(--tm-bad-text); margin-bottom: var(--tes-gap); }',
+      '#tes-panel .tes-summary { margin-bottom: var(--tes-gap); }',
       // .tes-summary-result carries the queue total (or the empty-queue /
       // unfollowable-plan message) — the number this restructure exists to
       // set apart from the perk-reduction assumption above it. The border
       // is that separator.
-      '#tes-panel .tes-summary-result { border-top: 1px solid #4a4a4a;',
-      '  padding-top: 6px; margin-top: 6px; }',
-      '#tes-panel .tes-summary-diagnostics { white-space: pre-line; margin-top: 6px; }',
+      '#tes-panel .tes-summary-result { border-top: 1px solid var(--tm-border-2);',
+      '  padding-top: 6px; margin-top: var(--tes-gap-sm); }',
+      '#tes-panel .tes-summary-diagnostics { white-space: pre-line; margin-top: var(--tes-gap-sm); }',
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
       // A queue row is its own grid, not .tes-row (other views still use the
       // flex layout): two lines in column 1, the remove button spanning both
@@ -2428,40 +2437,49 @@
       // belongs to.
       '#tes-panel .tes-queue-row { display: grid; grid-template-columns: 1fr auto;',
       '  align-items: center; gap: 2px 8px; padding: 4px 0; }',
-      '#tes-panel .tes-queue-bonus { grid-column: 1; padding-left: 12px; font-size: 0.9em; }',
+      '#tes-panel .tes-queue-bonus { grid-column: 1; padding-left: 12px; font-size: var(--tes-text-sm); }',
       '#tes-panel .tes-queue-row button { grid-column: 2; grid-row: 1 / span 2; }',
-      '#tes-panel button, #tes-panel select { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
+      '#tes-panel button, #tes-panel select { color: var(--tm-text); background: var(--tm-hover); border: 1px solid var(--tm-border-2);',
       '  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: inherit; }',
-      '#tes-panel button:hover { border-color: #7ee081; }',
-      '#tes-panel .tes-section { margin-bottom: 10px; }',
-      '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: 4px; opacity: 0.85; }',
-      '#tes-panel .tes-note { opacity: 0.75; margin-bottom: 6px; }',
-      '#tes-panel input { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
+      '#tes-panel button:hover { border-color: var(--tm-good-text); }',
+      // The focus ring belongs to this pass, not a later one: --tes-focus-ring
+      // is declared above, and a design-token block that declares a token no
+      // rule consumes is exactly the dead weight this refactor exists to
+      // remove. focus-visible, not focus, so a mouse click leaves no ring
+      // behind — before this rule, tabbing through the settings form gave no
+      // indication of position at all.
+      '#tes-panel button:focus-visible, #tes-panel select:focus-visible,',
+      '#tes-panel input:focus-visible, #tes-panel textarea:focus-visible {',
+      '  outline: var(--tes-focus-ring); outline-offset: 2px; }',
+      '#tes-panel .tes-section { margin-bottom: var(--tes-gap-lg); }',
+      '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); color: var(--tm-meta); }',
+      '#tes-panel .tes-note { color: var(--tm-muted); margin-bottom: var(--tes-gap-sm); font-size: var(--tes-text-sm); }',
+      '#tes-panel input { color: var(--tm-text); background: var(--tm-hover); border: 1px solid var(--tm-border-2);',
       '  border-radius: 4px; padding: 3px 6px; font-size: inherit; width: 10em; }',
       // The report is shown before it can be copied, so it needs to be
       // readable in place: wrapped, scrollable, and visibly a block of text
       // the player is about to hand to someone else.
-      '#tes-panel .tes-report { white-space: pre-wrap; word-break: break-word; background: #111;',
-      '  border: 1px solid #4a4a4a; border-radius: 4px; padding: 8px; margin: 8px 0; max-height: 240px; overflow: auto; }',
+      '#tes-panel .tes-report { white-space: pre-wrap; word-break: break-word; background: var(--tm-bg-3);',
+      '  border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; margin: var(--tes-gap) 0; max-height: 240px; overflow: auto; }',
       // auto-fill rather than a fixed column count: the panel sits inside
       // Torn's own column, whose width the script does not control.
-      '#tes-panel .tes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: 8px 0; }',
-      '#tes-panel .tes-cell { border: 1px solid #4a4a4a; border-radius: 4px; padding: 8px; }',
-      '#tes-panel .tes-all-banner { border: 1px solid #7ee081; border-radius: 4px;',
-      '  padding: 8px; margin: 8px 0; }',
-      '#tes-panel .tes-cell-title { font-weight: bold; margin-bottom: 4px; }',
+      '#tes-panel .tes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: var(--tes-gap) 0; }',
+      '#tes-panel .tes-cell { border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; }',
+      '#tes-panel .tes-all-banner { border: 1px solid var(--tm-good-text); border-radius: 4px;',
+      '  padding: 8px; margin: var(--tes-gap) 0; }',
+      '#tes-panel .tes-cell-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); }',
       // pre-line, because the detail carries a newline between the duration
       // and the finish date rather than two elements.
-      '#tes-panel .tes-cell-detail { white-space: pre-line; opacity: 0.85; }',
-      '#tes-panel .tes-share { width: 100%; box-sizing: border-box; color: #e6e6e6; background: #2e2e2e;',
-      '  border: 1px solid #4a4a4a; border-radius: 4px; padding: 6px; font-family: monospace; font-size: 0.95em; }',
-      '#tes-panel .tes-foot { margin-top: 8px; opacity: 0.7; font-size: 0.95em; }',
-      '#tes-panel a { color: #7ee081; }',
+      '#tes-panel .tes-cell-detail { white-space: pre-line; color: var(--tm-meta); font-size: var(--tes-text-sm); }',
+      '#tes-panel .tes-share { width: 100%; box-sizing: border-box; color: var(--tm-text); background: var(--tm-hover);',
+      '  border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 6px; font-family: monospace; font-size: 0.95em; }',
+      '#tes-panel .tes-foot { margin-top: var(--tes-gap); color: var(--tm-muted); font-size: var(--tes-text-sm); }',
+      '#tes-panel a { color: var(--tm-good-text); }',
       // Best-effort by nature: Chrome and Firefox on Windows and Linux honour a
       // colour on an <option>; macOS draws the menu itself and commonly ignores
       // it, so those players see no marker. Accepted trade — no fallback prefix,
       // since one would reinstate for some users what removing it was for.
-      '#tes-panel .tes-option-bachelor { color: #7ee081; }',
+      '#tes-panel .tes-option-bachelor { color: var(--tm-good-text); }',
     ].join('\n');
   }
 

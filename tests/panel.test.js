@@ -408,7 +408,7 @@ test('bachelor options are classed and non-bachelors are not', () => {
 
 test('the bachelor colour is the finish-line green', () => {
   const { exports } = okState([]);
-  assert.match(exports.panelStyleText(), /\.tes-option-bachelor[^}]*#7ee081/);
+  assert.match(exports.panelStyleText(), /\.tes-option-bachelor[^}]*var\(--tm-good-text\)/);
 });
 
 // The failure this guards is not hypothetical: a browser selects the first
@@ -1747,7 +1747,7 @@ test('resetButton appends to the row it was given', () => {
 
 test('the armed reset button carries the warning colour rule in the stylesheet', () => {
   const { x } = load();
-  assert.match(x.panelStyleText(), /\.tes-reset-armed\s*\{[^}]*color:\s*#ff8080/);
+  assert.match(x.panelStyleText(), /\.tes-reset-armed\s*\{[^}]*color:\s*var\(--tm-bad-text\)/);
 });
 
 // Round-1 QA finding: the brief's own CSS block gave the reset button its own

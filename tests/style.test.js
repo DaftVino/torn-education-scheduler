@@ -40,11 +40,40 @@ test('the token block is scoped to the panel and leaks nothing to :root', () => 
   assert.ok(!/:root/.test(css()), 'the panel must not declare variables on Torn\'s page');
 });
 
-test('no font-family is declared anywhere', () => {
-  assert.ok(!/font-family/.test(css()),
-    'the panel inherits Torn\'s font — this is a decision, not an omission');
+test('the panel root declares no font-family, and there is no font token', () => {
+  const text = css();
+  assert.ok(!/--tm-font/.test(text), 'no font token — an owner decision, not an omission');
+  assert.ok(!/font-family/.test(tokenBlock(text)),
+    'the panel inherits Torn\'s font, which is what makes it look like part of the page');
+  // .tes-share's `font-family: monospace` is a DELIBERATE exemption and stays:
+  // the share box holds a machine-readable token the player copies, where
+  // monospace makes the string legible and its boundaries unambiguous. That is
+  // a functional choice about one control, not a typographic identity choice
+  // about the panel — a blanket "no font-family anywhere" assertion could never
+  // have passed, and would have pressured someone into deleting it.
+  const outside = outsideTokenBlock(text).match(/font-family:[^;]+/g) || [];
+  assert.deepStrictEqual(outside, ['font-family: monospace'],
+    'the only font-family outside the token block is .tes-share\'s monospace');
 });
 
 test('color-mix is not used', () => {
   assert.ok(!/color-mix\(/.test(css()));
+});
+
+test('no literal px font-size or margin outside the token block', () => {
+  const outside = outsideTokenBlock(css());
+  const bad = (outside.match(/(?:font-size|margin[a-z-]*)\s*:\s*[^;]*\b\d+px/g) || []);
+  assert.deepStrictEqual(bad, [], `literal sizes outside the token block: ${bad.join(' | ')}`);
+});
+
+test('no opacity is used for text hierarchy', () => {
+  assert.ok(!/opacity\s*:/.test(css()),
+    'opacity dims against whatever is behind it; --tm-muted and --tm-meta are measured');
+});
+
+test('the finish line and error lines use the text-safe tokens', () => {
+  const text = css();
+  assert.match(text, /\.tes-finish[^}]*var\(--tm-good-text\)/);
+  assert.match(text, /\.tes-save-error[^}]*var\(--tm-bad-text\)/);
+  assert.ok(!/color:\s*var\(--tm-good\)\s*[;}]/.test(text), 'never --tm-good as type');
 });
