@@ -2520,8 +2520,10 @@
       '#tes-panel .tes-section { margin-bottom: var(--tes-gap-lg); }',
       '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); color: var(--tm-meta); }',
       '#tes-panel .tes-focus-section { border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; margin-bottom: var(--tes-gap-lg); }',
-      '#tes-panel .tes-focus-section-title { display: flex; justify-content: space-between; width: 100%; text-align: left; }',
-      '#tes-panel .tes-focus-row { display: grid; grid-template-columns: 2.5em 1.5em 1fr auto; align-items: center; gap: 8px; padding: 2px 0; }',
+      '#tes-panel .tes-focus-section-header { display: grid; grid-template-columns: 2.5em 1fr; align-items: center; gap: 8px; }',
+      '#tes-panel .tes-focus-section-title { width: 100%; text-align: left; }',
+      '#tes-panel .tes-focus-priority-slot { width: 2.5em; }',
+      '#tes-panel .tes-focus-row { display: grid; grid-template-columns: 1.5em 1fr auto; align-items: center; gap: 8px; padding: 2px 0; }',
       '#tes-panel .tes-focus-row input[type="checkbox"] { width: auto; }',
       '#tes-panel .tes-focus-row[data-disabled="true"] { color: var(--tm-muted); }',
       '#tes-panel .tes-focus-remaining { justify-self: end; text-align: right; }',
@@ -2745,20 +2747,36 @@
   // Focus categories are collapsed independently and are deliberately not
   // settings sections: their heading is a control, while settings headings
   // must remain inert labels with the exact shape their callers expect.
-  function focusSection(doc, body, title, selectedCount, expanded, onToggle) {
+  function focusSection(doc, body, title, chosen, expanded, onToggle, onPriority) {
     const section = doc.createElement('div');
     section.className = 'tes-focus-section';
+    const header = doc.createElement('div');
+    header.className = 'tes-focus-section-header';
+    const prioritySlot = doc.createElement('span');
+    prioritySlot.className = 'tes-focus-priority-slot';
+    // This header renders even while its section is collapsed, so the whole
+    // focus list stays visible and editable without opening any section.
+    if (chosen) {
+      const priorityInput = doc.createElement('input');
+      priorityInput.className = 'tes-focus-priority';
+      priorityInput.setAttribute('type', 'number');
+      priorityInput.setAttribute('min', '1');
+      priorityInput.value = String(chosen.priority);
+      if (priorityInput.addEventListener) {
+        priorityInput.addEventListener('change', function () {
+          onPriority(chosen.selection, Number(priorityInput.value));
+        });
+      }
+      prioritySlot.appendChild(priorityInput);
+    }
+    header.appendChild(prioritySlot);
     const heading = doc.createElement('button');
     heading.className = 'tes-focus-section-title';
-    const titleText = doc.createElement('span');
-    titleText.textContent = title;
-    heading.appendChild(titleText);
-    const countText = doc.createElement('span');
-    countText.textContent = `${selectedCount} selected`;
-    heading.appendChild(countText);
+    heading.textContent = chosen ? `${title} — ${chosen.selection}` : title;
     heading.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     if (heading.addEventListener) heading.addEventListener('click', onToggle);
-    section.appendChild(heading);
+    header.appendChild(heading);
+    section.appendChild(header);
     body.appendChild(section);
     return section;
   }
@@ -3055,11 +3073,13 @@
 
     for (const group of model.focusGroups) {
       const expanded = openCategories.indexOf(group.category) !== -1;
-      const selectedCount = group.selections.filter(function (sel) {
+      const chosen = group.selections.find(function (sel) {
         return sel.priority !== null;
-      }).length;
-      const section = focusSection(doc, body, group.category, selectedCount, expanded, function () {
+      }) || null;
+      const section = focusSection(doc, body, group.category, chosen, expanded, function () {
         toggleSection(group.category);
+      }, function (selection, position) {
+        reprioritise(group.category, selection, position);
       });
       if (!expanded) continue;
       for (const sel of group.selections) {
@@ -3070,26 +3090,6 @@
           row.setAttribute('data-disabled', 'true');
           row.setAttribute('title', 'This focus is already complete and cannot be selected.');
         }
-
-        // The empty slot is always first. Its grid track reserves the
-        // priority control's space before a checkbox is chosen, so selecting
-        // one never shifts this or any other row sideways.
-        const prioritySlot = doc.createElement('span');
-        prioritySlot.className = 'tes-focus-priority-slot';
-        if (sel.priority !== null) {
-          const priorityInput = doc.createElement('input');
-          priorityInput.className = 'tes-focus-priority';
-          priorityInput.setAttribute('type', 'number');
-          priorityInput.setAttribute('min', '1');
-          priorityInput.value = String(sel.priority);
-          if (priorityInput.addEventListener) {
-            priorityInput.addEventListener('change', function () {
-              reprioritise(group.category, sel.selection, Number(priorityInput.value));
-            });
-          }
-          prioritySlot.appendChild(priorityInput);
-        }
-        row.appendChild(prioritySlot);
 
         const box = doc.createElement('input');
         box.setAttribute('type', 'checkbox');
