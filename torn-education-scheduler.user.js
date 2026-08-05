@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Education Scheduler
 // @namespace    https://github.com/DaftVino/torn-education-scheduler
-// @version      1.0.0
+// @version      1.0.1
 // @description  Turns Torn's education page into a live planner: queue courses, get the exact finish date.
 // @author       DaftVino
 // @license      MIT
@@ -28,7 +28,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '1.0.0';
+  const SCRIPT_VERSION = '1.0.1';
   const EDU_ENDPOINT = '/page.php?sid=educationInitData';
   const STORAGE_KEY = 'tes:plan';
   const SETTINGS_KEY = 'tes:settings';

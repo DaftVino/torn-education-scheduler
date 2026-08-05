@@ -4,6 +4,30 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-05
+
+**Update if you installed 1.0.0.** Two different builds went out under that
+version — one before the licence and Greasy Fork details were added, one after
+— so 1.0.0 is ambiguous and this replaces it. Nothing about the arithmetic
+changed in either.
+
+### Added
+
+- **`@license MIT` in the script itself.** The userscript is the whole
+  distribution: installing the raw file gets you no repository, so without this
+  the copy on your disk stated no terms at all. It is kept in step with the
+  `LICENSE` file and `package.json`.
+- `@homepage` and `@supportURL`, both pointing at the Greasy Fork listing.
+
+### Changed
+
+- **The debug report now names where to send it.** It always said "the Greasy
+  Fork page"; now it carries the address, because the listing exists.
+- **The script's own comments were cut back to what a reader can use** — 173
+  lines lighter. References to internal test files, design documents and task
+  numbers are gone; the notes explaining what the script reads, what it stores
+  and how it fails are kept. It is published, so it is read.
+
 ## [1.0.0] - 2026-08-05
 
 **First public release.** The version is 1.0.0 because the repository went
