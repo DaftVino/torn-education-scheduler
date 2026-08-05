@@ -581,9 +581,10 @@
   function focusScores(focuses, courses) {
     const map = (courses instanceof Map) ? courses : new Map();
     const reg = focusRegistry(map);
-    const byKey = new Map();
+    const byKey = new Map(), countKeys = new Set();
     for (const row of reg.entries) {
       const k = focusKey(row.category, row.selection);
+      if (row.unit === 'none' || FOCUS_UNSTATABLE.indexOf(row.selection) !== -1) countKeys.add(k);
       if (!byKey.has(k)) byKey.set(k, new Map());
       const scores = byKey.get(k);
       // Number.isFinite deliberately does not coerce null: unlock rows have no
@@ -591,7 +592,6 @@
       const n = (row.unit === 'none' || !Number.isFinite(row.magnitude)) ? 1 : row.magnitude;
       scores.set(row.courseId, (scores.get(row.courseId) || 0) + n);
     }
-
     const list = Array.isArray(focuses) ? focuses : [];
     return list.map(function (f) {
       const category = f && f.category;
@@ -602,15 +602,16 @@
           const n = workingStatsFor(course).get(selection);
           if (n) out.set(course.id, n);
         }
-        return propagateFocusScore(out);
+        return out;
       }
-      return propagateFocusScore(byKey.get(focusKey(category, selection)) || new Map());
+      const k = focusKey(category, selection);
+      const scores = byKey.get(k) || new Map();
+      return countKeys.has(k) ? propagateFocusScore(scores) : new Map(scores);
     });
-
-    // A focus target is unreachable until its prerequisites finish, so route
-    // its score back through the same closure orderQueue uses. Maximum, never
-    // sum: a shared gate must not outrank the target merely for serving several
-    // focused courses, which would invent the exchange rate focus avoids.
+    // Count focuses are routing requests. Magnitude focuses are accumulation
+    // requests: Kahn readiness already puts gates before dependants, and routing
+    // would only prioritize zero-gain gates over unrelated real gainers. Use the
+    // same closure as orderQueue, and maximum so a shared gate cannot outrank its target.
     function propagateFocusScore(scores) {
       const routed = new Map(scores);
       const upstream = new Map();
@@ -630,7 +631,6 @@
   // limits rather than additive bonuses, and a "further" bonus may be
   // cumulative in a way its magnitude alone does not say.
   const FOCUS_UNSTATABLE = Object.freeze(['Weapon Experience Damage', 'Weapon Experience Accuracy', 'Rig Overclocking Limit']);
-
   // What a focus still has left, out of its catalogue total — per selection,
   // never summed across selections (a percent row and a flat-stat row are
   // incomparable units, the same defect focusScores exists to avoid).

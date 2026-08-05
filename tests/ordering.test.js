@@ -437,10 +437,15 @@ test('real unlock, company, and crime focuses each change the fixture queue', ()
     { category: 'Crime & Jail Bonuses', selection: 'Bail Cost Discount', courseId: 102 },
   ];
   for (const focus of cases) {
-    const focused = x.orderQueue(queue, 'focus', data.courses, x.focusScores([focus], data.courses));
+    const scoreMaps = x.focusScores([focus], data.courses);
+    const focused = x.orderQueue(queue, 'focus', data.courses, scoreMaps);
+    assert.ok(scoreMaps[0].get(focus.courseId) > 0,
+      `${focus.selection} must give its real target a positive score`);
     assert.notDeepStrictEqual(focused, queue, `${focus.selection} must change the fixture order`);
-    assert.ok(focused.indexOf(focus.courseId) < queue.indexOf(focus.courseId),
-      `${focus.selection} course ${focus.courseId} must move toward the front`);
+    if (focus.category === 'Unlocks & Abilities') {
+      assert.ok(focused.indexOf(focus.courseId) < queue.indexOf(focus.courseId),
+        `${focus.selection} routing target ${focus.courseId} must move toward the front`);
+    }
   }
 });
 
@@ -448,12 +453,15 @@ test('an unlock focus hoists its complete prerequisite chain toward the front', 
   const { x, data } = load();
   const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
   const target = 21; // Museum Access, a tier-3 course.
-  const focused = x.orderQueue(queue, 'focus', data.courses,
-    x.focusScores([{ category: 'Unlocks & Abilities', selection: 'Museum Access' }], data.courses));
+  const scoreMaps = x.focusScores(
+    [{ category: 'Unlocks & Abilities', selection: 'Museum Access' }], data.courses);
+  const focused = x.orderQueue(queue, 'focus', data.courses, scoreMaps);
   const chain = [...x.upstreamOf(target, data.courses, new Map()), target]
     .filter((id) => queue.indexOf(id) !== -1);
   assert.ok(chain.length > 2, 'Museum Access must keep a non-trivial queued prerequisite chain');
   for (const id of chain) {
+    assert.strictEqual(scoreMaps[0].get(id), 1,
+      `count-focus routing must propagate the target score to prerequisite ${id}`);
     assert.ok(focused.indexOf(id) < queue.indexOf(id), `prerequisite ${id} must move toward the front`);
   }
 });
