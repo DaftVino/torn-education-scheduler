@@ -550,6 +550,45 @@
     return out;
   }
 
+  const FOCUS_WORKING_STATS = 'Working Stats';
+
+  // (category, selection), never selection alone — see FOCUS_TAXONOMY's note.
+  function focusKey(category, selection) { return `${category} ${selection}`; }
+
+  // One Map per focus rather than one combined score: combining is exactly the
+  // invented exchange rate this feature exists to avoid. The caller ranks
+  // lexicographically over the array.
+  //
+  // Keyed by course id, so a course reached by two rows of the same selection
+  // is one entry carrying the summed magnitude — a split course is one course.
+  function focusScores(focuses, courses) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const reg = focusRegistry(map);
+    const byKey = new Map();
+    for (const row of reg.entries) {
+      const k = focusKey(row.category, row.selection);
+      if (!byKey.has(k)) byKey.set(k, new Map());
+      const scores = byKey.get(k);
+      const n = isFinite(row.magnitude) ? row.magnitude : 0;
+      scores.set(row.courseId, (scores.get(row.courseId) || 0) + n);
+    }
+
+    const list = Array.isArray(focuses) ? focuses : [];
+    return list.map(function (f) {
+      const category = f && f.category;
+      const selection = f && f.selection;
+      if (category === FOCUS_WORKING_STATS) {
+        const out = new Map();
+        for (const course of map.values()) {
+          const n = workingStatsFor(course).get(selection);
+          if (n) out.set(course.id, n);
+        }
+        return out;
+      }
+      return byKey.get(focusKey(category, selection)) || new Map();
+    });
+  }
+
   // Everything that has to be done before this course can be: the parentId
   // chain, plus the one rule the payload does not carry in parentId — a tier-3
   // bachelor requires every tier-2 course in its own category.
