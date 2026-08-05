@@ -132,6 +132,50 @@ test('an unlock course scores one rather than a zero-valued map entry', () => {
   assert.strictEqual(scores.get(row.courseId), 1);
 });
 
+test('a zero-gain course receives no propagated working-stat score', () => {
+  const { x, data } = load();
+  const gen2114 = data.courses.get(114);
+  const gen3121 = data.courses.get(121);
+  assert.strictEqual(gen2114.prefix, 'GEN2114');
+  assert.strictEqual(x.workingStatsFor(gen2114).get('manual labor'), undefined,
+    'the reported prerequisite must still grant no manual labor of its own');
+  assert.strictEqual(x.workingStatsFor(gen3121).get('manual labor'), 75,
+    'the reported descendant must still be a real manual-labor target');
+  assert.ok(x.upstreamOf(gen3121.id, data.courses, new Map()).has(gen2114.id),
+    'GEN2114 must still be upstream of the scored descendant or this test has no teeth');
+
+  const [scores] = x.focusScores(
+    [{ category: 'Working Stats', selection: 'manual labor' }],
+    data.courses,
+  );
+  assert.strictEqual(scores.get(gen3121.id), 75);
+  assert.strictEqual(scores.has(gen2114.id), false,
+    'an accumulation focus must not route a descendant score onto a zero-gain prerequisite');
+});
+
+test('a percent taxonomy focus does not propagate to a zero-benefit prerequisite', () => {
+  const { x, data } = load();
+  const target = 74; // DEF2740 grants a 3% passive defense bonus.
+  const prerequisite = 70; // DEF1700 grants no passive defense bonus.
+  const row = x.FOCUS_TAXONOMY.find((r) =>
+    r.category === 'Passive Stat Bonus' && r.selection === 'Defense' && r.courseId === target);
+  assert.ok(row, 'the real percent target must remain in the taxonomy');
+  assert.strictEqual(row.unit, 'percent');
+  assert.ok(x.upstreamOf(target, data.courses, new Map()).has(prerequisite),
+    'the zero-benefit course must still be a real prerequisite or this test has no teeth');
+  assert.ok(!x.FOCUS_TAXONOMY.some((r) =>
+    r.category === row.category && r.selection === row.selection && r.courseId === prerequisite),
+    'the prerequisite must not directly grant the selected passive bonus');
+
+  const [scores] = x.focusScores(
+    [{ category: row.category, selection: row.selection }],
+    data.courses,
+  );
+  assert.strictEqual(scores.get(target), row.magnitude);
+  assert.strictEqual(scores.has(prerequisite), false,
+    'a magnitude-bearing taxonomy focus must not route score onto a zero-benefit prerequisite');
+});
+
 test('a split course reached under two selections scores its exact magnitude, not just presence', () => {
   const { x, data } = load();
   // Real data, not synthetic: courseId 50's "defense and dexterity" outcome is
@@ -161,8 +205,11 @@ test('a course reached twice under one selection would be scored as their sum, n
   const perGroup = new Map(); // focusKey -> { category, selection, totals: Map<courseId, magnitude> }
   for (const row of x.FOCUS_TAXONOMY) {
     const key = x.focusKey(row.category, row.selection);
-    if (!perGroup.has(key)) perGroup.set(key, { category: row.category, selection: row.selection, totals: new Map() });
+    if (!perGroup.has(key)) perGroup.set(key, {
+      category: row.category, selection: row.selection, totals: new Map(), routes: false,
+    });
     const group = perGroup.get(key);
+    if (row.unit === 'none' || x.FOCUS_UNSTATABLE.indexOf(row.selection) !== -1) group.routes = true;
     if (group.totals.has(row.courseId)) anyRepeat = true;
     const value = (row.unit === 'none' || !Number.isFinite(row.magnitude)) ? 1 : row.magnitude;
     group.totals.set(row.courseId, (group.totals.get(row.courseId) || 0) + value);
@@ -170,18 +217,20 @@ test('a course reached twice under one selection would be scored as their sum, n
   assert.strictEqual(anyRepeat, false,
     'fixture shape changed: a real same-selection repeat now exists; assert scores.get() against the summed total directly');
 
-  for (const { category, selection, totals } of perGroup.values()) {
+  for (const { category, selection, totals, routes } of perGroup.values()) {
     const [scores] = x.focusScores([{ category, selection }], data.courses);
     for (const [courseId, total] of totals) {
       if (!data.courses.has(courseId)) continue; // stale row, outside this contract
       let expected = total;
-      for (const [downstreamId, downstreamScore] of totals) {
-        if (x.upstreamOf(downstreamId, data.courses, new Map()).has(courseId)) {
-          expected = Math.max(expected, downstreamScore);
+      if (routes) {
+        for (const [downstreamId, downstreamScore] of totals) {
+          if (x.upstreamOf(downstreamId, data.courses, new Map()).has(courseId)) {
+            expected = Math.max(expected, downstreamScore);
+          }
         }
       }
       assert.strictEqual(scores.get(courseId), expected,
-        `course ${courseId} under ${category} ${selection} must keep its summed score or its largest routed descendant score`);
+        `course ${courseId} under ${category} ${selection} must keep its summed score and route it only for count focuses`);
     }
   }
 });
@@ -200,9 +249,9 @@ test('focusScores returns one map per focus, in order', () => {
   ], data.courses);
   assert.strictEqual(maps.length, 2);
 
-  // A map also carries inherited routing scores for prerequisites. A tier-3
-  // target has no descendants, though, so it still pins each map's direct
-  // selection and result-array correspondence exactly.
+  // Working stats are accumulation focuses, so each map carries only direct
+  // gains. Terminal targets pin each map's selection and result-array
+  // correspondence exactly without a prerequisite routing confound.
   const intelligenceTarget = [...data.courses.values()].find((c) => c.tier === 3 && x.workingStatsFor(c).get('intelligence'));
   const enduranceTarget = [...data.courses.values()].find((c) => c.tier === 3 && x.workingStatsFor(c).get('endurance'));
   assert.ok(intelligenceTarget && enduranceTarget, 'need terminal targets for both stats');
