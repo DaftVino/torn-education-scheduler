@@ -1736,3 +1736,19 @@ test('the armed reset button carries the warning colour rule in the stylesheet',
   const { x } = load();
   assert.match(x.panelStyleText(), /\.tes-reset-armed\s*\{[^}]*color:\s*#ff8080/);
 });
+
+// Round-1 QA finding: the brief's own CSS block gave the reset button its own
+// `.tes-nav .tes-reset { margin-left: auto; }`, alongside the pre-existing
+// `.tes-nav .tes-settings { margin-left: auto; }`. Two auto-margins on the
+// same flex row do not stack — each claims a share of the leftover space, so
+// `⚙ settings` and `reset` would drift apart instead of sitting together as
+// one right-hand group. `.tes-settings`'s rule is what has to stay the row's
+// only one: it is what opens the right-hand group at all, and every button
+// appended after it (the reset button included) simply follows along inside
+// that same group. Asserted as a count, not by naming `.tes-reset` directly,
+// so a *third* button making the same mistake fails this too.
+test('.tes-nav carries exactly one margin-left: auto declaration', () => {
+  const { x } = load();
+  const matches = x.panelStyleText().match(/\.tes-nav[^{]*\{[^}]*margin-left:\s*auto/g) || [];
+  assert.strictEqual(matches.length, 1, `expected exactly one .tes-nav rule with margin-left: auto, found ${matches.length}`);
+});

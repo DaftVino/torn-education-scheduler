@@ -2370,7 +2370,6 @@
       '#tes-panel .tes-header-toggle { font-weight: normal; }',
       '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: 8px; }',
       '#tes-panel .tes-nav .tes-settings { margin-left: auto; }',
-      '#tes-panel .tes-nav .tes-reset { margin-left: auto; }',
       '#tes-panel .tes-reset-armed { border-color: #ff8080; color: #ff8080; }',
       '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
       '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
