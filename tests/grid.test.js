@@ -24,7 +24,10 @@ test('the grid has one box per category, plus a separate all-courses box', () =>
   const { exports: x } = loadUserscript();
   const out = grid(x);
   assert.strictEqual(out.boxes.length, 12, 'expected twelve degrees, all-courses lifted out');
-  assert.ok(!out.boxes.some((b) => b.key === 'all'), 'the all-courses box still sits in the card list, not lifted out');
+  // Whether the all-courses box is actually absent from boxes (rather than
+  // just outnumbered by the length check above) is the next test's whole
+  // purpose ('the all-remaining box is separate from the degree cards') —
+  // asserted once there rather than duplicated here.
   const names = out.boxes.map((b) => b.name);
   for (const expected of ['Biology', 'Business', 'Computer Science', 'Law', 'Mathematics']) {
     assert.ok(names.includes(expected), `${expected} has no box`);
