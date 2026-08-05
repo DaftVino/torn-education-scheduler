@@ -1,0 +1,20 @@
+# Reviewed 2026-08-05 before making this repository public.
+#
+# Nine generic-api-key hits in docs/initial-spec.md, all FALSE POSITIVES. They
+# are Google image-serving signatures on lh*.googleusercontent.com URLs, pasted
+# in with the nine community guides that document quotes. The same value repeats
+# across all nine, it grants read access to those images only, and it is not a
+# credential for anything in this project. Verified by reading the surrounding
+# lines: each sits directly under a course heading in a quoted guide.
+#
+# Listed rather than deleted because the strings are also in git history, so
+# removing them from HEAD would not stop a scan flagging them.
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1142
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1160
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1174
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1186
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1190
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1194
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1198
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1204
+a591e2725e9b52b1a173c0d4951f4efa85054e6f:docs/initial-spec.md:generic-api-key:1214
