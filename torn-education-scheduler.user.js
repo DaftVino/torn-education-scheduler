@@ -1035,6 +1035,69 @@
     return value;
   }
 
+  // Validated against the taxonomy itself rather than a separate list, so a
+  // selection cannot be storable and unrankable at the same time. One per
+  // category: two focuses in one category would be a tiebreak against itself.
+  const FOCUS_CATEGORIES = Object.freeze(
+    [FOCUS_WORKING_STATS].concat(FOCUS_TAXONOMY.map(function (r) { return r.category; }))
+      .filter(function (c, i, a) { return a.indexOf(c) === i; })
+  );
+
+  function normaliseFocuses(raw) {
+    if (!Array.isArray(raw)) return [];
+    const known = new Set(FOCUS_TAXONOMY.map(function (r) { return focusKey(r.category, r.selection); }));
+    for (const stat of WORKING_STATS) known.add(focusKey(FOCUS_WORKING_STATS, stat));
+
+    const out = [];
+    const seenCategory = new Set();
+    for (const f of raw) {
+      if (!f || typeof f !== 'object') continue;
+      const category = f.category;
+      const selection = f.selection;
+      if (typeof category !== 'string' || typeof selection !== 'string') continue;
+      if (!known.has(focusKey(category, selection))) continue;
+      if (seenCategory.has(category)) continue;
+      seenCategory.add(category);
+      out.push({ category, selection });
+    }
+    return out;
+  }
+
+  // Priority is position, not a stored number. Keeping them as one thing is
+  // what makes it impossible for the number beside a focus to disagree with
+  // the order the queue is actually sorted in.
+  //
+  // A category holds one slot. Picking a different selection in a category the
+  // player already chose swaps what fills the slot and leaves its number alone
+  // — re-picking is a change of mind about the what, not about the how much.
+  function toggleFocus(focuses, category, selection) {
+    const list = Array.isArray(focuses) ? focuses.slice() : [];
+    const at = list.findIndex(function (f) { return f.category === category; });
+    if (at === -1) return list.concat([{ category, selection }]);
+    if (list[at].selection === selection) {
+      list.splice(at, 1);          // deselect; the splice is what closes the gap
+      return list;
+    }
+    list[at] = { category, selection };
+    return list;
+  }
+
+  // Move to a 1-based position, the way a numbered list reorders: pull it out,
+  // put it back at the clamped index, everything else shifts around it. An
+  // unknown focus is returned untouched rather than appended — a renumber is
+  // not a way to select something.
+  function setFocusPriority(focuses, category, selection, position) {
+    const list = Array.isArray(focuses) ? focuses.slice() : [];
+    const at = list.findIndex(function (f) {
+      return f.category === category && f.selection === selection;
+    });
+    if (at === -1) return list;
+    const target = isInt(position) ? Math.min(Math.max(position, 1), list.length) : 1;
+    const [moved] = list.splice(at, 1);
+    list.splice(target - 1, 0, moved);
+    return list;
+  }
+
   // Validated per field, never per object. A player who spent time entering
   // four numbers should not lose all four because one of them rotted.
   function normaliseSettings(raw) {
@@ -1058,6 +1121,7 @@
         wsuBlock: typeof rawPerks.wsuBlock === 'boolean' ? rawPerks.wsuBlock : null,
       },
       orderMode: ORDER_MODES.indexOf(source.orderMode) !== -1 ? source.orderMode : SETTINGS_DEFAULTS.orderMode,
+      focuses: normaliseFocuses(source.focuses),
     };
   }
 

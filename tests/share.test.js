@@ -224,11 +224,11 @@ test('unrecognised keys are ignored, never stored', () => {
   const { x, courses } = load();
   const out = x.decodePlan('TES1|q=34|zzz=hello|__proto__=polluted|perks=x|toString=x', courses);
   assert.strictEqual(out.ok, true, out.detail);
-  // The decoded settings are exactly normaliseSettings' six-key shape: nothing
+  // The decoded settings are exactly normaliseSettings' seven-key shape: nothing
   // from the string reached the object by name.
   assert.deepStrictEqual(
     Object.keys(out.settings).sort(),
-    ['bookPrice', 'booksOwned', 'jobPoints', 'maxCooldownHours', 'orderMode', 'perks'],
+    ['bookPrice', 'booksOwned', 'focuses', 'jobPoints', 'maxCooldownHours', 'orderMode', 'perks'],
   );
   assert.deepStrictEqual(Object.keys(out.settings.perks).sort(), ['meritsPercent', 'principal', 'wsuBlock']);
   assert.strictEqual({}.polluted, undefined, 'the prototype was polluted');
