@@ -2901,7 +2901,7 @@
     // shared plan string and a debug report.
     const jobPointsNote = doc.createElement('div');
     jobPointsNote.className = 'tes-note';
-    jobPointsNote.textContent = 'Job points need no entry for the dates shown here — Torn already applies them to the course in progress.';
+    jobPointsNote.textContent = 'Job points do not change any date the panel shows. Torn already applies them to the course in progress; like the perk fields below, this field only travels with a shared plan and a debug report.';
     boosters.appendChild(jobPointsNote);
 
     // What the defaults button (below, in the nav row) is about to do to this
@@ -2919,6 +2919,10 @@
     note.className = 'tes-note';
     note.textContent = model.perkInference.note;
     perks.appendChild(note);
+    const perkUseNote = doc.createElement('div');
+    perkUseNote.className = 'tes-note';
+    perkUseNote.textContent = 'These fields do not change any date the panel shows. Torn already applies these perks to the course durations it sends, so the reduction is read from Torn rather than rebuilt from what is typed here. They are recorded only to travel with a shared plan and a debug report.';
+    perks.appendChild(perkUseNote);
     numberField(doc, perks, 'Merits reduction (%)', s.perks.meritsPercent === null ? '' : s.perks.meritsPercent, function (v) { set('perks.meritsPercent', v); });
     triStateField(doc, perks, 'Principal rank (10%)', s.perks.principal, function (v) { set('perks.principal', v); });
     triStateField(doc, perks, 'WSU stock block (10%)', s.perks.wsuBlock, function (v) { set('perks.wsuBlock', v); });
@@ -3664,20 +3668,22 @@
     // the same value is offered again. Persisting a refusal would need a fourth
     // state, and there is nothing here worth that.
     function prefillPerks(data) {
-      if (!data) return;
+      if (!data) return false;
       const inference = inferPerks(data.reduction);
-      if (!inference.determinate) return;
+      if (!inference.determinate) return false;
       let changed = false;
       const next = JSON.parse(JSON.stringify(settings));
       if (next.perks.meritsPercent === null) { next.perks.meritsPercent = inference.meritsPercent; changed = true; }
       if (next.perks.principal === null) { next.perks.principal = inference.principal; changed = true; }
       if (next.perks.wsuBlock === null) { next.perks.wsuBlock = inference.wsuBlock; changed = true; }
-      if (!changed) return;
+      if (!changed) return false;
       // normaliseSettings is the only writer of the canonical shape.
       settings = normaliseSettings(next);
+      return true;
+    }
+    if (prefillPerks(fetchResult.ok ? fetchResult.data : null)) {
       settingsSaveFailed = !saveSettings(settings);
     }
-    prefillPerks(fetchResult.ok ? fetchResult.data : null);
 
     let selectedCourseId = null;
     // Built on demand and never persisted: it is a snapshot of one moment's
@@ -3939,6 +3945,7 @@
             }
             if (view === 'settings') {
               settings = settingsDefaults(settings);
+              prefillPerks(fetchResult.ok ? fetchResult.data : null);
               settingsSaveFailed = !saveSettings(settings);
               draw(currentPlan, saveFailed === true);
               return;
