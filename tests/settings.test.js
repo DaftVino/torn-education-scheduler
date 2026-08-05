@@ -16,7 +16,7 @@ test('freshSettings returns the documented defaults, and a new object each call'
   assert.strictEqual(a.perks.meritsPercent, null);
   assert.strictEqual(a.perks.principal, null);
   assert.strictEqual(a.perks.wsuBlock, null);
-  assert.strictEqual(a.orderMode, 'as-listed');
+  assert.strictEqual(a.orderMode, 'focus');
 });
 
 test('normaliseSettings repairs one bad field without discarding the rest', () => {
@@ -45,7 +45,7 @@ test('normaliseSettings rejects out-of-range and nonsense input', () => {
   assert.strictEqual(x.normaliseSettings({ maxCooldownHours: 100000 }).maxCooldownHours, 24);
   assert.strictEqual(x.normaliseSettings({ bookPrice: -1 }).bookPrice, 13500000);
   assert.strictEqual(x.normaliseSettings({ jobPoints: 1.5 }).jobPoints, 0);
-  assert.strictEqual(x.normaliseSettings({ orderMode: 'nonsense' }).orderMode, 'as-listed');
+  assert.strictEqual(x.normaliseSettings({ orderMode: 'nonsense' }).orderMode, 'focus');
   assert.strictEqual(x.normaliseSettings({ perks: { meritsPercent: 21 } }).perks.meritsPercent, null);
   assert.strictEqual(x.normaliseSettings({ perks: { meritsPercent: 7 } }).perks.meritsPercent, null);
   assert.strictEqual(x.normaliseSettings({ perks: 'nope' }).perks.meritsPercent, null);
