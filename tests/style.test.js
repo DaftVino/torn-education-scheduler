@@ -107,6 +107,30 @@ test('buttons clear a 44px touch target', () => {
   assert.match(css(), /#tes-panel button[^}]*padding:\s*8px 12px/);
 });
 
+test('ratio() agrees with the one contrast pair that has a known exact answer', () => {
+  // Black on white is WCAG's own worked example: (1 + 0.05) / (0 + 0.05) = 21,
+  // exactly, because lin(0) = 0 and lin(255) = 1 with no rounding in between
+  // (verified: 0.2126 + 0.7152 + 0.0722 === 1 in IEEE 754 double, so no float
+  // slop enters either). This anchors the parts of ratio() a grey pair CAN
+  // prove: the sRGB piecewise transform, the +0.05 offsets, and the hi/lo
+  // ordering that picks the lighter colour.
+  //
+  // It does NOT anchor the three luminance weights against each other. Black
+  // and white are achromatic (R = G = B on both), so permuting which weight
+  // multiplies which channel changes nothing when the channels already carry
+  // equal values — confirmed by temporarily swapping the 0.2126/0.7152
+  // coefficients in this file's lin()/L() and re-running: this assertion
+  // still read exactly 21, and the five-token contrast test below still
+  // passed too (only --tm-good-text and --tm-bad-text are non-grey; under
+  // the swap they moved to 5.86:1 and 12.98:1 respectively, both still
+  // clearing 4.5:1 by coincidence of today's values). A weight transposition
+  // is a real, currently-uncaught gap in this file — recorded here rather
+  // than papered over, since a chromatic anchor (e.g. a saturated red/green
+  // pair with a known relative luminance) would be needed to close it, and
+  // that is a follow-up decision, not one this comment should make silently.
+  assert.strictEqual(ratio('#000000', '#ffffff'), 21);
+});
+
 test('every -text token clears WCAG AA against the panel background', () => {
   const block = tokenBlock(css());
   const val = (name) => (new RegExp(`${name}\\s*:\\s*(#[0-9a-fA-F]{3,6})`).exec(block) || [])[1];
