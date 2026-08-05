@@ -1237,6 +1237,10 @@ function focusSectionFor(panel, category) {
     && c.children[0].children[1].textContent.startsWith(category));
 }
 
+function focusCountFor(panel, category) {
+  return focusSectionFor(panel, category).children[0].children[2];
+}
+
 function completedGroupFor(section) {
   return section.children.find((c) => c.className === 'tes-focus-completed');
 }
@@ -1529,7 +1533,7 @@ test('completed-group rows keep their checkbox name remaining figure and disable
   }
 });
 
-test('the header priority slot precedes its toggle and rows have only three tracks', () => {
+test('the header priority slot precedes its toggle and count while rows keep three tracks', () => {
   const { x } = load();
   const model = x.buildPanelModel(state({
     view: 'focus',
@@ -1543,12 +1547,84 @@ test('the header priority slot precedes its toggle and rows have only three trac
   const panel = x.renderPanel(doc, doc.body, model, handlers());
   const rows = descendants(panel).filter((c) => c.className === 'tes-focus-row');
   const headers = descendants(panel).filter((c) => c.className === 'tes-focus-section-header');
+  assert.ok(headers.every((header) => header.children.length === 3));
   assert.ok(headers.every((header) => header.children[0].className === 'tes-focus-priority-slot'));
   assert.ok(headers.every((header) => header.children[1].className === 'tes-focus-section-title'));
+  assert.ok(headers.every((header) => header.children[2].className === 'tes-focus-section-count'));
   assert.ok(rows.every((row) => row.children.length === 3));
   assert.ok(rows.every((row) => row.children[0].type === 'checkbox'));
   assert.ok(rows.every((row) => !descendants(row).some((c) => c.className === 'tes-focus-priority-slot')));
+  assert.match(x.panelStyleText(), /\.tes-focus-section-header\s*\{[^}]*grid-template-columns:\s*2\.5em 1fr auto/);
+  assert.match(x.panelStyleText(), /\.tes-focus-section-count\s*\{[^}]*justify-self:\s*end/);
   assert.match(x.panelStyleText(), /\.tes-focus-row\s*\{[^}]*grid-template-columns:\s*1\.5em 1fr auto/);
+});
+
+test('a mixed fixture category shows independently counted remaining and total selections', () => {
+  const { x } = load();
+  const fixtureSelections = [
+    { selection: 'Medical Item Effectiveness', complete: false },
+    { selection: 'Needle Effectiveness', complete: true },
+  ];
+  const expectedRemaining = fixtureSelections.filter((selection) => !selection.complete).length;
+  const expectedTotal = fixtureSelections.length;
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ view: 'focus' })), handlers());
+  assert.strictEqual(
+    focusCountFor(panel, 'Medical Effectiveness').textContent,
+    `${expectedRemaining} rem /${expectedTotal} total`,
+  );
+});
+
+test('the focus count renders while its section is collapsed', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ view: 'focus' })), handlers());
+  const section = focusSectionFor(panel, 'Combat Bonuses');
+  assert.strictEqual(section.children[0].children[1]['aria-expanded'], 'false');
+  assert.strictEqual(section.children.length, 1, 'collapsed sections must contain only their header');
+  assert.strictEqual(focusCountFor(panel, 'Combat Bonuses').textContent, '16 rem /17 total');
+});
+
+test('a completed chosen selection still counts as complete in its header total', () => {
+  const { x } = load();
+  const category = 'Unlocks & Abilities';
+  const doc = makeDocument();
+  const model = x.buildPanelModel(state({
+    view: 'focus',
+    settings: { focuses: [{ category: category, selection: 'Sports Shop Access' }] },
+  }));
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const header = focusSectionFor(panel, category).children[0];
+  assert.strictEqual(header.children[0].children[0].className, 'tes-focus-priority');
+  assert.strictEqual(header.children[2].textContent, '32 rem /35 total');
+});
+
+test('a category with nothing complete shows its total as remaining', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ view: 'focus' })), handlers());
+  assert.strictEqual(focusCountFor(panel, 'Working Stats').textContent, '3 rem /3 total');
+});
+
+test('an all-complete category shows zero remaining', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ view: 'focus' })), handlers());
+  assert.strictEqual(focusCountFor(panel, 'Gym Gain Bonus').textContent, '0 rem /4 total');
+});
+
+test('the focus count label keeps one space before the slash and none after it', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ view: 'focus' })), handlers());
+  const label = focusCountFor(panel, 'Medical Effectiveness').textContent;
+  assert.strictEqual(label, '1 rem /2 total');
+  assert.match(label, /^\d+ rem \/\d+ total$/);
 });
 
 test('an unchosen focus section renders an empty header priority slot', () => {
