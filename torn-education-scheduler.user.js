@@ -2456,12 +2456,23 @@
       '#tes-panel .tes-save-error { color: var(--tm-bad-text); font-weight: bold; margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-error { color: var(--tm-bad-text); margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-summary { margin-bottom: var(--tes-gap); }',
-      // .tes-summary-result carries the queue total (or the empty-queue /
-      // unfollowable-plan message) — the number this restructure exists to
-      // set apart from the perk-reduction assumption above it. The border
-      // is that separator.
-      '#tes-panel .tes-summary-result { border-top: 1px solid var(--tm-border-2);',
-      '  padding-top: 6px; margin-top: var(--tes-gap-sm); }',
+      // The separator divides the whole summary from the queue rows below it,
+      // not one line of the summary from another. Owner decision at the v0.3.0
+      // QA gate: a top border on .tes-summary-result drew the line between
+      // "Perk reduction" and the total, which read as though the total belonged
+      // with the queue rather than with the assumptions above it.
+      //
+      // It is on the container, not a bottom border on .tes-summary-result,
+      // because .tes-summary-diagnostics renders AFTER the result whenever a
+      // stale entry was dropped or a prerequisite is missing — a bottom border
+      // on the result line would land mid-summary in exactly the case where the
+      // summary has the most to say.
+      //
+      // .tes-summary-queue, not .tes-summary: that class is shared with the
+      // Books block above and with the grid and focus views' no-data messages,
+      // and none of those wants a rule underneath it.
+      '#tes-panel .tes-summary-queue { border-bottom: 1px solid var(--tm-border-2); padding-bottom: 6px; }',
+      '#tes-panel .tes-summary-result { margin-top: var(--tes-gap-sm); }',
       '#tes-panel .tes-summary-diagnostics { white-space: pre-line; margin-top: var(--tes-gap-sm); }',
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
       // A queue row is its own grid, not .tes-row (other views still use the
@@ -3218,12 +3229,16 @@
       body.appendChild(boost);
     }
 
-    // Three real child elements, not one text node joined with '\n' — the
-    // structure a border can attach to just the middle one (Task 7). Each
-    // piece is set through textContent only; course names come from Torn
-    // and are not ours to trust into markup.
+    // Three real child elements, not one text node joined with '\n', so each
+    // part can be styled and asserted on independently. Each piece is set
+    // through textContent only; course names come from Torn and are not ours
+    // to trust into markup.
+    //
+    // The second class is what carries the separator under the whole block —
+    // see .tes-summary-queue in panelStyleText. .tes-summary alone is shared
+    // with three other blocks that must not gain a border.
     const summary = doc.createElement('div');
-    summary.className = 'tes-summary';
+    summary.className = 'tes-summary tes-summary-queue';
 
     const inputs = doc.createElement('div');
     inputs.className = 'tes-summary-inputs';
