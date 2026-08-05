@@ -21,6 +21,7 @@ test('a plan round-trips through encode and decode', () => {
   settings.perks.principal = true;
   settings.perks.wsuBlock = false;
   settings.orderMode = 'shortest-first';
+  settings.focusRankBasis = 'total';
 
   const text = x.encodePlan({ queue: [34, 38, 39] }, settings);
   assert.ok(text.indexOf('TES1|') === 0, `unexpected prefix in ${text}`);
@@ -36,6 +37,15 @@ test('a plan round-trips through encode and decode', () => {
   assert.strictEqual(out.settings.perks.principal, true);
   assert.strictEqual(out.settings.perks.wsuBlock, false);
   assert.strictEqual(out.settings.orderMode, 'shortest-first');
+  assert.strictEqual(out.settings.focusRankBasis, 'total');
+});
+
+test('focus rank basis round-trips and an unknown value falls back to per-day', () => {
+  const { x, courses } = load();
+  const text = x.encodePlan({ queue: [34] }, x.normaliseSettings({ focusRankBasis: 'total' }));
+  assert.match(text, /\|r=t(?:\||$)/);
+  assert.strictEqual(x.decodePlan(text, courses).settings.focusRankBasis, 'total');
+  assert.strictEqual(x.decodePlan('TES1|q=34|r=anything-else', courses).settings.focusRankBasis, 'per-day');
 });
 
 test('a focus set round-trips through the share string, in priority order', () => {
@@ -287,11 +297,11 @@ test('unrecognised keys are ignored, never stored', () => {
   const { x, courses } = load();
   const out = x.decodePlan('TES1|q=34|zzz=hello|__proto__=polluted|perks=x|toString=x', courses);
   assert.strictEqual(out.ok, true, out.detail);
-  // The decoded settings are exactly normaliseSettings' seven-key shape: nothing
+  // The decoded settings are exactly normaliseSettings' eight-key shape: nothing
   // from the string reached the object by name.
   assert.deepStrictEqual(
     Object.keys(out.settings).sort(),
-    ['bookPrice', 'booksOwned', 'focuses', 'jobPoints', 'maxCooldownHours', 'orderMode', 'perks'],
+    ['bookPrice', 'booksOwned', 'focusRankBasis', 'focuses', 'jobPoints', 'maxCooldownHours', 'orderMode', 'perks'],
   );
   assert.deepStrictEqual(Object.keys(out.settings.perks).sort(), ['meritsPercent', 'principal', 'wsuBlock']);
   assert.strictEqual({}.polluted, undefined, 'the prototype was polluted');

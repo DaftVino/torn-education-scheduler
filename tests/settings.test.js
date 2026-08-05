@@ -17,6 +17,7 @@ test('freshSettings returns the documented defaults, and a new object each call'
   assert.strictEqual(a.perks.principal, null);
   assert.strictEqual(a.perks.wsuBlock, null);
   assert.strictEqual(a.orderMode, 'focus');
+  assert.strictEqual(a.focusRankBasis, 'per-day');
 });
 
 test('normaliseSettings repairs one bad field without discarding the rest', () => {
@@ -203,6 +204,7 @@ test('defaults resets every settings field but preserves the focus list', () => 
     maxCooldownHours: 18, booksOwned: 4, bookPrice: 1000, jobPoints: 7,
     perks: { meritsPercent: 10, principal: true, wsuBlock: false },
     orderMode: 'shortest-first',
+    focusRankBasis: 'total',
     focuses: [{ category: 'Working Stats', selection: 'intelligence' }],
   });
   const after = x.settingsDefaults(before);
@@ -213,6 +215,18 @@ test('defaults resets every settings field but preserves the focus list', () => 
   assert.strictEqual(after.jobPoints, fresh.jobPoints);
   assert.deepStrictEqual(after.perks, fresh.perks);
   assert.strictEqual(after.orderMode, fresh.orderMode);
+  assert.strictEqual(after.focusRankBasis, fresh.focusRankBasis);
   assert.deepStrictEqual(after.focuses, before.focuses,
     'the settings page does not own the focus list and must not clear it');
+});
+
+test('defaults resets focusRankBasis while preserving focuses', () => {
+  const { exports: x } = loadUserscript();
+  const before = x.normaliseSettings({
+    focusRankBasis: 'total',
+    focuses: [{ category: 'Working Stats', selection: 'manual labor' }],
+  });
+  const after = x.settingsDefaults(before);
+  assert.strictEqual(after.focusRankBasis, 'per-day');
+  assert.deepStrictEqual(after.focuses, before.focuses);
 });

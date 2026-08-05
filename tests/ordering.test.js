@@ -408,6 +408,74 @@ test('a queued id missing from the catalogue is carried through rather than thro
 
 // ── focus mode ──────────────────────────────────────────────────────────────
 
+test('focus rank defaults to the shipped per-day order on the real fixture queue', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const scores = x.focusScores(
+    [{ category: 'Working Stats', selection: 'manual labor' }], data.courses);
+  const omitted = x.orderQueue(queue, 'focus', data.courses, scores);
+  const perDay = x.orderQueue(queue, 'focus', data.courses, scores, 'per-day');
+
+  assert.strictEqual(x.normaliseSettings(null).focusRankBasis, 'per-day');
+  assert.deepStrictEqual(omitted, perDay, 'omitting the new argument changed the shipped order');
+  assert.deepStrictEqual(omitted.slice(0, 12).map((id) => data.courses.get(id).prefix), [
+    'HAF1103', 'HAF2106', 'CBT1780', 'DEF1700', 'HAF2108', 'DEF2750',
+    'HAF2107', 'HAF2109', 'DEF2720', 'DEF2740', 'DEF2760', 'HAF2104',
+  ]);
+});
+
+test('switching a real Working Stats queue to total changes it and per-day restores it', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const scores = x.focusScores(
+    [{ category: 'Working Stats', selection: 'manual labor' }], data.courses);
+  const original = x.orderQueue(queue, 'focus', data.courses, scores, 'per-day');
+  const total = x.orderQueue(queue, 'focus', data.courses, scores, 'total');
+  const restored = x.orderQueue(queue, 'focus', data.courses, scores, 'per-day');
+
+  assert.notDeepStrictEqual(total, original, 'the basis changed but the fixture order did not');
+  assert.deepStrictEqual(restored, original, 'switching back did not reproduce the original order');
+});
+
+test('total ranks DEF2750 above HAF1103 when both real fixture courses are ready', () => {
+  const { x, data } = load();
+  const byPrefix = (prefix) => [...data.courses.values()].find((course) => course.prefix === prefix).id;
+  const def2750 = byPrefix('DEF2750');
+  const haf1103 = byPrefix('HAF1103');
+  const queue = [def2750, haf1103];
+  const scores = x.focusScores(
+    [{ category: 'Working Stats', selection: 'manual labor' }], data.courses);
+
+  // DEF2750's prerequisite is outside this two-course queue, so both entries
+  // are ready in the same Kahn step and only the selected rank basis decides.
+  assert.deepStrictEqual(x.orderQueue(queue, 'focus', data.courses, scores, 'total'), [def2750, haf1103]);
+  assert.deepStrictEqual(x.orderQueue(queue, 'focus', data.courses, scores, 'per-day'), [haf1103, def2750]);
+});
+
+test('both focus rank bases leave the fixture finish date and total byte-identical', () => {
+  const { x, data } = load();
+  const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const makeModel = (focusRankBasis) => x.buildPanelModel({
+    fetchResult: { ok: true, data: data },
+    plan: { queue: queue, collapsed: false },
+    now: 1767225600,
+    view: 'schedule',
+    settings: {
+      orderMode: 'focus', focusRankBasis: focusRankBasis,
+      focuses: [{ category: 'Working Stats', selection: 'manual labor' }],
+    },
+  });
+  const perDay = makeModel('per-day');
+  const total = makeModel('total');
+  const resultBytes = (model) => JSON.stringify({
+    finishLabel: model.finishLabel,
+    totalLabel: model.totalLabel,
+  });
+
+  assert.notDeepStrictEqual(total.queue.map((row) => row.courseId), perDay.queue.map((row) => row.courseId));
+  assert.strictEqual(resultBytes(total), resultBytes(perDay));
+});
+
 test('focus ordering never changes the finish date', () => {
   const { x, data } = load();
   const queue = x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
