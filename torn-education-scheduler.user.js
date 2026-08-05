@@ -1396,6 +1396,9 @@
       `j=${s.jobPoints}`,
       `o=${s.orderMode}`,
     ];
+    if (s.focuses.length > 0) {
+      parts.push(`f=${s.focuses.map(function (f) { return `${f.category}${f.selection}`; }).join(',')}`);
+    }
     if (s.perks.meritsPercent !== null) parts.push(`m=${s.perks.meritsPercent}`);
     if (s.perks.principal !== null) parts.push(`pr=${s.perks.principal ? 1 : 0}`);
     if (s.perks.wsuBlock !== null) parts.push(`w=${s.perks.wsuBlock ? 1 : 0}`);
@@ -1423,6 +1426,24 @@
       ? `"${safe}"`
       : `"${safe.slice(0, MAX_TOKEN_CHARS)}…" (truncated, ${safe.length} chars)`;
   }
+
+  // encodePlan concatenates category and selection with no separator between
+  // them (see its comment above the `f=` push), so the only way back is to
+  // match a token against every known (category, selection) pair — the same
+  // set normaliseFocuses validates against — and split there. Built once from
+  // fixed data; a token that matches no pair maps to a sentinel {category:
+  // null, ...} that normaliseFocuses is guaranteed to drop, which is what lets
+  // decodePlan detect the loss below rather than silently swallow it.
+  const FOCUS_CONCAT_INDEX = (function () {
+    const map = new Map();
+    for (const row of FOCUS_TAXONOMY) {
+      map.set(`${row.category}${row.selection}`, { category: row.category, selection: row.selection });
+    }
+    for (const stat of WORKING_STATS) {
+      map.set(`${FOCUS_WORKING_STATS}${stat}`, { category: FOCUS_WORKING_STATS, selection: stat });
+    }
+    return map;
+  }());
 
   // Untrusted input, treated as such: every id is checked against the live
   // catalogue and an unknown one is rejected by name, unrecognised keys are
@@ -1473,6 +1494,20 @@
       }
     }
 
+    // A field that parses (a comma-separated list of tokens) but loses
+    // entries once run through normaliseFocuses — an unrecognised token, or a
+    // second selection in a category already claimed — is a refusal, not a
+    // silent drop: matching how an unknown course id above refuses by name
+    // rather than dropping the id and keeping the rest of the queue.
+    const rawFocus = typeof fields.f === 'string' ? fields.f : '';
+    const focusTokens = rawFocus.length > 0 ? rawFocus.split(',') : [];
+    let firstBadFocusToken = null;
+    const focusCandidates = focusTokens.map(function (token) {
+      const match = FOCUS_CONCAT_INDEX.get(token);
+      if (!match && firstBadFocusToken === null) firstBadFocusToken = token;
+      return match || { category: null, selection: null };
+    });
+
     // normaliseSettings is the only writer of the canonical shape, so every
     // hostile or nonsensical value below falls back to its default.
     const toInt = function (v) { return /^-?\d+$/.test(v || '') ? Number(v) : undefined; };
@@ -1483,12 +1518,23 @@
       bookPrice: toInt(fields.p),
       jobPoints: toInt(fields.j),
       orderMode: fields.o,
+      focuses: focusCandidates,
       perks: {
         meritsPercent: toInt(fields.m),
         principal: toBool(fields.pr),
         wsuBlock: toBool(fields.w),
       },
     });
+
+    if (settings.focuses.length !== focusCandidates.length) {
+      return {
+        ok: false,
+        reason: 'unknown-focus',
+        detail: firstBadFocusToken !== null
+          ? `${quoteToken(firstBadFocusToken)} is not a focus selection`
+          : 'a focus selection conflicts with another and cannot be kept',
+      };
+    }
 
     return { ok: true, queue: queue, settings: settings };
   }
