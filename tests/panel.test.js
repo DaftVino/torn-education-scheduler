@@ -261,12 +261,16 @@ test('renderPanel surfaces a visible message naming what is missing when the pla
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
   const body = panel.children[1];
   const summary = body.children.find((c) => c.className === 'tes-summary');
-  assert.match(summary.textContent, /cannot be followed/i);
-  assert.match(summary.textContent, /MTH1220/);
-  assert.match(summary.textContent, /MTH2260/);
+  // allText, not summary.textContent: Task 7 split the summary into three
+  // child elements (.tes-summary-inputs/-result/-diagnostics), so the
+  // messages live on those, not on the outer .tes-summary div itself — the
+  // fake document does not aggregate children's textContent onto a parent.
+  assert.match(allText(summary), /cannot be followed/i);
+  assert.match(allText(summary), /MTH1220/);
+  assert.match(allText(summary), /MTH2260/);
   // No "Queue finishes" line and no "Total queued time" line — a stale
   // problems-free wording would misleadingly imply a real date exists.
-  assert.doesNotMatch(summary.textContent, /Total queued time/);
+  assert.doesNotMatch(allText(summary), /Total queued time/);
 });
 
 test('renderPanel names a dropped stale queue entry on screen, not only in the model', () => {
@@ -283,13 +287,16 @@ test('renderPanel names a dropped stale queue entry on screen, not only in the m
   // Both the Books-of-Carols block and the real queue summary render with
   // class .tes-summary — this queue has consumables (no problems, non-empty),
   // so .find would grab the wrong one. Match on content instead of position.
+  // allText, not c.textContent: Task 7 moved the stale-entry line onto the
+  // nested .tes-summary-diagnostics child, so the outer .tes-summary div's
+  // own textContent is empty.
   const summaries = body.children.filter((c) => c.className === 'tes-summary');
-  const summary = summaries.find((c) => /Removed/.test(c.textContent));
-  assert.ok(summary, `no .tes-summary block named the stale entry: ${summaries.map((s) => s.textContent).join(' | ')}`);
+  const summary = summaries.find((c) => /Removed/.test(allText(c)));
+  assert.ok(summary, `no .tes-summary block named the stale entry: ${summaries.map((s) => allText(s)).join(' | ')}`);
   assert.match(
-    summary.textContent,
+    allText(summary),
     /Removed 999999 from your queue — no longer in the catalogue\./,
-    `the stale entry never reached the rendered panel: ${summary.textContent}`
+    `the stale entry never reached the rendered panel: ${allText(summary)}`
   );
 });
 
@@ -464,16 +471,20 @@ test('the all-remaining entry queues every remaining course, in a followable ord
   // The point of the feature: a plan the panel will actually date. A queue the
   // panel reports problems for gets no finish line at all.
   const redrawn = doc.querySelector('#tes-panel').children[1];
-  // Asserting about the queue summary (the block that opens with "Perk
-  // reduction:"), not the consumables/Books block — that one also carries
-  // .tes-summary and renders first whenever the queue has a finish date
-  // (torn-education-scheduler.user.js ~2248 vs ~2268), and it can never
-  // contain "cannot be followed", so taking the first .tes-summary here
-  // would pass regardless of what the real summary says.
+  // Asserting about the queue summary (the block carrying a
+  // .tes-summary-inputs child, whose line opens "Perk reduction:"), not the
+  // consumables/Books block — that one also carries .tes-summary and renders
+  // first whenever the queue has a finish date, and it can never contain
+  // "cannot be followed", so taking the first .tes-summary here would pass
+  // regardless of what the real summary says. Task 7 split the summary into
+  // .tes-summary-inputs/-result/-diagnostics children, so that child's
+  // presence — not the outer div's own (now-empty) textContent — is what
+  // distinguishes it from the Books block.
   const summary = redrawn.children.find(
-    (c) => c.className === 'tes-summary' && /^Perk reduction:/.test(c.textContent)
+    (c) => c.className === 'tes-summary' && descendants(c).some((d) => d.className === 'tes-summary-inputs')
   );
-  assert.ok(!/cannot be followed/.test(summary.textContent), summary.textContent.split('\n')[1]);
+  assert.ok(summary, 'no queue summary block rendered');
+  assert.ok(!/cannot be followed/.test(allText(summary)), allText(summary));
   assert.ok(redrawn.children.some((c) => c.className === 'tes-finish'), 'no finish date for the full plan');
 });
 
@@ -1594,4 +1605,49 @@ test('the all-remaining banner renders before the grid, titled all remaining cou
   const gridIndex = body.children.findIndex((c) => c.className === 'tes-grid');
   assert.ok(bannerIndex !== -1 && gridIndex !== -1, 'banner or grid missing from the body');
   assert.ok(bannerIndex < gridIndex, 'the banner does not come before the grid');
+});
+
+// Task 7: the schedule summary used to be one text node built by
+// lines.join('\n') with white-space: pre-line, so a visible separator could
+// not attach to just the total without also breaking the assumptions above
+// it. Split into three real elements instead.
+//
+// The brief's own version of these tests reached for
+// `panel.querySelectorAll('.tes-summary-inputs')[0]` and `.textContent`
+// straight off the panel. tests/fake-document.js's `querySelectorAll` always
+// returns `[]` and does not aggregate children's textContent onto a parent,
+// so both calls would silently find nothing. Adapted to this file's real
+// idioms: `descendants()` and `allText()`.
+//
+// The brief also queued course 34 (BIO1340) as its "clean" example, but
+// against this fixture 34 is already completed — queueing it produces a
+// stale entry ("already completed"), which is itself something to diagnose.
+// 38 is used instead: a genuinely clean single-course queue, the same one
+// the ordering test above already relies on for a real finish date with no
+// stale entries and no problems.
+test('the summary is three real sections, not one text node', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [38] })), handlers());
+  assert.ok(descendants(panel).find((c) => c.className === 'tes-summary-inputs'), 'no .tes-summary-inputs rendered');
+  assert.ok(descendants(panel).find((c) => c.className === 'tes-summary-result'), 'no .tes-summary-result rendered');
+});
+
+test('diagnostics appear only when there is something to diagnose', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const clean = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [38] })), handlers());
+  assert.strictEqual(
+    descendants(clean).filter((c) => c.className === 'tes-summary-diagnostics').length,
+    0,
+    'a clean queue must not render a diagnostics block'
+  );
+});
+
+test('every existing summary message survives the restructure', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const empty = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [] })), handlers());
+  assert.match(allText(empty), /Queue is empty/);
+  assert.match(allText(empty), /Perk reduction/);
 });
