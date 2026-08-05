@@ -966,10 +966,9 @@
     }
 
     const everything = allRemainingCourses(completedIds, courses, activeCourse);
-    const allBox = boxFor('all', 'All courses', null, everything);
-    boxes.push(allBox);
+    const allBox = boxFor('all', 'all remaining courses', null, everything);
 
-    return { boxes: boxes, sumsDiffer: summedCount > allBox.courseCount };
+    return { boxes: boxes, allBox: allBox, sumsDiffer: summedCount > allBox.courseCount };
   }
 
   // Torn's own React tree carries the same education payload the endpoint
@@ -2084,16 +2083,18 @@
       courses: data.courses, categories: data.categories, completedIds: data.completedIds,
       activeCourse: data.activeCourse, now: state.now,
     });
+    const labelBox = function (b) {
+      return {
+        key: b.key, name: b.name, bachelorPrefix: b.bachelorPrefix,
+        courseCount: b.courseCount, totalSeconds: b.totalSeconds, finishesAt: b.finishesAt,
+        durationLabel: formatDuration(b.totalSeconds),
+        finishLabel: `${formatDate(b.finishesAt)} · ${formatTime(b.finishesAt)} TCT`,
+      };
+    };
     const grid = {
       sumsDiffer: rawGrid.sumsDiffer,
-      boxes: rawGrid.boxes.map(function (b) {
-        return {
-          key: b.key, name: b.name, bachelorPrefix: b.bachelorPrefix,
-          courseCount: b.courseCount, totalSeconds: b.totalSeconds, finishesAt: b.finishesAt,
-          durationLabel: formatDuration(b.totalSeconds),
-          finishLabel: `${formatDate(b.finishesAt)} · ${formatTime(b.finishesAt)} TCT`,
-        };
-      }),
+      boxes: rawGrid.boxes.map(labelBox),
+      allBox: labelBox(rawGrid.allBox),
     };
 
     // The registry drives both what the focus view can offer and what it is
@@ -2395,7 +2396,8 @@
       // Torn's own column, whose width the script does not control.
       '#tes-panel .tes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: 8px 0; }',
       '#tes-panel .tes-cell { border: 1px solid #4a4a4a; border-radius: 4px; padding: 8px; }',
-      '#tes-panel .tes-cell-all { border-color: #7ee081; }',
+      '#tes-panel .tes-all-banner { border: 1px solid #7ee081; border-radius: 4px;',
+      '  padding: 8px; margin: 8px 0; }',
       '#tes-panel .tes-cell-title { font-weight: bold; margin-bottom: 4px; }',
       // pre-line, because the detail carries a newline between the duration
       // and the finish date rather than two elements.
@@ -2885,9 +2887,12 @@
     }
   }
 
-  // One box per degree plus one for everything, each answering the same
-  // question independently: if I did only this, starting now, when would it
-  // finish? Every name here is Torn's, so every one goes in through
+  // One box per degree, each answering the same question independently: if I
+  // did only this, starting now, when would it finish? The all-remaining
+  // total answers that same question for everything at once, so it renders
+  // as its own full-width banner before the grid rather than as a thirteenth
+  // cell inside it — a box among boxes reads as one more degree, not the
+  // total. Every name here is Torn's, so every one goes in through
   // textContent.
   function renderGridView(doc, body, model, handlers) {
     // A guard on the model contract, not a state this panel produces:
@@ -2908,11 +2913,31 @@
     intro.textContent = 'Each box answers: if I did only this degree, starting now, when would it finish?';
     body.appendChild(intro);
 
+    // Lifted out of the grid (it used to be the last cell, .tes-cell-all) and
+    // given its own full-width banner: it is not a thirteenth degree, it is
+    // the answer to a different question — everything at once — and sat
+    // among the degree boxes it read as one more of them rather than the
+    // total. allBox carries the same durationLabel/finishLabel treatment as
+    // every cell (buildPanelModel), just rendered here instead of in .tes-grid.
+    const banner = doc.createElement('div');
+    banner.className = 'tes-all-banner';
+    const bannerTitle = doc.createElement('div');
+    bannerTitle.className = 'tes-cell-title';
+    bannerTitle.textContent = model.grid.allBox.name;
+    banner.appendChild(bannerTitle);
+    const bannerDetail = doc.createElement('div');
+    bannerDetail.className = 'tes-cell-detail';
+    bannerDetail.textContent = model.grid.allBox.courseCount === 0
+      ? 'Already complete'
+      : `${model.grid.allBox.courseCount} crs — ${model.grid.allBox.durationLabel}\n${model.grid.allBox.finishLabel}`;
+    banner.appendChild(bannerDetail);
+    body.appendChild(banner);
+
     const grid = doc.createElement('div');
     grid.className = 'tes-grid';
     for (const box of model.grid.boxes) {
       const cell = doc.createElement('div');
-      cell.className = box.key === 'all' ? 'tes-cell tes-cell-all' : 'tes-cell';
+      cell.className = 'tes-cell';
       const title = doc.createElement('div');
       title.className = 'tes-cell-title';
       title.textContent = box.bachelorPrefix ? `${box.name} (${box.bachelorPrefix})` : box.name;
