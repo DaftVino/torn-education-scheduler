@@ -345,3 +345,41 @@ test('focusTotals never throws on rubbish', () => {
   assert.doesNotThrow(() => x.focusTotals(null, data.courses, new Set()));
   assert.doesNotThrow(() => x.focusTotals({ category: 'x', selection: 'y' }, null, null));
 });
+
+test('rig overclocking limit is unstatable: its rows are successive caps, not additive bonuses', () => {
+  const { x, data } = load();
+  // Course 128 unlocks overclocking up to 30%, course 129 up to 50%. Summed as
+  // if additive that is 80%, a ceiling nobody actually reaches -- the real
+  // limit is whichever course was completed last. FOCUS_UNSTATABLE exists so
+  // focusTotals falls back to a count instead of printing that invented sum.
+  const t = x.focusTotals(
+    { category: 'Computing Bonuses', selection: 'Rig Overclocking Limit' },
+    data.courses,
+    new Set(),
+  );
+  assert.strictEqual(t.statable, false, 'rig overclocking limit must not be reported as statable');
+  assert.strictEqual(t.unit, 'count', 'an unstatable selection must fall back to a count, never a percent');
+});
+
+test('every taxonomy selection phrased as a successive limit ("up to N%") is in FOCUS_UNSTATABLE', () => {
+  const { x } = load();
+  // Generalises the guard above: rather than pinning one selection name, scan
+  // every taxonomy row's outcome text for Torn's own "up to N%" phrasing --
+  // the wording that marks a value as a ceiling, not an additive bonus -- and
+  // require every selection that uses it to be in FOCUS_UNSTATABLE. Catches
+  // the next one Torn adds, not just the one already found.
+  const upToPattern = /\bup to \d+%/i;
+  const offenders = new Set();
+  for (const row of x.FOCUS_TAXONOMY) {
+    if (upToPattern.test(row.outcome) && x.FOCUS_UNSTATABLE.indexOf(row.selection) === -1) {
+      offenders.add(row.selection);
+    }
+  }
+  assert.deepStrictEqual([...offenders], [],
+    'selection(s) phrased as a successive limit are missing from FOCUS_UNSTATABLE');
+
+  // And the test has teeth: today's taxonomy really does contain at least one
+  // "up to N%" row, so the pattern above is not vacuously passing.
+  const anyUpTo = x.FOCUS_TAXONOMY.some((row) => upToPattern.test(row.outcome));
+  assert.ok(anyUpTo, 'expected at least one "up to N%" row in the taxonomy, or this test has no teeth');
+});

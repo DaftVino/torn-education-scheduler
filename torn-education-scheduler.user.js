@@ -611,7 +611,7 @@
   // weapon experience has no ceiling, overclocking values are successive
   // limits rather than additive bonuses, and a "further" bonus may be
   // cumulative in a way its magnitude alone does not say.
-  const FOCUS_UNSTATABLE = Object.freeze(['Weapon Experience Damage', 'Weapon Experience Accuracy']);
+  const FOCUS_UNSTATABLE = Object.freeze(['Weapon Experience Damage', 'Weapon Experience Accuracy', 'Rig Overclocking Limit']);
 
   // What a focus still has left, out of its catalogue total — per selection,
   // never summed across selections (a percent row and a flat-stat row are
@@ -2264,7 +2264,7 @@
       debugReport: state.debugReport || null,
       grid: grid,
       focusGroups: focusGroups,
-      focuses: settings.focuses,
+      focuses: settings.focuses, // not read by any renderer; kept for tests/panel.test.js — see code-map
       focusHealth: focusHealth,
       // Built from the pruned queue, in storage order — never the ordered
       // queue: ordering is a display preference, and storage keeps the raw
