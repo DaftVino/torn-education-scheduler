@@ -124,11 +124,51 @@ test('a split course is reached by both its selections', () => {
   }
 });
 
-test('a course satisfying one selection twice is scored once per course', () => {
+test('a split course reached under two selections scores its exact magnitude, not just presence', () => {
   const { x, data } = load();
-  const [scores] = x.focusScores([{ category: 'Working Stats', selection: 'intelligence' }], data.courses);
-  const ids = [...scores.keys()];
-  assert.strictEqual(ids.length, new Set(ids).size, 'course ids must be unique in a score map');
+  // Real data, not synthetic: courseId 50's "defense and dexterity" outcome is
+  // filed as two taxonomy rows, one per selection. Either selection alone must
+  // reach it at its own magnitude -- `.has()` alone would also pass a
+  // implementation that returned the wrong number, or someone else's.
+  const split = [...x.FOCUS_TAXONOMY].filter((r) => r.courseId === 50 && r.category === 'Passive Stat Bonus');
+  assert.deepStrictEqual([...split].map((r) => r.selection).sort(), ['Defense', 'Dexterity']);
+  for (const row of split) {
+    const [scores] = x.focusScores([{ category: row.category, selection: row.selection }], data.courses);
+    assert.strictEqual(scores.get(50), row.magnitude,
+      `${row.selection} must reach course 50 at its own magnitude`);
+  }
+});
+
+test('a course reached twice under one selection would be scored as their sum, not overwritten', () => {
+  const { x, data } = load();
+  // The summing branch in focusScores (`(scores.get(courseId) || 0) + n`) fires
+  // only when two DIFFERENT taxonomy rows share the same (category, selection,
+  // courseId). None of the current 120 rows do -- every one of the taxonomy's
+  // groups names each course at most once, asserted below so a fixture change
+  // that introduces a real repeat is caught here rather than silently making
+  // this test looser. Until then, this pins the *formula* end to end against
+  // an independently computed reference (summed by hand from the taxonomy,
+  // never by calling focusScores), rather than assuming the "+" is exercised.
+  let anyRepeat = false;
+  const perGroup = new Map(); // focusKey -> { category, selection, totals: Map<courseId, magnitude> }
+  for (const row of x.FOCUS_TAXONOMY) {
+    const key = x.focusKey(row.category, row.selection);
+    if (!perGroup.has(key)) perGroup.set(key, { category: row.category, selection: row.selection, totals: new Map() });
+    const group = perGroup.get(key);
+    if (group.totals.has(row.courseId)) anyRepeat = true;
+    group.totals.set(row.courseId, (group.totals.get(row.courseId) || 0) + row.magnitude);
+  }
+  assert.strictEqual(anyRepeat, false,
+    'fixture shape changed: a real same-selection repeat now exists; assert scores.get() against the summed total directly');
+
+  for (const { category, selection, totals } of perGroup.values()) {
+    const [scores] = x.focusScores([{ category, selection }], data.courses);
+    for (const [courseId, total] of totals) {
+      if (!data.courses.has(courseId)) continue; // stale row, outside this contract
+      assert.strictEqual(scores.get(courseId), total,
+        `course ${courseId} under ${category} ${selection} must total ${total}`);
+    }
+  }
 });
 
 test('a selection nobody offers scores nothing rather than throwing', () => {
@@ -144,5 +184,28 @@ test('focusScores returns one map per focus, in order', () => {
     { category: 'Working Stats', selection: 'endurance' },
   ], data.courses);
   assert.strictEqual(maps.length, 2);
-  assert.notDeepStrictEqual([...maps[0].keys()].sort(), [...maps[1].keys()].sort());
+
+  // Index correspondence, not just "the two differ": maps[0] must really be
+  // intelligence and maps[1] must really be endurance, checked against
+  // workingStatsFor independently of focusScores rather than against each
+  // other, so a reversed or shuffled result array is caught rather than
+  // passed as "two different-looking maps".
+  for (const id of maps[0].keys()) {
+    assert.ok(x.workingStatsFor(data.courses.get(id)).has('intelligence'),
+      `course ${id} in maps[0] must actually carry an intelligence gain`);
+  }
+  for (const id of maps[1].keys()) {
+    assert.ok(x.workingStatsFor(data.courses.get(id)).has('endurance'),
+      `course ${id} in maps[1] must actually carry an endurance gain`);
+  }
+  const onlyInFirst = [...maps[0].keys()].find((id) => !maps[1].has(id));
+  assert.ok(onlyInFirst !== undefined, 'expected at least one course to differ between the two maps, or this test has no teeth');
+
+  // Reversing the request order must reverse the result order.
+  const reversed = x.focusScores([
+    { category: 'Working Stats', selection: 'endurance' },
+    { category: 'Working Stats', selection: 'intelligence' },
+  ], data.courses);
+  assert.deepStrictEqual([...reversed[0].keys()].sort(), [...maps[1].keys()].sort());
+  assert.deepStrictEqual([...reversed[1].keys()].sort(), [...maps[0].keys()].sort());
 });
