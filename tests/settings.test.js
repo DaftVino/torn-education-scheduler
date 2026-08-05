@@ -192,3 +192,27 @@ test('picking a second focus in a category replaces the first, keeping its numbe
   assert.deepStrictEqual(f.map((e) => e.selection), ['endurance', 'Speed'],
     'the category keeps its slot; only which selection fills it changes');
 });
+
+// v0.3.0 Task 2: the settings "defaults" reset button's model, exercised
+// directly. focuses is the one field settingsDefaults must NOT touch — it
+// lives in this object for storage reasons only, the settings page does not
+// own it, and the focus view has its own reset control.
+test('defaults resets every settings field but preserves the focus list', () => {
+  const { exports: x } = loadUserscript();
+  const before = x.normaliseSettings({
+    maxCooldownHours: 18, booksOwned: 4, bookPrice: 1000, jobPoints: 7,
+    perks: { meritsPercent: 10, principal: true, wsuBlock: false },
+    orderMode: 'shortest-first',
+    focuses: [{ category: 'Working Stats', selection: 'intelligence' }],
+  });
+  const after = x.settingsDefaults(before);
+  const fresh = x.normaliseSettings(null);
+  assert.strictEqual(after.maxCooldownHours, fresh.maxCooldownHours);
+  assert.strictEqual(after.booksOwned, fresh.booksOwned);
+  assert.strictEqual(after.bookPrice, fresh.bookPrice);
+  assert.strictEqual(after.jobPoints, fresh.jobPoints);
+  assert.deepStrictEqual(after.perks, fresh.perks);
+  assert.strictEqual(after.orderMode, fresh.orderMode);
+  assert.deepStrictEqual(after.focuses, before.focuses,
+    'the settings page does not own the focus list and must not clear it');
+});

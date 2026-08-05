@@ -1169,6 +1169,17 @@
     };
   }
 
+  // Everything the settings page owns, back to default — and focuses left
+  // exactly as they were. Focuses live in this object for storage reasons, not
+  // because the settings page owns them; the focus view has its own control.
+  // Written as an explicit carry rather than a spread of the old object so that
+  // a field added later defaults rather than silently surviving a reset.
+  function settingsDefaults(current) {
+    const fresh = normaliseSettings(null);
+    fresh.focuses = normaliseSettings(current).focuses;
+    return fresh;
+  }
+
   const SECONDS_PER_BOOK = 21600;       // a Book of Carols removes 6 hours of course time
   const BOOK_COOLDOWN_SECONDS = 21600;  // and adds 6 hours of booster cooldown
   // Derived, not asserted: the divisor in the closed form below IS the sum of
@@ -1961,6 +1972,10 @@
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
+      // Lives in init()'s closure, never in storage — see resetButton. Read
+      // once per draw like every other flag on this model; false here means
+      // a fetch failure never reaches the panel with an armed reset control.
+      resetArmed: state.resetArmed === true,
       settings: settings,
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: NO_INFERENCE,
@@ -2238,6 +2253,9 @@
       saveError: state.saveFailed === true,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
+      // See the same field on the failure model above: it is read here, not
+      // stored — a redraw for any other reason is what disarms it.
+      resetArmed: state.resetArmed === true,
       settings: settings,
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: perkInference,
@@ -2567,10 +2585,9 @@
         // `.tes-settings { margin-left: auto }` (CSS) pins it to the right
         // of the row regardless of how many buttons sit to its left, so it
         // does not shift as the planner group grows from one button to two.
-        // Note for a later task: a reset button appends here too, AFTER
-        // this one, and inherits the same right-hand group without needing
-        // its own margin-left: auto — a second auto margin on the same flex
-        // row would do nothing useful.
+        // A reset button appends here too, AFTER this one, and inherits the
+        // same right-hand group without needing its own margin-left: auto —
+        // a second auto margin on the same flex row would do nothing useful.
         const gear = navButton(doc, 'settings', '⚙ settings', handlers);
         gear.className = 'tes-settings';
         // Idempotent when already on settings — cheaper than a disabled
@@ -2578,6 +2595,16 @@
         // of four.
         if (view === 'settings') gear.setAttribute('aria-current', 'page');
         nav.appendChild(gear);
+
+        // Right-aligned by margin-left:auto, so it must stay last in this
+        // row. Degrees owns no player data and gets nothing; the enclosing
+        // `handlers !== noopHandlers` guard above already covers the panel
+        // that cannot respond, and a collapsed panel renders no nav row at
+        // all.
+        if (view === 'schedule' || view === 'focus' || view === 'settings') {
+          resetButton(doc, nav, view === 'settings' ? 'defaults' : 'reset',
+            model.resetArmed === true, handlers.onResetArm, handlers.onResetConfirm);
+        }
 
         body.appendChild(nav);
       }
@@ -2728,6 +2755,14 @@
     jobPointsNote.className = 'tes-note';
     jobPointsNote.textContent = 'Job points need no entry for the dates shown here — Torn already applies them to the course in progress.';
     boosters.appendChild(jobPointsNote);
+
+    // What the defaults button (below, in the nav row) is about to do to this
+    // whole form — stated once, beside the section a player opening Settings
+    // sees first, rather than only beside the button itself.
+    const resetNote = doc.createElement('div');
+    resetNote.className = 'tes-note';
+    resetNote.textContent = 'Resetting to defaults clears what you typed. The perk fields will refill with what the panel inferred from your reduction — typing over them is what makes a value yours.';
+    boosters.appendChild(resetNote);
 
     const perks = settingsSection(doc, body, 'Education perks');
     // The note carries the honesty: it names the inference as an inference, so
@@ -3451,6 +3486,12 @@
     // Cleared by the next successful import, never persisted: it describes one
     // paste, and a stale reason beside a plan that imported fine is a lie.
     let importError = null;
+    // The reset control's arm/confirm state (v0.3.0 Task 2). Held here, not
+    // in plan or settings, and never written through savePlan/saveSettings —
+    // every other handler sets this false before doing its own work, which
+    // is what makes a view change, a collapse, or any other click disarm it.
+    // A panel reopened later must never be found armed.
+    let resetArmed = false;
 
     // draw/buildPanelModel/renderPanel are unguarded and schedule() throws
     // plain Errors on unexpected input; without this the throw becomes an
@@ -3469,6 +3510,7 @@
           view: view,
           debugReport: debugReport,
           importError: importError,
+          resetArmed: resetArmed,
         });
 
         function commit(next) {
@@ -3478,9 +3520,11 @@
 
         return renderPanel(document, mount, model, {
           onToggle: function () {
+            resetArmed = false;
             commit({ queue: currentPlan.queue, collapsed: !currentPlan.collapsed });
           },
           onAdd: function (courseId) {
+            resetArmed = false;
             if (currentPlan.queue.indexOf(courseId) !== -1) return;
             // Queue the whole prerequisite chain, not just the course the
             // player picked — the panel must never invite a plan validateQueue
@@ -3502,6 +3546,7 @@
           // after whatever is already queued — adding everything must not
           // reorder or discard a plan the player already built.
           onAddAll: function () {
+            resetArmed = false;
             const data = fetchResult.ok ? fetchResult.data : null;
             if (!data) return;
             const everything = allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
@@ -3510,12 +3555,14 @@
             commit({ queue: currentPlan.queue.concat(toAdd), collapsed: currentPlan.collapsed });
           },
           onRemove: function (courseId) {
+            resetArmed = false;
             commit({
               queue: currentPlan.queue.filter(function (id) { return id !== courseId; }),
               collapsed: currentPlan.collapsed,
             });
           },
           onPickerChange: function (value) {
+            resetArmed = false;
             // The sentinel is preserved rather than coerced: Number('__all__')
             // is NaN, so the integer guard below would reset the picker to the
             // top of the list on the next redraw.
@@ -3530,6 +3577,7 @@
             selectedCourseId = Number.isInteger(parsed) ? parsed : null;
           },
           onViewChange: function (next) {
+            resetArmed = false;
             view = next;
             draw(currentPlan, saveFailed === true);
           },
@@ -3537,6 +3585,7 @@
           // bare field name for the rest. An empty number input means "not
           // said" (null), which for a perk is distinct from zero.
           onSettingChange: function (field, rawValue) {
+            resetArmed = false;
             const next = JSON.parse(JSON.stringify(settings));
             const value = typeof rawValue === 'boolean' ? rawValue
               : NUMERIC_SETTING_FIELDS.indexOf(field) === -1 ? rawValue
@@ -3565,6 +3614,7 @@
           // step with settings.focuses' own array order (see
           // toggleFocus/setFocusPriority: priority IS the index).
           onFocusToggle: function (category, selection) {
+            resetArmed = false;
             const next = JSON.parse(JSON.stringify(settings));
             next.focuses = toggleFocus(settings.focuses, category, selection);
             settings = normaliseSettings(next);
@@ -3572,6 +3622,7 @@
             draw(currentPlan, saveFailed === true);
           },
           onFocusPriority: function (category, selection, position) {
+            resetArmed = false;
             const next = JSON.parse(JSON.stringify(settings));
             next.focuses = setFocusPriority(settings.focuses, category, selection, position);
             settings = normaliseSettings(next);
@@ -3579,12 +3630,14 @@
             draw(currentPlan, saveFailed === true);
           },
           onToggleDebugReport: function () {
+            resetArmed = false;
             debugReport = debugReport
               ? null
               : buildDebugReport(gatherDebugContext({ fetchResult: fetchResult, plan: currentPlan, settings: settings }));
             draw(currentPlan, saveFailed === true);
           },
           onCopyDebugReport: function () {
+            resetArmed = false;
             if (!debugReport) return;
             // Clipboard access is not granted and may be refused; the report is
             // already on screen, so a failed copy costs the player nothing.
@@ -3607,6 +3660,7 @@
           // than swallowed. Both writes are checked — an import that lost the
           // plan it just accepted must say so, not report success.
           onImportPlan: function (text) {
+            resetArmed = false;
             const data = fetchResult.ok ? fetchResult.data : null;
             if (!data) { importError = 'No course data loaded, so a plan cannot be checked.'; draw(currentPlan, saveFailed === true); return; }
             const decoded = decodePlan(text, data.courses);
@@ -3619,6 +3673,33 @@
             settings = decoded.settings;
             settingsSaveFailed = !saveSettings(settings);
             commit({ queue: decoded.queue, collapsed: currentPlan.collapsed });
+          },
+          // One pair of handlers, not three: model.view already decides what
+          // gets cleared, so there is one place that decides and no way for
+          // the button and the action to disagree about which page they are
+          // on. Arming never touches storage — only a confirm does, and only
+          // through the same commit/saveSettings paths every other mutation
+          // uses, so a failed write surfaces exactly the way it would there.
+          onResetArm: function () {
+            resetArmed = true;
+            draw(currentPlan, saveFailed === true);
+          },
+          onResetConfirm: function () {
+            resetArmed = false;
+            if (view === 'schedule') {
+              commit({ queue: [], collapsed: currentPlan.collapsed });
+              return;
+            }
+            if (view === 'settings') {
+              settings = settingsDefaults(settings);
+              settingsSaveFailed = !saveSettings(settings);
+              draw(currentPlan, saveFailed === true);
+              return;
+            }
+            // view === 'focus': a later task. Redraw disarms the button
+            // regardless, so a stray confirm on an unwired view is inert
+            // rather than stuck armed.
+            draw(currentPlan, saveFailed === true);
           },
         });
       } catch (e) {

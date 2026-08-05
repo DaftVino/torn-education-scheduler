@@ -636,11 +636,14 @@ test('the shell renders the requested view and offers nav to the other three', (
   // looking at, so there is no toggle button that redraws the view already
   // on screen. Settings is the one exception (Task 4): a permanent landmark
   // rather than a fourth toggle target, so the settings draw carries it as a
-  // fourth button alongside the three it does not skip.
-  for (const { nav } of [fallback, grid, focus]) {
-    assert.strictEqual(nav.children.length, 3);
-  }
-  assert.strictEqual(settings.nav.children.length, 4);
+  // fourth button alongside the three it does not skip. v0.3.0 Task 2 adds a
+  // reset button after the landmark on schedule, focus and settings — never
+  // grid, which owns no player data — so those three grew by one nav child
+  // and grid did not.
+  assert.strictEqual(fallback.nav.children.length, 4);
+  assert.strictEqual(grid.nav.children.length, 3);
+  assert.strictEqual(focus.nav.children.length, 4);
+  assert.strictEqual(settings.nav.children.length, 5);
   assert.ok(!fallback.nav.children.some((b) => b.textContent === 'schedule'), 'the current view is offered as a target');
 });
 
@@ -705,8 +708,17 @@ test('settings holds the same position from the end of the row on every view', (
     const at = kids.findIndex((k) => /settings/i.test(k.textContent || ''));
     return kids.length - at;
   };
-  assert.strictEqual(idx('schedule'), idx('grid'));
-  assert.strictEqual(idx('schedule'), idx('settings'));
+  // Grid gets no reset button (v0.3.0 Task 2 — it owns no player data), so
+  // settings is still the last thing in its row, same as before that task.
+  // Every other view now appends a reset button after settings, which moves
+  // settings one slot in from the end without moving settings itself: the
+  // reset button follows it into the same right-aligned group. The
+  // invariant this test protects is "settings sits a fixed distance from the
+  // end, and that distance depends only on whether a reset button renders
+  // beside it" — not "always last".
+  assert.strictEqual(idx('grid'), 1);
+  assert.strictEqual(idx('schedule'), 2);
+  assert.strictEqual(idx('settings'), 2);
 });
 
 test('the settings view shows the inference as an inference, not as a reading', () => {
@@ -1192,6 +1204,7 @@ function handlers() {
     onSettingChange() {}, onToggleDebugReport() {}, onCopyDebugReport() {},
     onImportPlan() {},
     onFocusToggle() {}, onFocusPriority() {},
+    onResetArm() {}, onResetConfirm() {},
   };
 }
 
@@ -1751,4 +1764,118 @@ test('.tes-nav carries exactly one margin-left: auto declaration', () => {
   const { x } = load();
   const matches = x.panelStyleText().match(/\.tes-nav[^{]*\{[^}]*margin-left:\s*auto/g) || [];
   assert.strictEqual(matches.length, 1, `expected exactly one .tes-nav rule with margin-left: auto, found ${matches.length}`);
+});
+
+// -----------------------------------------------------------------------
+// v0.3.0 Task 2: resetButton wired into the nav row (schedule/focus/settings
+// get one; degrees does not, since it owns no player data), plus the armed
+// flag's lifecycle inside init(). The task brief's own versions of several
+// tests below used `panel.querySelectorAll(...)`, `nav.childNodes`, and
+// `doc.querySelectorAll('.tes-header')`/`.dispatchEvent({...})` — this file's
+// fake document always returns `[]` from querySelectorAll and implements no
+// dispatchEvent at all, and the collapse toggle's own class is
+// `.tes-header-toggle` (a button), not `.tes-header` (the wrapping div it
+// sits inside). Adapted below to `descendants()`/`fire()` and the toggle's
+// real class. `bootInit` (defined above) already returns `{x, doc, gmStore}`,
+// not `{doc, stored}`, so the storage-reading assertions read `gmStore`
+// directly rather than through a field this file's helper never returns.
+// -----------------------------------------------------------------------
+
+test('schedule and settings render a reset button; degrees does not', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  for (const [view, expected] of [['schedule', 1], ['settings', 1], ['grid', 0]]) {
+    const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view })), handlers());
+    const resets = descendants(panel).filter((c) => /tes-reset/.test(c.className));
+    assert.strictEqual(resets.length, expected, `view ${view}`);
+  }
+});
+
+test('the reset button is the last thing in the nav row', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state()), handlers());
+  const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+  const last = nav.children[nav.children.length - 1];
+  assert.ok(/tes-reset/.test(last.className),
+    'margin-left:auto only pushes the right thing if it is last');
+});
+
+test('the settings button says defaults, the schedule button says reset', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const s = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: 'settings' })), handlers());
+  const settingsReset = descendants(s).find((c) => /tes-reset/.test(c.className));
+  assert.ok(/defaults/i.test(settingsReset.textContent));
+  const h = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: 'schedule' })), handlers());
+  const scheduleReset = descendants(h).find((c) => /tes-reset/.test(c.className));
+  assert.ok(/^reset/i.test(scheduleReset.textContent));
+});
+
+test('an error-model panel offers no reset button', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.errorModel('boom'), x.noopHandlers);
+  const resets = descendants(panel).filter((c) => /tes-reset/.test(c.className));
+  assert.strictEqual(resets.length, 0);
+});
+
+test('a collapsed panel offers no reset button', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ collapsed: true })), handlers());
+  const resets = descendants(panel).filter((c) => /tes-reset/.test(c.className));
+  assert.strictEqual(resets.length, 0);
+});
+
+test('one click on the schedule reset clears nothing', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [34, 35] });
+  const findReset = () => descendants(doc.querySelector('#tes-panel')).find((c) => /tes-reset/.test(c.className));
+  fire(findReset(), 'click');
+  assert.deepStrictEqual(JSON.parse(gmStore.get(x.STORAGE_KEY)).queue, [34, 35]);
+  assert.ok(/sure/i.test(findReset().textContent));
+});
+
+test('two clicks clear the queue', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [34, 35] });
+  const findReset = () => descendants(doc.querySelector('#tes-panel')).find((c) => /tes-reset/.test(c.className));
+  fire(findReset(), 'click');
+  fire(findReset(), 'click');
+  assert.deepStrictEqual(JSON.parse(gmStore.get(x.STORAGE_KEY)).queue, []);
+});
+
+test('changing view disarms', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [34, 35] });
+  const panelEl = () => doc.querySelector('#tes-panel');
+  const findReset = () => descendants(panelEl()).find((c) => /tes-reset/.test(c.className));
+  const findNavBtn = (pattern) => {
+    const nav = descendants(panelEl()).find((c) => c.className === 'tes-nav');
+    return nav.children.find((b) => pattern.test(b.textContent));
+  };
+  fire(findReset(), 'click');
+  fire(findNavBtn(/degrees/i), 'click');
+  fire(findNavBtn(/schedule/i), 'click');
+  assert.ok(!/sure/i.test(findReset().textContent),
+    'an armed button must not survive a view change');
+  assert.deepStrictEqual(JSON.parse(gmStore.get(x.STORAGE_KEY)).queue, [34, 35]);
+});
+
+test('collapsing disarms', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [34, 35] });
+  const panelEl = () => doc.querySelector('#tes-panel');
+  const findReset = () => descendants(panelEl()).find((c) => /tes-reset/.test(c.className));
+  const findToggle = () => descendants(panelEl()).find((c) => c.className === 'tes-header-toggle');
+  fire(findReset(), 'click');
+  fire(findToggle(), 'click');   // collapse
+  fire(findToggle(), 'click');   // reopen
+  assert.ok(!/sure/i.test(findReset().textContent));
+  assert.deepStrictEqual(JSON.parse(gmStore.get(x.STORAGE_KEY)).queue, [34, 35]);
+});
+
+test('resetting the queue leaves settings alone', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [34] }, { maxCooldownHours: 18 });
+  const findReset = () => descendants(doc.querySelector('#tes-panel')).find((c) => /tes-reset/.test(c.className));
+  fire(findReset(), 'click');
+  fire(findReset(), 'click');
+  assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 18);
 });

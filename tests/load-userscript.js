@@ -52,7 +52,7 @@ const EXPORT_NAMES = [
   // storage
   'freshPlan', 'loadPlan', 'savePlan',
   // settings
-  'SETTINGS_KEY', 'normaliseSettings', 'freshSettings', 'loadSettings', 'saveSettings',
+  'SETTINGS_KEY', 'normaliseSettings', 'settingsDefaults', 'freshSettings', 'loadSettings', 'saveSettings',
   'normaliseFocuses', 'toggleFocus', 'setFocusPriority',
   // perks
   'inferPerks',
@@ -75,7 +75,7 @@ const EXPORT_NAMES = [
   'errorModel', 'noopHandlers',
   // views
   'renderScheduleView', 'renderSettingsView', 'renderGridView', 'renderFocusView',
-  // reset control (arm/confirm) — wiring into a view is a later task
+  // reset control (arm/confirm), wired into schedule/focus/settings' nav row
   'resetButton',
   // navigation
   'unmountPanel', 'observeNavigation',
