@@ -551,6 +551,22 @@
     return out;
   }
 
+  // What a course actually gives, from the two payload fields that say so.
+  // Never inferred from a name: 31 of 131 courses list no outcome at all, and
+  // "Bonus: not listed by Torn" is the honest answer for them — the same
+  // trade the panel makes with a withheld finish date rather than a guessed
+  // one.
+  function bonusLabel(course) {
+    const stats = workingStatsFor(course);
+    const parts = [];
+    for (const [stat, n] of stats) parts.push(`${n} ${stat}`);
+    const outcomes = (course && Array.isArray(course.learningOutcomes)) ? course.learningOutcomes : [];
+    for (const o of outcomes) if (typeof o === 'string') parts.push(o);
+    if (parts.length === 0) return 'Bonus: not listed by Torn';
+    if (outcomes.length === 0) return `${parts.join(', ')} · other bonus not listed by Torn`;
+    return parts.join(' · ');
+  }
+
   const FOCUS_WORKING_STATS = 'Working Stats';
 
   // (category, selection), never selection alone — see FOCUS_TAXONOMY's note.
@@ -2202,6 +2218,7 @@
           durationLabel: formatDuration(course.duration),
           finishesAt: finishById.get(id),
           finishLabel: `${formatDate(finishById.get(id))} · ${formatTime(finishById.get(id))} TCT`,
+          bonusLabel: bonusLabel(course),
         };
       }),
       problems: problems,
@@ -2353,6 +2370,14 @@
       '#tes-panel .tes-error { color: #ff8080; margin-bottom: 8px; }',
       '#tes-panel .tes-summary { white-space: pre-line; margin-bottom: 8px; }',
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
+      // A queue row is its own grid, not .tes-row (other views still use the
+      // flex layout): two lines in column 1, the remove button spanning both
+      // in column 2, so the button never doubles or drifts from the row it
+      // belongs to.
+      '#tes-panel .tes-queue-row { display: grid; grid-template-columns: 1fr auto;',
+      '  align-items: center; gap: 2px 8px; padding: 4px 0; }',
+      '#tes-panel .tes-queue-bonus { grid-column: 1; padding-left: 12px; font-size: 0.9em; }',
+      '#tes-panel .tes-queue-row button { grid-column: 2; grid-row: 1 / span 2; }',
       '#tes-panel button, #tes-panel select { color: #e6e6e6; background: #2e2e2e; border: 1px solid #4a4a4a;',
       '  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: inherit; }',
       '#tes-panel button:hover { border-color: #7ee081; }',
@@ -3004,12 +3029,23 @@
     summary.textContent = lines.join('\n');
     body.appendChild(summary);
 
+    // Two lines per queued course, sharing one grid row with the remove
+    // button (.tes-queue-row in the injected CSS): the existing info line,
+    // then an indented, smaller line naming what the course actually gives —
+    // never inferred from its name (see bonusLabel). Both lines are
+    // textContent, never innerHTML: bonusLabel's text comes straight from
+    // Torn's own payload and is not ours to trust into markup.
     for (const item of model.queue) {
       const row = doc.createElement('div');
-      row.className = 'tes-row';
-      const label = doc.createElement('span');
-      label.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — fin ${item.finishLabel}`;
-      row.appendChild(label);
+      row.className = 'tes-queue-row';
+      const main = doc.createElement('span');
+      main.className = 'tes-queue-main';
+      main.textContent = `${item.prefix} ${item.name} — ${item.durationLabel} — fin ${item.finishLabel}`;
+      row.appendChild(main);
+      const bonus = doc.createElement('span');
+      bonus.className = 'tes-queue-bonus';
+      bonus.textContent = item.bonusLabel;
+      row.appendChild(bonus);
       const remove = doc.createElement('button');
       remove.textContent = 'remove';
       remove.dataset.courseId = String(item.courseId);

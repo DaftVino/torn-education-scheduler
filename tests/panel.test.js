@@ -966,7 +966,7 @@ test('the queue order is stored as its id, not coerced into a number', async () 
 function renderedQueueIds(doc) {
   const body = doc.querySelector('#tes-panel').children[1];
   return descendants(body)
-    .filter((el) => el.className === 'tes-row')
+    .filter((el) => el.className === 'tes-queue-row')
     .map((row) => (row.children || []).find((c) => c.dataset && c.dataset.courseId !== undefined))
     .filter(Boolean)
     .map((btn) => Number(btn.dataset.courseId));
@@ -1454,4 +1454,111 @@ test('the toggle reads show when collapsed', () => {
   const doc = makeDocument();
   const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ collapsed: true })), handlers());
   assert.strictEqual(panel.children[0].children[1].textContent, 'show');
+});
+
+// -----------------------------------------------------------------------
+// Task 5: course bonuses in queue rows.
+//
+// The task brief's own tests called `panel.querySelectorAll('.tes-queue-row')`
+// and, in the markup-injection test, `el.childNodes.some(...)`. Neither
+// exists on the fake DOM (tests/fake-document.js's `querySelectorAll` always
+// returns `[]`, and created elements have `children`, never `childNodes`) —
+// adapted to `descendants()` and `.children` below.
+//
+// The brief's markup-injection test also assigned `x.bonusLabel(evil)` to a
+// bare element's `textContent` inside the test itself, then checked
+// `children` for a tag. That proves textContent-the-property never parses
+// HTML, which is true of every DOM (fake or real) regardless of what the
+// *renderer* does with the string — it would pass identically if the
+// renderer used `.innerHTML =` instead, because this fake DOM has no
+// `innerHTML` implementation to diverge on. Kept below as a cheap sanity
+// check on bonusLabel's own output, plus a second test that exercises the
+// real render path with an `innerHTML` trap on every created element, so a
+// renderer that actually switched to `.innerHTML` would throw instead of
+// silently passing.
+// -----------------------------------------------------------------------
+
+test('a queue row is two lines with a remove button spanning both', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [38] })), handlers());
+  const row = descendants(panel).find((c) => c.className === 'tes-queue-row');
+  assert.ok(row, 'queue rows get their own class, not the shared .tes-row');
+  assert.ok(row.children.some((c) => c.className === 'tes-queue-main'), 'main info line missing');
+  assert.ok(row.children.some((c) => c.className === 'tes-queue-bonus'), 'bonus line missing');
+  const remove = row.children.find((c) => c.tagName === 'button');
+  assert.ok(remove, 'remove button missing from the row');
+});
+
+test('a course with working stats names them', () => {
+  const { x } = load();
+  const data = x.parsePayload(loadFixture());
+  const c = [...data.courses.values()].find((k) => x.workingStatsFor(k).size > 0);
+  assert.ok(c, 'fixture must contain a course with working stats');
+  assert.match(x.bonusLabel(c), /intelligence|endurance|manual labor/);
+});
+
+test('a course with no learningOutcomes says so honestly', () => {
+  const { x } = load();
+  const data = x.parsePayload(loadFixture());
+  const bare = [...data.courses.values()].find((k) => !k.learningOutcomes || !k.learningOutcomes.length);
+  assert.ok(bare, 'fixture must contain a course with no learningOutcomes (31 of 131 in the real catalogue)');
+  const label = x.bonusLabel(bare);
+  assert.match(label, /not listed by Torn/, 'never infer a bonus from a course name');
+});
+
+test('a course with neither working stats nor outcomes gets the fully honest label', () => {
+  const { x } = load();
+  const bare = { id: 1, prefix: 'X', name: 'n', learningOutcomes: [], workingStatsGain: [] };
+  assert.strictEqual(x.bonusLabel(bare), 'Bonus: not listed by Torn');
+});
+
+test('working stats without outcomes are marked as a partial bonus', () => {
+  const { x } = load();
+  const partial = { id: 1, prefix: 'X', name: 'n', learningOutcomes: [], workingStatsGain: ['Gain 5 intelligence upon completion'] };
+  assert.strictEqual(x.bonusLabel(partial), '5 intelligence · other bonus not listed by Torn');
+});
+
+test('bonus text assigned via textContent never parses into child nodes', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const evil = { id: 1, prefix: 'X', name: 'n', learningOutcomes: ['<img src=x onerror=alert(1)>'], workingStatsGain: [] };
+  const el = doc.createElement('div');
+  el.textContent = x.bonusLabel(evil);
+  assert.strictEqual(el.textContent, '<img src=x onerror=alert(1)>');
+  assert.strictEqual(el.children.length, 0);
+});
+
+test('the rendered queue bonus line never reaches innerHTML, even with markup in the payload', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const data = x.parsePayload(loadFixture());
+  const course = data.courses.get(38);
+  course.learningOutcomes = ['<img src=x onerror=alert(1)>'];
+  course.workingStatsGain = [];
+
+  // Trap innerHTML on every element the renderer creates. The fake DOM does
+  // not implement innerHTML at all, so a renderer that switched to it would
+  // otherwise set an unobserved plain property and this test would pass for
+  // the wrong reason — the same "silently pass against nothing" trap the
+  // brief's own querySelectorAll-based test would have fallen into.
+  const originalCreateElement = doc.createElement;
+  doc.createElement = function (tag) {
+    const el = originalCreateElement(tag);
+    Object.defineProperty(el, 'innerHTML', {
+      set() { throw new Error('bonus text must be set via textContent, not innerHTML'); },
+    });
+    return el;
+  };
+
+  const model = x.buildPanelModel({
+    fetchResult: { ok: true, data: data },
+    plan: { queue: [38], collapsed: false },
+    now: NOW,
+  });
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const row = descendants(panel).find((c) => c.className === 'tes-queue-row');
+  const bonus = row.children.find((c) => c.className === 'tes-queue-bonus');
+  assert.strictEqual(bonus.textContent, '<img src=x onerror=alert(1)>');
+  assert.strictEqual(bonus.children.length, 0, 'the evil string must never become a child node');
 });

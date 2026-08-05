@@ -46,7 +46,7 @@ const EXPORT_NAMES = [
   // focus taxonomy
   'FOCUS_TAXONOMY', 'focusRegistry', 'FOCUS_CATEGORIES',
   // working stats
-  'WORKING_STATS', 'WORKING_STAT_RE', 'workingStatsFor',
+  'WORKING_STATS', 'WORKING_STAT_RE', 'workingStatsFor', 'bonusLabel',
   // focus scoring
   'focusKey', 'focusScores', 'FOCUS_WORKING_STATS', 'focusTotals', 'FOCUS_UNSTATABLE',
   // storage
