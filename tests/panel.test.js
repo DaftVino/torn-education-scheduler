@@ -1562,3 +1562,36 @@ test('the rendered queue bonus line never reaches innerHTML, even with markup in
   assert.strictEqual(bonus.textContent, '<img src=x onerror=alert(1)>');
   assert.strictEqual(bonus.children.length, 0, 'the evil string must never become a child node');
 });
+
+// The all-courses box used to be the last cell in the degrees grid. Task 6
+// lifts it out into its own full-width banner, rendered before the grid —
+// tested here through the grid view rather than only on buildDegreeGrid's
+// output, because the failure mode this guards against is exactly "the
+// model field moved but the renderer still draws the old cell".
+//
+// The brief's own version of this test reached for
+// `panel.querySelectorAll('.tes-all-banner')[0]` and read `.textContent` off
+// the result. tests/fake-document.js's `querySelectorAll` always returns
+// `[]` (see the file's header comment), so that call would silently find
+// nothing and the test would pass for the wrong reason. Adapted to this
+// file's real idiom instead: `descendants()` over the rendered panel.
+test('the all-remaining banner renders before the grid, titled all remaining courses', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: 'grid' })), handlers());
+  const banner = descendants(panel).find((c) => c.className === 'tes-all-banner');
+  assert.ok(banner, 'no .tes-all-banner rendered');
+  // allText, not banner.textContent: the fake document does not aggregate
+  // children's textContent onto the parent the way a real browser does.
+  assert.match(allText(banner), /all remaining courses/);
+  assert.strictEqual(descendants(panel).filter((c) => c.className === 'tes-cell-all').length, 0);
+
+  // panel.children[1] is the body renderGridView appends into (same
+  // structure other tests in this file rely on) — the banner must be a
+  // direct child appearing before .tes-grid, not merely present somewhere.
+  const body = panel.children[1];
+  const bannerIndex = body.children.indexOf(banner);
+  const gridIndex = body.children.findIndex((c) => c.className === 'tes-grid');
+  assert.ok(bannerIndex !== -1 && gridIndex !== -1, 'banner or grid missing from the body');
+  assert.ok(bannerIndex < gridIndex, 'the banner does not come before the grid');
+});

@@ -20,15 +20,30 @@ function grid(x) {
   });
 }
 
-test('the grid has one box per category plus one for all courses', () => {
+test('the grid has one box per category, plus a separate all-courses box', () => {
   const { exports: x } = loadUserscript();
   const out = grid(x);
-  assert.strictEqual(out.boxes.length, 13, 'expected twelve degrees plus all-courses');
-  assert.strictEqual(out.boxes[out.boxes.length - 1].key, 'all', 'the all-courses box is not last');
+  assert.strictEqual(out.boxes.length, 12, 'expected twelve degrees, all-courses lifted out');
+  assert.ok(!out.boxes.some((b) => b.key === 'all'), 'the all-courses box still sits in the card list, not lifted out');
   const names = out.boxes.map((b) => b.name);
   for (const expected of ['Biology', 'Business', 'Computer Science', 'Law', 'Mathematics']) {
     assert.ok(names.includes(expected), `${expected} has no box`);
   }
+});
+
+test('the all-remaining box is separate from the degree cards', () => {
+  const { exports: x } = loadUserscript();
+  const out = grid(x);
+  assert.ok(out.allBox, 'the all box is its own field');
+  assert.ok(!out.boxes.some((b) => b.key === 'all'), 'and no longer sits in the card list');
+  assert.strictEqual(out.allBox.name, 'all remaining courses', 'the banner title did not move onto the box');
+});
+
+test('the boxes still sum against the all box', () => {
+  const { exports: x } = loadUserscript();
+  const out = grid(x);
+  const summed = out.boxes.reduce((n, b) => n + b.courseCount, 0);
+  assert.strictEqual(out.sumsDiffer, summed > out.allBox.courseCount);
 });
 
 test('each degree box names its bachelor and starts from now', () => {
@@ -46,7 +61,7 @@ test('the all-courses box matches allRemainingCourses', () => {
   const { exports: x } = loadUserscript();
   const data = x.parsePayload(loadFixture());
   const out = grid(x);
-  const all = out.boxes.find((b) => b.key === 'all');
+  const all = out.allBox;
   assert.strictEqual(all.courseCount, x.allRemainingCourses(data.completedIds, data.courses, data.activeCourse).length);
   assert.strictEqual(all.courseCount, 115);
 });
@@ -76,9 +91,9 @@ test('no prerequisite in the fixture crosses a category, so the boxes do sum', (
   }
 
   const out = grid(x);
-  const degrees = out.boxes.filter((b) => b.key !== 'all');
+  const degrees = out.boxes;
   const summed = degrees.reduce((n, b) => n + b.courseCount, 0);
-  const all = out.boxes.find((b) => b.key === 'all');
+  const all = out.allBox;
   assert.strictEqual(summed, all.courseCount, 'the categories no longer partition the catalogue');
   assert.strictEqual(out.sumsDiffer, false, 'the caveat flag claims a sharing the data does not have');
 
@@ -110,9 +125,9 @@ test('sumsDiffer turns on when a prerequisite really is shared across degrees', 
     courses: data.courses, categories: data.categories, completedIds: data.completedIds,
     activeCourse: data.activeCourse, now: NOW,
   });
-  const degrees = out.boxes.filter((b) => b.key !== 'all');
+  const degrees = out.boxes;
   const summed = degrees.reduce((n, b) => n + b.courseCount, 0);
-  const all = out.boxes.find((b) => b.key === 'all');
+  const all = out.allBox;
   // MTH1220 is now counted by Business as well as by Mathematics, and by
   // nothing else: one course, counted twice.
   assert.strictEqual(all.courseCount, 115, 'the catalogue itself must not have changed');
@@ -128,8 +143,8 @@ test('a completed degree yields a zero box rather than being omitted', () => {
     courses: data.courses, categories: data.categories,
     completedIds: allIds, activeCourse: null, now: NOW,
   });
-  assert.strictEqual(out.boxes.length, 13);
-  for (const box of out.boxes) {
+  assert.strictEqual(out.boxes.length, 12);
+  for (const box of [...out.boxes, out.allBox]) {
     assert.strictEqual(box.courseCount, 0);
     assert.strictEqual(box.totalSeconds, 0);
     assert.strictEqual(box.finishesAt, NOW);
@@ -211,26 +226,32 @@ function gridModel(rawPayload) {
 test('the panel model carries the grid with labels the view can print', () => {
   const { model } = gridModel();
   assert.ok(model.grid, 'the ok model carries no grid');
-  assert.strictEqual(model.grid.boxes.length, 13);
+  assert.strictEqual(model.grid.boxes.length, 12);
   assert.strictEqual(model.grid.sumsDiffer, false);
   const biology = model.grid.boxes.find((b) => b.name === 'Biology');
   assert.strictEqual(typeof biology.durationLabel, 'string');
   assert.strictEqual(typeof biology.finishLabel, 'string');
   assert.match(biology.finishLabel, /TCT/);
+
+  // allBox gets the same runtime-label treatment as the cells, now that it
+  // is a separate field rather than a boxes entry the map() above already
+  // covered.
+  assert.ok(model.grid.allBox, 'the model carries no separate all box');
+  assert.strictEqual(typeof model.grid.allBox.durationLabel, 'string');
+  assert.strictEqual(typeof model.grid.allBox.finishLabel, 'string');
+  assert.match(model.grid.allBox.finishLabel, /TCT/);
 });
 
 test('the grid view renders a box per degree, naming the bachelor', () => {
   const { exports, model } = gridModel();
   const nodes = gridPanel(exports, model);
-  // Exact class names, not a prefix test: `tes-cell-title` starts with
+  // Exact class name, not a prefix test: `tes-cell-title` starts with
   // `tes-cell` too, and counting those would pass on a view that drew no boxes.
-  const cells = nodes.filter((n) => n.className === 'tes-cell' || n.className === 'tes-cell tes-cell-all');
-  assert.strictEqual(cells.length, 13, 'expected thirteen boxes on screen');
+  const cells = nodes.filter((n) => n.className === 'tes-cell');
+  assert.strictEqual(cells.length, 12, 'expected twelve degree boxes on screen, all-courses lifted into its own banner');
   const titles = nodes.filter((n) => n.className === 'tes-cell-title').map((n) => n.textContent);
   assert.ok(titles.includes('Biology (BIO3420)'), `no Biology box title: ${titles.join(' | ')}`);
-  assert.ok(titles.includes('All courses'), 'no all-courses box title');
   const details = nodes.filter((n) => n.className === 'tes-cell-detail').map((n) => n.textContent);
-  assert.ok(details.some((t) => /115 crs/.test(t)), 'the all-courses box does not print its count');
 
   // The date is what this view is for, so it is asserted where the player
   // reads it rather than only on the model. Biology's box carries its own
@@ -253,6 +274,40 @@ test('the grid view renders a box per degree, naming the bachelor', () => {
   assert.ok(!details.some((t) => /\b0 crs/.test(t)), 'a completed degree renders as an empty estimate');
 });
 
+test('it renders as a banner before the grid, titled all remaining courses', () => {
+  const { exports, model } = gridModel();
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const panel = exports.renderPanel(doc, mount, model, handlers);
+  // panel.children[0] is the header; [1] is the body renderGridView appends
+  // into, same structure panel.test.js relies on elsewhere.
+  const body = panel.children[1];
+
+  const banner = body.children.find((c) => c.className === 'tes-all-banner');
+  assert.ok(banner, 'no .tes-all-banner rendered');
+  // The fake document does not aggregate children's textContent onto the
+  // parent the way a real browser does, so the banner's own words are read
+  // by joining its descendants — same pattern as panel.test.js's allText().
+  const bannerText = descendants(banner).map((n) => n.textContent || '').join(' ');
+  assert.match(bannerText, /all remaining courses/);
+  const nodes = descendants(panel);
+  assert.strictEqual(nodes.filter((n) => n.className === 'tes-cell-all').length, 0, '.tes-cell-all must be gone');
+  assert.strictEqual(nodes.filter((n) => n.className === 'tes-cell tes-cell-all').length, 0);
+
+  // Before the grid, not after: both are direct children of the body, in
+  // that order.
+  const bannerIndex = body.children.indexOf(banner);
+  const gridIndex = body.children.findIndex((c) => c.className === 'tes-grid');
+  assert.ok(bannerIndex !== -1 && gridIndex !== -1, 'banner or grid missing from the body');
+  assert.ok(bannerIndex < gridIndex, 'the banner does not come before the grid');
+
+  // The count, duration and finish date the all-courses box always carried,
+  // now printed in the banner instead of a grid cell.
+  assert.match(bannerText, /115 crs/, 'the banner does not print its count');
+  assert.match(bannerText, new RegExp(model.grid.allBox.finishLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    'the banner does not print its finish date');
+});
+
 // The dates are what a reader will try to add up: twelve boxes finishing in
 // 2026 above an all-courses box finishing in 2029. Nothing on screen explains
 // that except this line, so it is not optional and it is not conditional.
@@ -270,8 +325,8 @@ test('the grid view says the dates overlap, because every box starts from today'
   // that far apart, so this is not a note about a problem the view does not
   // have: eleven degrees land in 2026, the all-courses box in 2029.
   const boxes = model.grid.boxes;
-  const latestDegree = Math.max(...boxes.filter((b) => b.key !== 'all').map((b) => b.finishesAt));
-  assert.ok(boxes.find((b) => b.key === 'all').finishesAt > latestDegree + 86400 * 365,
+  const latestDegree = Math.max(...boxes.map((b) => b.finishesAt));
+  assert.ok(model.grid.allBox.finishesAt > latestDegree + 86400 * 365,
     'the all-courses box is not far enough past the degrees for the note to be needed');
 });
 
