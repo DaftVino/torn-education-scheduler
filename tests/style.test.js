@@ -107,28 +107,31 @@ test('buttons clear a 44px touch target', () => {
   assert.match(css(), /#tes-panel button[^}]*padding:\s*8px 12px/);
 });
 
-test('ratio() agrees with the one contrast pair that has a known exact answer', () => {
+test('ratio() agrees with contrast pairs that have a known exact answer', () => {
+  // Two anchors, because one grey pair and one chromatic pair catch different
+  // failure modes in ratio() — neither substitutes for the other.
+  //
   // Black on white is WCAG's own worked example: (1 + 0.05) / (0 + 0.05) = 21,
   // exactly, because lin(0) = 0 and lin(255) = 1 with no rounding in between
-  // (verified: 0.2126 + 0.7152 + 0.0722 === 1 in IEEE 754 double, so no float
-  // slop enters either). This anchors the parts of ratio() a grey pair CAN
-  // prove: the sRGB piecewise transform, the +0.05 offsets, and the hi/lo
-  // ordering that picks the lighter colour.
+  // (0.2126 + 0.7152 + 0.0722 === 1 in IEEE 754 double, so no float slop
+  // enters either). This anchors the sRGB piecewise transform, the +0.05
+  // offsets, and the hi/lo ordering that picks the lighter colour — a broken
+  // transform or a swapped numerator/denominator moves this number.
   //
   // It does NOT anchor the three luminance weights against each other. Black
   // and white are achromatic (R = G = B on both), so permuting which weight
   // multiplies which channel changes nothing when the channels already carry
-  // equal values — confirmed by temporarily swapping the 0.2126/0.7152
-  // coefficients in this file's lin()/L() and re-running: this assertion
-  // still read exactly 21, and the five-token contrast test below still
-  // passed too (only --tm-good-text and --tm-bad-text are non-grey; under
-  // the swap they moved to 5.86:1 and 12.98:1 respectively, both still
-  // clearing 4.5:1 by coincidence of today's values). A weight transposition
-  // is a real, currently-uncaught gap in this file — recorded here rather
-  // than papered over, since a chromatic anchor (e.g. a saturated red/green
-  // pair with a known relative luminance) would be needed to close it, and
-  // that is a follow-up decision, not one this comment should make silently.
+  // equal values: confirmed by temporarily swapping the 0.2126/0.7152
+  // coefficients in this file's lin()/L() and re-running — this assertion
+  // still read exactly 21. Pure red against black closes that gap: its
+  // luminance depends on the red weight alone (green and blue channels are
+  // both 0), so a transposed red/green weight moves it by roughly 3x rather
+  // than a rounding nudge — confirmed by the same swap, which moved this
+  // second assertion from 5.252 to 15.304 and made it fail. Together the two
+  // anchors cover both fault classes: black/white catches a broken formula
+  // shape, red/black catches a mis-assigned channel weight.
   assert.strictEqual(ratio('#000000', '#ffffff'), 21);
+  assert.strictEqual(Number(ratio('#ff0000', '#000000').toFixed(3)), 5.252);
 });
 
 test('every -text token clears WCAG AA against the panel background', () => {
