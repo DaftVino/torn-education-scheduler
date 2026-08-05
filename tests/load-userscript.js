@@ -75,6 +75,8 @@ const EXPORT_NAMES = [
   'errorModel', 'noopHandlers',
   // views
   'renderScheduleView', 'renderSettingsView', 'renderGridView', 'renderFocusView',
+  // reset control (arm/confirm) — wiring into a view is a later task
+  'resetButton',
   // navigation
   'unmountPanel', 'observeNavigation',
   // debug report and the (still unresolved) guide links
