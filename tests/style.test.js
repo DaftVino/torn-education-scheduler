@@ -77,3 +77,22 @@ test('the finish line and error lines use the text-safe tokens', () => {
   assert.match(text, /\.tes-save-error[^}]*var\(--tm-bad-text\)/);
   assert.ok(!/color:\s*var\(--tm-good\)\s*[;}]/.test(text), 'never --tm-good as type');
 });
+
+test('every interactive element has a visible focus ring', () => {
+  const text = css();
+  const rule = /:focus-visible[^{]*\{[^}]*outline[^}]*\}/.exec(text);
+  assert.ok(rule, 'no focus-visible rule — a keyboard user cannot see where they are');
+  for (const sel of ['button', 'select', 'input', 'textarea']) {
+    assert.ok(new RegExp(`${sel}:focus-visible`).test(text), `${sel} has no focus ring`);
+  }
+});
+
+test('focus-visible is used rather than focus', () => {
+  const text = css();
+  assert.ok(!/[^-]:focus(?![-a-z])/.test(text),
+    'plain :focus leaves a ring after a mouse click');
+});
+
+test('buttons clear a 44px touch target', () => {
+  assert.match(css(), /#tes-panel button[^}]*padding:\s*8px 12px/);
+});

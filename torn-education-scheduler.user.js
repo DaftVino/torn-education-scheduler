@@ -2439,8 +2439,10 @@
       '  align-items: center; gap: 2px 8px; padding: 4px 0; }',
       '#tes-panel .tes-queue-bonus { grid-column: 1; padding-left: 12px; font-size: var(--tes-text-sm); }',
       '#tes-panel .tes-queue-row button { grid-column: 2; grid-row: 1 / span 2; }',
+      // padding, not font-size, carries the button to a 44px touch target —
+      // density (font-size, line-height) is unchanged by this pass.
       '#tes-panel button, #tes-panel select { color: var(--tm-text); background: var(--tm-hover); border: 1px solid var(--tm-border-2);',
-      '  border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: inherit; }',
+      '  border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: inherit; }',
       '#tes-panel button:hover { border-color: var(--tm-good-text); }',
       // The focus ring belongs to this pass, not a later one: --tes-focus-ring
       // is declared above, and a design-token block that declares a token no
