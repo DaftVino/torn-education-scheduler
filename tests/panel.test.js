@@ -593,12 +593,81 @@ test('the shell renders the requested view and offers nav to the other three', (
   assert.ok(hasText(focus.body, 'Working Stats'), 'the focus view did not render its categories');
   assert.ok(!hasText(focus.body, 'Education perks'), 'the focus view rendered settings content');
 
-  // The nav always offers exactly the three views you are not looking at, so
-  // there is no button that redraws the view already on screen.
-  for (const { nav } of [fallback, settings, grid, focus]) {
+  // The nav always offers exactly the three planner/focus views you are not
+  // looking at, so there is no toggle button that redraws the view already
+  // on screen. Settings is the one exception (Task 4): a permanent landmark
+  // rather than a fourth toggle target, so the settings draw carries it as a
+  // fourth button alongside the three it does not skip.
+  for (const { nav } of [fallback, grid, focus]) {
     assert.strictEqual(nav.children.length, 3);
   }
+  assert.strictEqual(settings.nav.children.length, 4);
   assert.ok(!fallback.nav.children.some((b) => b.textContent === 'schedule'), 'the current view is offered as a target');
+});
+
+// Task 4: settings becomes a permanent right-aligned landmark rather than a
+// fourth toggle target. Adapted from the task brief, which assumed a
+// browser-accurate `querySelectorAll` and `dispatchEvent` — tests/fake-
+// document.js implements neither (`querySelectorAll` always returns `[]`,
+// and elements have no `getAttribute`/`dispatchEvent` at all), so these use
+// this file's own idioms: `descendants()`, `.children` and `.attributes`.
+function navLabels(panel) {
+  const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+  return nav ? nav.children.map((b) => b.textContent) : [];
+}
+
+test('schedule shows degrees, degrees shows schedule, settings shows both', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const on = (v) => navLabels(x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: v })), handlers()));
+  assert.ok(on('schedule').some((l) => /degrees/i.test(l)));
+  assert.ok(!on('schedule').some((l) => /^schedule$/i.test(l)));
+  assert.ok(on('grid').some((l) => /schedule/i.test(l)));
+  assert.ok(!on('grid').some((l) => /degrees/i.test(l)));
+  const s = on('settings');
+  assert.ok(s.some((l) => /schedule/i.test(l)) && s.some((l) => /degrees/i.test(l)));
+});
+
+test('settings is present on every view, enabled, and identically styled', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const classes = new Set();
+  for (const v of ['schedule', 'grid', 'settings']) {
+    const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: v })), handlers());
+    const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+    const btn = nav.children.find((b) => /settings/i.test(b.textContent));
+    assert.ok(btn, `settings must render on ${v}`);
+    assert.notStrictEqual(btn.disabled, true, 'the landmark is never disabled');
+    classes.add(btn.className || '');
+  }
+  assert.strictEqual(classes.size, 1, 'settings must look the same on every view');
+});
+
+test('settings is marked current on the settings view only', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const cur = (v) => {
+    const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: v })), handlers());
+    const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+    const btn = nav.children.find((b) => /settings/i.test(b.textContent));
+    return btn.attributes['aria-current'];
+  };
+  assert.strictEqual(cur('settings'), 'page');
+  assert.notStrictEqual(cur('schedule'), 'page');
+});
+
+test('settings holds the same position from the end of the row on every view', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const idx = (v) => {
+    const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: v })), handlers());
+    const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+    const kids = nav.children;
+    const at = kids.findIndex((k) => /settings/i.test(k.textContent || ''));
+    return kids.length - at;
+  };
+  assert.strictEqual(idx('schedule'), idx('grid'));
+  assert.strictEqual(idx('schedule'), idx('settings'));
 });
 
 test('the settings view shows the inference as an inference, not as a reading', () => {

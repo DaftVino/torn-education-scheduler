@@ -2347,6 +2347,7 @@
       '  display: flex; align-items: center; justify-content: space-between; gap: 8px; }',
       '#tes-panel .tes-header-toggle { font-weight: normal; }',
       '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: 8px; }',
+      '#tes-panel .tes-nav .tes-settings { margin-left: auto; }',
       '#tes-panel .tes-finish { font-size: 1.25em; font-weight: bold; color: #7ee081; margin-bottom: 8px; }',
       '#tes-panel .tes-save-error { color: #ff8080; font-weight: bold; margin-bottom: 8px; }',
       '#tes-panel .tes-error { color: #ff8080; margin-bottom: 8px; }',
@@ -2390,6 +2391,28 @@
   // panel is not ambiguous about what it is showing.
   const VIEW_TITLES = { schedule: 'Education Scheduler', settings: 'Settings', grid: 'Degrees', focus: 'Focus' };
 
+  // One nav button: label, click wiring, and the disabled guard, shared by
+  // every button the nav row renders (toggle targets and the settings
+  // landmark alike). Callers set `.disabled`/`title`/`className`/
+  // `aria-current` themselves — this only owns what every button has in
+  // common.
+  function navButton(doc, target, label, handlers) {
+    const btn = doc.createElement('button');
+    btn.textContent = label;
+    if (btn.addEventListener && handlers.onViewChange) {
+      // Guarded explicitly on btn.disabled: some fake-document harnesses
+      // (and a native button carrying only the disabled attribute rather
+      // than the property) still dispatch a click event, and a disabled
+      // control must not act regardless of whether the host is a real
+      // browser suppressing it for us.
+      btn.addEventListener('click', function () {
+        if (btn.disabled) return;
+        handlers.onViewChange(target);
+      });
+    }
+    return btn;
+  }
+
   // The shell only: chrome, the failure line, the nav row, and the view
   // switch. Each view owns its own body content, so adding a view never grows
   // this function.
@@ -2417,7 +2440,8 @@
 
     // Two elements, not one clickable div. The title names the view; the button
     // is a real button that looks like every other button in the panel, and it
-    // is the only thing that toggles. margin-left:auto puts it right.
+    // is the only thing that toggles. `justify-content: space-between` on
+    // `.tes-header` puts it right, not a margin on the button itself.
     const header = doc.createElement('div');
     header.className = 'tes-header';
 
@@ -2463,10 +2487,16 @@
       if (handlers !== noopHandlers) {
         const nav = doc.createElement('div');
         nav.className = 'tes-nav';
-        for (const target of ['schedule', 'grid', 'focus', 'settings']) {
+
+        // Planner destinations toggle one another — each skips itself, same
+        // as before. Focus keeps its existing gating untouched: disabled
+        // until Queue order (in the settings view) selects it, title naming
+        // what turns it on. Settings is handled separately below; it is a
+        // landmark, not a fourth toggle target, so it is never skipped.
+        for (const target of ['schedule', 'grid', 'focus']) {
           if (target === view) continue;
-          const btn = doc.createElement('button');
-          btn.textContent = target === 'settings' ? '⚙ settings' : target === 'grid' ? 'degrees' : target === 'focus' ? 'focus' : 'schedule';
+          const label = target === 'grid' ? 'degrees' : target === 'focus' ? 'focus' : 'schedule';
+          const btn = navButton(doc, target, label, handlers);
 
           // Focus mode has one switch — Queue order, in the settings view —
           // and this is the same switch, not a second one. Disabled rather
@@ -2477,20 +2507,27 @@
             btn.disabled = true;
             btn.setAttribute('title', 'Set Queue order to "My focus first" in settings to use this');
           }
-
-          if (btn.addEventListener && handlers.onViewChange) {
-            // Guarded explicitly on btn.disabled: some fake-document
-            // harnesses (and a native button carrying only the disabled
-            // attribute rather than the property) still dispatch a click
-            // event, and a disabled control must not act regardless of
-            // whether the host is a real browser suppressing it for us.
-            btn.addEventListener('click', function () {
-              if (btn.disabled) return;
-              handlers.onViewChange(target);
-            });
-          }
           nav.appendChild(btn);
         }
+
+        // Settings is a fixed landmark, not a fourth toggle target: it
+        // renders on every view, identically, always enabled — a landmark
+        // that greys out or moves when you land on it is not a landmark.
+        // `.tes-settings { margin-left: auto }` (CSS) pins it to the right
+        // of the row regardless of how many buttons sit to its left, so it
+        // does not shift as the planner group grows from one button to two.
+        // Note for a later task: a reset button appends here too, AFTER
+        // this one, and inherits the same right-hand group without needing
+        // its own margin-left: auto — a second auto margin on the same flex
+        // row would do nothing useful.
+        const gear = navButton(doc, 'settings', '⚙ settings', handlers);
+        gear.className = 'tes-settings';
+        // Idempotent when already on settings — cheaper than a disabled
+        // state that would make the button look different on one view out
+        // of four.
+        if (view === 'settings') gear.setAttribute('aria-current', 'page');
+        nav.appendChild(gear);
+
         body.appendChild(nav);
       }
 
