@@ -1221,7 +1221,7 @@ function handlers() {
     onPickerChange() {}, onViewChange() {},
     onSettingChange() {}, onToggleDebugReport() {}, onCopyDebugReport() {},
     onImportPlan() {},
-    onFocusToggle() {}, onFocusPriority() {}, onFocusSectionToggle() {},
+    onFocusToggle() {}, onFocusPriority() {}, onFocusSectionToggle() {}, onFocusRankToggle() {},
     onResetArm() {}, onResetConfirm() {},
   };
 }
@@ -1413,6 +1413,78 @@ test('the focus view says ordering does not change the finish date', () => {
   const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ view: 'focus' })), handlers());
   assert.ok(/finish date/i.test(allText(panel)),
     'the one thing this control must not be left to imply');
+  assert.match(allText(panel), /Most per day banks the stat fastest in real time/);
+  assert.match(allText(panel), /biggest total finishes the largest single courses first/);
+});
+
+test('the Focus rank button states both bases and commits through the real handler', async () => {
+  const { x, doc, gmStore } = await bootInit({ queue: [] }, {
+    orderMode: 'focus', focusRankBasis: 'per-day',
+  });
+  const panelEl = () => doc.querySelector('#tes-panel');
+  const nav = descendants(panelEl()).find((c) => c.className === 'tes-nav');
+  fire(nav.children.find((button) => /focus/i.test(button.textContent)), 'click');
+
+  let body = panelEl().children[1];
+  let button = body.children.find((child) => child.className === 'tes-focus-rank-toggle');
+  let buttonAt = body.children.indexOf(button);
+  assert.strictEqual(button.className, 'tes-focus-rank-toggle');
+  assert.strictEqual(button.textContent, 'sorting: most per day');
+  assert.strictEqual(body.children[buttonAt + 1].className, 'tes-note', 'the rank button must precede the notes');
+
+  fire(button, 'click');
+  assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).focusRankBasis, 'total');
+  body = panelEl().children[1];
+  button = body.children.find((child) => child.className === 'tes-focus-rank-toggle');
+  assert.strictEqual(button.textContent, 'sorting: biggest total');
+
+  fire(button, 'click');
+  assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).focusRankBasis, 'per-day');
+  assert.strictEqual(descendants(panelEl()).find((c) => c.className === 'tes-focus-rank-toggle').textContent,
+    'sorting: most per day');
+});
+
+function renderedFocusRow(x, settings, category, selection) {
+  const model = x.buildPanelModel(state({ view: 'focus', settings: settings }));
+  model.focusOpenCategories = [category];
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  return descendants(panel).find((row) => row.className === 'tes-focus-row'
+    && row.children[2].textContent === selection);
+}
+
+test('a completed unchosen focus is disabled, titled, and muted', () => {
+  const { x } = load();
+  const row = renderedFocusRow(x, { orderMode: 'focus' },
+    'Unlocks & Abilities', 'Sports Shop Access');
+  assert.ok(row, 'the real completed fixture selection did not render');
+  assert.strictEqual(row.children[3].textContent, 'complete');
+  assert.strictEqual(row.children[1].disabled, true);
+  assert.match(row.title, /already complete/i);
+  assert.strictEqual(row['data-disabled'], 'true');
+  assert.match(x.panelStyleText(), /\.tes-focus-row\[data-disabled="true"\]\s*\{\s*color:\s*var\(--tm-muted\)/);
+});
+
+test('a completed chosen focus stays enabled so it can be unticked', () => {
+  const { x } = load();
+  const row = renderedFocusRow(x, {
+    orderMode: 'focus',
+    focuses: [{ category: 'Unlocks & Abilities', selection: 'Sports Shop Access' }],
+  }, 'Unlocks & Abilities', 'Sports Shop Access');
+  assert.strictEqual(row.children[3].textContent, 'complete');
+  assert.strictEqual(row.children[1].checked, true);
+  assert.notStrictEqual(row.children[1].disabled, true);
+  assert.strictEqual(row['data-disabled'], undefined);
+  assert.ok((row.children[1].listeners.change || []).length > 0, 'the chosen checkbox cannot be unticked');
+});
+
+test('an incomplete focus remains enabled and selectable', () => {
+  const { x } = load();
+  const row = renderedFocusRow(x, { orderMode: 'focus' }, 'Working Stats', 'manual labor');
+  assert.notStrictEqual(row.children[3].textContent, 'complete');
+  assert.notStrictEqual(row.children[1].disabled, true);
+  assert.strictEqual(row['data-disabled'], undefined);
+  assert.ok((row.children[1].listeners.change || []).length > 0, 'the incomplete checkbox lost its handler');
 });
 
 test('an unchosen selection shows no number at all', () => {

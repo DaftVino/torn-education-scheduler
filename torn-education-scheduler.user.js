@@ -364,6 +364,13 @@
     { id: 'unlocks-first', label: 'Unlocks the most first' },
     { id: 'focus', label: 'My focus first' },
   ];
+  // One source for both the stored vocabulary and the Focus-view button copy.
+  // The button states what is active, so the ordering is readable before the
+  // player clicks it.
+  const FOCUS_RANK_BASIS_LABELS = [
+    { id: 'per-day', label: 'most per day' },
+    { id: 'total', label: 'biggest total' },
+  ];
 
   // The focus taxonomy: which courses deliver which player-facing benefit.
   //
@@ -752,7 +759,7 @@
   // algorithm rather than a sort-then-repair, so the result is followable by
   // construction and an unsatisfiable queue degrades to appending the
   // remainder rather than looping.
-  function orderQueue(queue, mode, courses, scoreMaps) {
+  function orderQueue(queue, mode, courses, scoreMaps, focusRankBasis) {
     const chosen = ORDER_MODE_LABELS.some(function (m) { return m.id === mode; }) ? mode : 'as-listed';
     if (chosen === 'as-listed') return queue.slice();
 
@@ -766,6 +773,11 @@
     // that forgets the fourth argument (or every other mode, which does not
     // take one) degrades to an empty vector rather than throwing.
     const maps = (chosen === 'focus' && Array.isArray(scoreMaps)) ? scoreMaps : [];
+    // The fifth argument was added after focus ordering shipped. Omitting it
+    // must preserve that shipped most-per-day behaviour for every caller.
+    const basis = FOCUS_RANK_BASES.indexOf(focusRankBasis) !== -1
+      ? focusRankBasis
+      : 'per-day';
 
     // A course is ready when every prerequisite of it that is also in this
     // queue has already been placed. Both this and the rank read the same
@@ -796,7 +808,7 @@
           : 1;
         rankVector.set(id, maps.map(function (m) {
           const score = (m instanceof Map && Number.isFinite(m.get(id))) ? m.get(id) : 0;
-          return -(score / durationDays);
+          return basis === 'total' ? -score : -(score / durationDays);
         }));
       } else {
         const course = courses.get(id);
@@ -1084,6 +1096,7 @@
   // into a mode the player can pick and normaliseSettings then silently
   // refuses. ORDER_MODE_LABELS is the source.
   const ORDER_MODES = ORDER_MODE_LABELS.map(function (m) { return m.id; });
+  const FOCUS_RANK_BASES = FOCUS_RANK_BASIS_LABELS.map(function (b) { return b.id; });
   const SETTINGS_DEFAULTS = {
     maxCooldownHours: 24,
     booksOwned: 0,
@@ -1093,6 +1106,7 @@
     // focuses selected, focus ordering deliberately degrades to as-listed,
     // so a fresh install's queue is unchanged; only the nav entry appears.
     orderMode: 'focus',
+    focusRankBasis: 'per-day',
   };
   // Generous ceilings, present only to reject nonsense — a negative price or a
   // cooldown of a million hours is a typo, not a preference.
@@ -1196,6 +1210,9 @@
         wsuBlock: typeof rawPerks.wsuBlock === 'boolean' ? rawPerks.wsuBlock : null,
       },
       orderMode: ORDER_MODES.indexOf(source.orderMode) !== -1 ? source.orderMode : SETTINGS_DEFAULTS.orderMode,
+      focusRankBasis: FOCUS_RANK_BASES.indexOf(source.focusRankBasis) !== -1
+        ? source.focusRankBasis
+        : SETTINGS_DEFAULTS.focusRankBasis,
       focuses: normaliseFocuses(source.focuses),
     };
   }
@@ -1416,6 +1433,7 @@
       `  Principal rank: ${show(perks.principal)}`,
       `  WSU stock block: ${show(perks.wsuBlock)}`,
       `  Queue order: ${show(settings && settings.orderMode)}`,
+      `  Focus rank basis: ${show(settings && settings.focusRankBasis)}`,
       '',
       'Queue',
       `  Length: ${show(src.queueLength)}`,
@@ -1459,6 +1477,7 @@
       `p=${s.bookPrice}`,
       `j=${s.jobPoints}`,
       `o=${s.orderMode}`,
+      `r=${s.focusRankBasis === 'total' ? 't' : 'p'}`,
     ];
     if (s.focuses.length > 0) {
       parts.push(`f=${s.focuses.map(function (f) { return `${f.category}${f.selection}`; }).join(',')}`);
@@ -1582,6 +1601,7 @@
       bookPrice: toInt(fields.p),
       jobPoints: toInt(fields.j),
       orderMode: fields.o,
+      focusRankBasis: fields.r === 't' ? 'total' : fields.r === 'p' ? 'per-day' : fields.r,
       focuses: focusCandidates,
       perks: {
         meritsPercent: toInt(fields.m),
@@ -2073,7 +2093,7 @@
     // reads the ordered queue. It cannot move the finish date (a sum does not
     // care about order); it moves which course finishes when, which is the
     // whole point of offering the choice.
-    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses, scoreMaps);
+    const queue = orderQueue(prunedQueue, settings.orderMode, data.courses, scoreMaps, settings.focusRankBasis);
     const result = schedule({
       courses: data.courses, activeCourse: data.activeCourse, queue: queue, now: state.now,
     });
@@ -2503,6 +2523,7 @@
       '#tes-panel .tes-focus-section-title { display: flex; justify-content: space-between; width: 100%; text-align: left; }',
       '#tes-panel .tes-focus-row { display: grid; grid-template-columns: 2.5em 1.5em 1fr auto; align-items: center; gap: 8px; padding: 2px 0; }',
       '#tes-panel .tes-focus-row input[type="checkbox"] { width: auto; }',
+      '#tes-panel .tes-focus-row[data-disabled="true"] { color: var(--tm-muted); }',
       '#tes-panel .tes-focus-remaining { justify-self: end; text-align: right; }',
       '#tes-panel .tes-focus-priority { box-sizing: border-box; width: 2.5em; }',
       '#tes-panel .tes-note { color: var(--tm-muted); margin-bottom: var(--tes-gap-sm); font-size: var(--tes-text-sm); }',
@@ -2701,9 +2722,9 @@
   }
 
   // Which settings paths carry a number, so onSettingChange knows what to
-  // coerce. orderMode is a string enum: running it through Number() would make
-  // every choice NaN, and normaliseSettings would quietly restore the default
-  // — a preference that silently refuses to change.
+  // coerce. orderMode and focusRankBasis are string enums: running either
+  // through Number() would make every choice NaN, and normaliseSettings would
+  // quietly restore the default — a preference that silently refuses to change.
   const NUMERIC_SETTING_FIELDS = [
     'maxCooldownHours', 'booksOwned', 'bookPrice', 'jobPoints', 'perks.meritsPercent',
   ];
@@ -2986,13 +3007,23 @@
       return;
     }
 
+    const rankBasis = FOCUS_RANK_BASIS_LABELS.find(function (basis) {
+      return basis.id === model.settings.focusRankBasis;
+    }) || FOCUS_RANK_BASIS_LABELS[0];
+    const rankToggle = handlers.onFocusRankToggle || function () {};
+    const rankButton = doc.createElement('button');
+    rankButton.className = 'tes-focus-rank-toggle';
+    rankButton.textContent = `sorting: ${rankBasis.label}`;
+    if (rankButton.addEventListener) rankButton.addEventListener('click', rankToggle);
+    body.appendChild(rankButton);
+
     // The one thing this view must not be left to imply — see the settings
     // view's identical worry about Queue order in general. Focus reorders;
     // it does not shorten or lengthen anything, because courses still run
     // one at a time and the sum is order-independent.
     const orderNote = doc.createElement('div');
     orderNote.className = 'tes-note';
-    orderNote.textContent = 'Choosing a focus changes the order courses are queued in — it does not change the finish date. The total time is the same either way; a focus just moves the courses that earn it earlier, so that benefit starts paying off sooner.';
+    orderNote.textContent = 'Choosing a focus changes the order courses are queued in — it does not change the finish date. The total time is the same either way; a focus just moves the courses that earn it earlier, so that benefit starts paying off sooner. Most per day banks the stat fastest in real time; biggest total finishes the largest single courses first, and the button above switches between them.';
     body.appendChild(orderNote);
 
     // Torn does not attach a learningOutcomes entry to every course. Silence
@@ -3034,6 +3065,11 @@
       for (const sel of group.selections) {
         const row = doc.createElement('div');
         row.className = 'tes-focus-row';
+        const completedUnchosen = sel.remainingLabel === 'complete' && sel.priority === null;
+        if (completedUnchosen) {
+          row.setAttribute('data-disabled', 'true');
+          row.setAttribute('title', 'This focus is already complete and cannot be selected.');
+        }
 
         // The empty slot is always first. Its grid track reserves the
         // priority control's space before a checkbox is chosen, so selecting
@@ -3061,7 +3097,8 @@
         // current focuses to decide select, deselect or swap, so every
         // checkbox — chosen or not — commits through the same call.
         if (sel.priority !== null) box.checked = true;
-        if (box.addEventListener) {
+        if (completedUnchosen) box.disabled = true;
+        if (!completedUnchosen && box.addEventListener) {
           box.addEventListener('change', function () { toggle(group.category, sel.selection); });
         }
         row.appendChild(box);
@@ -3506,6 +3543,7 @@
     // these to exist here — but every other handler renderSettingsView calls
     // is kept for shape completeness, and these are the same kind of caller.
     onFocusToggle: function () {}, onFocusPriority: function () {}, onFocusSectionToggle: function () {},
+    onFocusRankToggle: function () {},
     // renderSettingsView (the only renderer that calls onImportPlan) is
     // unreachable through this handler set: both errorModel call sites pass
     // noopHandlers, errorModel hardcodes view: 'schedule', and renderPanel
@@ -3741,6 +3779,14 @@
             resetArmed = false;
             const next = JSON.parse(JSON.stringify(settings));
             next.focuses = toggleFocus(settings.focuses, category, selection);
+            settings = normaliseSettings(next);
+            settingsSaveFailed = !saveSettings(settings);
+            draw(currentPlan, saveFailed === true);
+          },
+          onFocusRankToggle: function () {
+            resetArmed = false;
+            const next = JSON.parse(JSON.stringify(settings));
+            next.focusRankBasis = settings.focusRankBasis === 'per-day' ? 'total' : 'per-day';
             settings = normaliseSettings(next);
             settingsSaveFailed = !saveSettings(settings);
             draw(currentPlan, saveFailed === true);

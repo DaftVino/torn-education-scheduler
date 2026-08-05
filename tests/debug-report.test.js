@@ -57,6 +57,18 @@ test('the report carries what a maintainer needs to diagnose a failure', () => {
   assert.ok(report.includes('13500000') || report.includes('13,500,000'), 'no settings values');
 });
 
+test('the debug report carries focusRankBasis through gatherDebugContext', () => {
+  const { exports: x } = loadUserscript();
+  const settings = x.normaliseSettings({ focusRankBasis: 'total' });
+  const ctx = x.gatherDebugContext({
+    fetchResult: { ok: false, reason: 'offline', detail: 'test' },
+    plan: { queue: [], collapsed: false },
+    settings: settings,
+  });
+  assert.strictEqual(ctx.settings.focusRankBasis, 'total');
+  assert.match(x.buildDebugReport(ctx), /^  Focus rank basis: total$/m);
+});
+
 // Named for what is actually guaranteed. The *word* "rfcv" can legitimately
 // reach a real report: parsePayload carries Torn's own `raw.error` into the
 // detail, and Torn's live string for a rejected request is "Wrong rfcv token"
