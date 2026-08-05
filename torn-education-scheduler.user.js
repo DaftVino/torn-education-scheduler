@@ -1366,6 +1366,13 @@
       // for the completed-course set this report deliberately withholds.
       `  Courses: ${Array.isArray(src.queueCodes) && src.queueCodes.length > 0 ? src.queueCodes.join(' ') : 'none'}`,
       '',
+      // Counts only, straight off focusRegistry and settings.focuses' own
+      // length — never a selection's course list, never an outcome string.
+      'Focus',
+      `  Stale classifications: ${show(src.focusStale)}`,
+      `  Unmapped outcomes: ${show(src.focusUnmapped)}`,
+      `  Selections made: ${show(src.focusSelections)}`,
+      '',
       // GREASY_FORK_URL's one consumer. Named in prose either way, because
       // the instruction is useful without the URL; the URL is appended only
       // once it exists, so resolving it has a visible effect here and a test
@@ -2230,6 +2237,10 @@
     const nav = (typeof navigator !== 'undefined') ? navigator : null;
     const data = (state.fetchResult && state.fetchResult.ok) ? state.fetchResult.data : null;
     const queue = (state.plan && Array.isArray(state.plan.queue)) ? state.plan.queue : [];
+    // Counts only — never a selection's course list, never an outcome
+    // string. focusRegistry needs real course data to say anything, so both
+    // are null on a failed acquisition.
+    const focusReg = data ? focusRegistry(data.courses) : null;
     return {
       scriptVersion: SCRIPT_VERSION,
       userAgent: nav && typeof nav.userAgent === 'string' ? nav.userAgent : null,
@@ -2253,6 +2264,13 @@
         return (c && typeof c.prefix === 'string') ? c.prefix : String(id);
       }) : [],
       settings: state.settings || null,
+      focusStale: focusReg ? focusReg.stale : null,
+      focusUnmapped: focusReg ? focusReg.unmapped : null,
+      // settings.focuses' own length, not a stored count — present whenever
+      // settings are, independent of whether acquisition succeeded.
+      focusSelections: (state.settings && Array.isArray(state.settings.focuses))
+        ? state.settings.focuses.length
+        : null,
     };
   }
 
