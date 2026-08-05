@@ -111,6 +111,7 @@
       baseCost: raw.originCost,
       cost: raw.actualCost,
       parentId: raw.parentId,
+      learningOutcomes: Array.isArray(raw.learningOutcomes) ? raw.learningOutcomes : [],
     };
   }
 
@@ -361,6 +362,169 @@
     { id: 'shortest-first', label: 'Shortest first' },
     { id: 'unlocks-first', label: 'Unlocks the most first' },
   ];
+
+  // The focus taxonomy: which courses deliver which player-facing benefit.
+  //
+  // Static rather than parsed, because 101 learningOutcomes strings carry 88
+  // distinct forms — a classification is a human judgement, not a regex. Each
+  // row records the outcome string it was classified FROM, so focusRegistry
+  // can tell a live payload that the judgement no longer applies.
+  //
+  // Keyed by (category, selection): `Strength` exists under both
+  // `Passive Stat Bonus` and `Gym Gain Bonus`, and they are different
+  // quantities that must never merge.
+  const FOCUS_TAXONOMY = Object.freeze([
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Amulet Finding", unit: "none", magnitude: null, courseId: 20, outcome: "Gain the ability to find Senet board pieces and amulets" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Anonymous Cash Transfers", unit: "none", magnitude: null, courseId: 62, outcome: "Gain the ability to send mails and cash anonymously" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Anonymous Mail", unit: "none", magnitude: null, courseId: 62, outcome: "Gain the ability to send mails and cash anonymously" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Armored Virus Coding", unit: "none", magnitude: null, courseId: 56, outcome: "Gain the ability to code Armored, Stealth, and Firewalk viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Asian Sculpture Finding", unit: "none", magnitude: null, courseId: 19, outcome: "Gain the ability to find Asian sculptures and Companion pages" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Bail Others", unit: "none", magnitude: null, courseId: 90, outcome: "Gain the ability to buy yourself and others out of jail while you are in jail yourself" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Bail Self", unit: "none", magnitude: null, courseId: 90, outcome: "Gain the ability to buy yourself and others out of jail while you are in jail yourself" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Blood Delivery", unit: "none", magnitude: null, courseId: 127, outcome: "Ability to withdraw and deliver blood" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Blood Withdrawal", unit: "none", magnitude: null, courseId: 127, outcome: "Ability to withdraw and deliver blood" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Bootlegging Website Creation", unit: "none", magnitude: null, courseId: 23, outcome: "Unlock the ability to create websites for use in Bootlegging and Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Companion Page Finding", unit: "none", magnitude: null, courseId: 19, outcome: "Gain the ability to find Asian sculptures and Companion pages" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Company Size Upgrades", unit: "none", magnitude: null, courseId: 13, outcome: "Unlock new size, storage size & staff room upgrades for your company" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Company Staff Room Upgrades", unit: "none", magnitude: null, courseId: 13, outcome: "Unlock new size, storage size & staff room upgrades for your company" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Company Storage Upgrades", unit: "none", magnitude: null, courseId: 13, outcome: "Unlock new size, storage size & staff room upgrades for your company" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Cracking Crime", unit: "none", magnitude: null, courseId: 52, outcome: "Unlock the Cracking crime" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Driving Crimes", unit: "none", magnitude: null, courseId: 113, outcome: "Unlock driving related crimes (Crimes 1.0)" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Firewalk Virus Coding", unit: "none", magnitude: null, courseId: 56, outcome: "Gain the ability to code Armored, Stealth, and Firewalk viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Hacking Crimes (Crimes 1.0)", unit: "none", magnitude: null, courseId: 54, outcome: "Unlock hacking crimes (Crimes 1.0)" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Jail Escape Evasion", unit: "none", magnitude: null, courseId: 89, outcome: "Reduce the chance of being caught when trying to escape from jail" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Jail Escape Nerve Use", unit: "none", magnitude: null, courseId: 99, outcome: "Use less nerve when trying to escape from jail" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Kick Attack", unit: "none", magnitude: null, courseId: 72, outcome: "Unlock kick attack when in a battle" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Medieval Coin Finding", unit: "none", magnitude: null, courseId: 18, outcome: "Gain the ability to find medieval coins" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Museum Access", unit: "none", magnitude: null, courseId: 21, outcome: "Unlock the museum, sets of artifacts and other collectibles can be exchanged here for points" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Needle Equipment", unit: "none", magnitude: null, courseId: 42, outcome: "Gain the ability to equip needles in your temporary slot" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Polymorphic Virus Coding", unit: "none", magnitude: null, courseId: 53, outcome: "Gain the ability to code Polymorphic and Tunneling viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Scamming Email Extraction", unit: "none", magnitude: null, courseId: 130, outcome: "Unlock the extraction of email addresses through data breaches in Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Scamming Email Extraction", unit: "none", magnitude: null, courseId: 131, outcome: "Unlock the development of scrapers to extract email addresses from websites for use in Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Scamming Response Range Indicators", unit: "none", magnitude: null, courseId: 132, outcome: "Unlock response range indicators in Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Scamming Website Creation", unit: "none", magnitude: null, courseId: 23, outcome: "Unlock the ability to create websites for use in Bootlegging and Scamming" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Senet Board Piece Finding", unit: "none", magnitude: null, courseId: 20, outcome: "Gain the ability to find Senet board pieces and amulets" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Simple Virus Coding", unit: "none", magnitude: null, courseId: 52, outcome: "Gain the ability to code Simple viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Sports Shop Access", unit: "none", magnitude: null, courseId: 126, outcome: "Unlock the sports shop" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Stealth Virus Coding", unit: "none", magnitude: null, courseId: 56, outcome: "Gain the ability to code Armored, Stealth, and Firewalk viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Tunneling Virus Coding", unit: "none", magnitude: null, courseId: 53, outcome: "Gain the ability to code Polymorphic and Tunneling viruses" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Weapon Experience Accuracy", unit: "none", magnitude: null, courseId: 87, outcome: "Start gaining weapon experience, specializing in individual weapons for increased damage and accuracy" }),
+    Object.freeze({ category: "Unlocks & Abilities", selection: "Weapon Experience Damage", unit: "none", magnitude: null, courseId: 87, outcome: "Start gaining weapon experience, specializing in individual weapons for increased damage and accuracy" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 1, courseId: 71, outcome: "Gain a 1% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 2, courseId: 73, outcome: "Gain a 2% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 3, courseId: 74, outcome: "Gain a 3% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 1, courseId: 26, outcome: "Gain a 1% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 2, courseId: 32, outcome: "Gain a 2% passive bonus to defense" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Defense", unit: "percent", magnitude: 2, courseId: 50, outcome: "Gain a 2% passive bonus to defense and dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 104, outcome: "Gain a 1% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 108, outcome: "Gain a 1% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 64, outcome: "Gain a 1% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 2, courseId: 65, outcome: "Gain a 2% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 4, courseId: 66, outcome: "Gain a 4% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 8, courseId: 67, outcome: "Gain an 8% passive bonus to dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Dexterity", unit: "percent", magnitude: 2, courseId: 50, outcome: "Gain a 2% passive bonus to defense and dexterity" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 79, outcome: "Gain a 1% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 2, courseId: 75, outcome: "Gain a 2% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 3, courseId: 76, outcome: "Gain a 3% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 105, outcome: "Gain a 1% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 3, courseId: 109, outcome: "Gain a 3% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 24, outcome: "Gain a 1% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 25, outcome: "Gain a 1% passive bonus to speed" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Speed", unit: "percent", magnitude: 2, courseId: 49, outcome: "Gain a 2% passive bonus to speed and strength" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Strength", unit: "percent", magnitude: 1, courseId: 106, outcome: "Gain a 1% passive bonus to strength" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Strength", unit: "percent", magnitude: 2, courseId: 107, outcome: "Gain a 2% passive bonus to strength" }),
+    Object.freeze({ category: "Passive Stat Bonus", selection: "Strength", unit: "percent", magnitude: 2, courseId: 49, outcome: "Gain a 2% passive bonus to speed and strength" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "All Melee Damage", unit: "percent", magnitude: 2, courseId: 17, outcome: "Gain a 2% bonus to all melee damage" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "All Weapon Damage", unit: "percent", magnitude: 1, courseId: 35, outcome: "Gain a 1% damage bonus to all weapons" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Ammo Conservation", unit: "percent", magnitude: 5, courseId: 31, outcome: "Gain a 5% bonus to ammo conservation" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Ammo Conservation", unit: "percent", magnitude: 20, courseId: 33, outcome: "Gain a 20% bonus to ammo conservation" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Critical Hit Chance", unit: "percent", magnitude: 3, courseId: 41, outcome: "Gain a 3% chance increase of achieving a critical hit" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Escape Prevention Speed", unit: "percent", magnitude: 25, courseId: 111, outcome: "Gain a 25% increase in speed during an opponent's escape attempt" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Heavy Artillery Accuracy", unit: "flat", magnitude: 1, courseId: 86, outcome: "Gain a +1.00 accuracy increase with Heavy Artillery" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Japanese Blade Damage", unit: "percent", magnitude: 10, courseId: 16, outcome: "Gain a 10% damage increase with Japanese blade weapons" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Machine Gun Accuracy", unit: "flat", magnitude: 1, courseId: 82, outcome: "Gain a +1.00 accuracy increase with Machine Guns" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Opponent Stealth Reduction", unit: "flat", magnitude: 0.5, courseId: 40, outcome: "Decrease an opponent's stealthiness by 0.5" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Pistol Accuracy", unit: "flat", magnitude: 1, courseId: 84, outcome: "Gain a +1.00 accuracy increase with Pistols" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Rifle Accuracy", unit: "flat", magnitude: 1, courseId: 85, outcome: "Gain a +1.00 accuracy increase with Rifles" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Shotgun Accuracy", unit: "flat", magnitude: 1, courseId: 125, outcome: "Gain a +1.00 accuracy increase with Shotguns" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Submachine Gun Accuracy", unit: "flat", magnitude: 1, courseId: 83, outcome: "Gain a +1.00 accuracy increase with Submachine guns" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Temporary Weapon Accuracy", unit: "flat", magnitude: 1, courseId: 116, outcome: "Gain a +1.00 accuracy increase with Temporary weapons" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Temporary Weapon Damage", unit: "percent", magnitude: 5, courseId: 119, outcome: "Gain a 5% damage increase with Temporary weapons" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Throat Hit Damage", unit: "percent", magnitude: 10, courseId: 38, outcome: "Gain a 10% damage increase when hitting an opponent's throat" }),
+    Object.freeze({ category: "Combat Bonuses", selection: "Unarmed Damage", unit: "percent", magnitude: 100, courseId: 77, outcome: "Gain a 100% increase in damage dealt when using fists alone" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Advertising Effectiveness", unit: "percent", magnitude: 3, courseId: 4, outcome: "Gain a 3% increase in advertising effectiveness for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Advertising Effectiveness", unit: "percent", magnitude: 3, courseId: 100, outcome: "Gain a 3% increase in advertising effectiveness for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 10, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 12, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 2, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 5, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 2, courseId: 8, outcome: "Gain 2% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Company Productivity", unit: "percent", magnitude: 1, courseId: 28, outcome: "Gain 1% productivity for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Employee Effectiveness", unit: "flat", magnitude: 5, courseId: 3, outcome: "Gain 5 effectiveness for the employees in your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Employee Effectiveness", unit: "flat", magnitude: 7, courseId: 6, outcome: "Gain 7 effectiveness for the employees in your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Employee Working Stats", unit: "percent", magnitude: 20, courseId: 11, outcome: "Gain a 20% passive bonus to employee working stats in your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Perceived Product Value", unit: "percent", magnitude: 10, courseId: 7, outcome: "Gain 10% perceived product value for your company" }),
+    Object.freeze({ category: "Company Bonuses", selection: "Perceived Product Value", unit: "percent", magnitude: 5, courseId: 9, outcome: "Gain 5% perceived product value for your company" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Bail Cost Discount", unit: "percent", magnitude: 5, courseId: 93, outcome: "Gain a 5% discount when buying people out of jail" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Bail Cost Discount", unit: "percent", magnitude: 10, courseId: 98, outcome: "Gain a 10% discount when buying people out of jail" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Bail Cost Discount", unit: "percent", magnitude: 50, courseId: 102, outcome: "Gain two bonuses: Busting is 50% easier and bailing is 50% cheaper" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Busting", unit: "percent", magnitude: 5, courseId: 92, outcome: "Gain a 5% bonus to your skill in busting" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Busting", unit: "percent", magnitude: 10, courseId: 97, outcome: "Gain a 10% bonus to your skill in busting" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Busting", unit: "percent", magnitude: 50, courseId: 102, outcome: "Gain two bonuses: Busting is 50% easier and bailing is 50% cheaper" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Crime Experience Gain", unit: "percent", magnitude: 10, courseId: 69, outcome: "Gain a 10% increase to crime exp & skill progression" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Crime Skill Progression", unit: "percent", magnitude: 10, courseId: 69, outcome: "Gain a 10% increase to crime exp & skill progression" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Hacking Crime Success Rate", unit: "percent", magnitude: 10, courseId: 61, outcome: "Gain a 10% increase in hacking crime success rate (Crimes 1.0)" }),
+    Object.freeze({ category: "Crime & Jail Bonuses", selection: "Property Purchase Discount", unit: "percent", magnitude: 5, courseId: 91, outcome: "Gain a 5% discount when buying properties from the estate agents" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Defense", unit: "percent", magnitude: 1, courseId: 46, outcome: "Gain a 1% bonus to defense gains in the gym" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Defense", unit: "percent", magnitude: 1, courseId: 51, outcome: "Gain a further 1% boost in all gym gains" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 47, outcome: "Gain a 1% bonus to dexterity gains in the gym" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Dexterity", unit: "percent", magnitude: 1, courseId: 51, outcome: "Gain a further 1% boost in all gym gains" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 45, outcome: "Gain a 1% bonus to speed gains in the gym" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Speed", unit: "percent", magnitude: 1, courseId: 51, outcome: "Gain a further 1% boost in all gym gains" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Strength", unit: "percent", magnitude: 1, courseId: 44, outcome: "Gain a 1% bonus to strength gains in the gym" }),
+    Object.freeze({ category: "Gym Gain Bonus", selection: "Strength", unit: "percent", magnitude: 1, courseId: 51, outcome: "Gain a further 1% boost in all gym gains" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Rig Component Heat Reduction", unit: "percent", magnitude: 25, courseId: 57, outcome: "Gain a 25% reduction in heat generated by rig components" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Rig Overclocking Limit", unit: "percent", magnitude: 30, courseId: 128, outcome: "Unlock rig overclocking up to 30%" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Rig Overclocking Limit", unit: "percent", magnitude: 50, courseId: 129, outcome: "Unlock rig overclocking up to 50%" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Virus Coding Time Reduction", unit: "percent", magnitude: 20, courseId: 58, outcome: "Gain a 20% decrease in virus coding times" }),
+    Object.freeze({ category: "Computing Bonuses", selection: "Virus Coding Time Reduction", unit: "percent", magnitude: 10, courseId: 60, outcome: "Gain a 10% decrease in virus coding times" }),
+    Object.freeze({ category: "General Progression Bonuses", selection: "Awareness", unit: "percent", magnitude: 10, courseId: 68, outcome: "Gain a 10% increase to awareness" }),
+    Object.freeze({ category: "General Progression Bonuses", selection: "Education Working Stat Rewards", unit: "percent", magnitude: 10, courseId: 121, outcome: "Gain a 10% working stat increase bonus for all future educations that are completed" }),
+    Object.freeze({ category: "General Progression Bonuses", selection: "Hunting Bonus", unit: "percent", magnitude: 15, courseId: 120, outcome: "Gain a 15% hunting bonus" }),
+    Object.freeze({ category: "Medical Effectiveness", selection: "Medical Item Effectiveness", unit: "percent", magnitude: 10, courseId: 36, outcome: "Gain a bonus of 10% to medical item effectiveness" }),
+    Object.freeze({ category: "Medical Effectiveness", selection: "Medical Item Effectiveness", unit: "percent", magnitude: 10, courseId: 37, outcome: "Gain a further 10% bonus to medical item effectiveness" }),
+    Object.freeze({ category: "Medical Effectiveness", selection: "Needle Effectiveness", unit: "percent", magnitude: 10, courseId: 48, outcome: "Gain a 10% increase in needle effectiveness" }),
+  ]);
+
+  // A course in the catalogue whose outcome strings the taxonomy does not
+  // account for. Reported, never guessed at: a silent zero here would rank a
+  // real benefit as worthless.
+  function focusRegistry(courses) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const entries = [];
+    let stale = 0;
+    const claimed = new Map();   // courseId -> Set of outcome strings the taxonomy claims
+
+    for (const row of FOCUS_TAXONOMY) {
+      const course = map.get(row.courseId);
+      const outcomes = (course && Array.isArray(course.learningOutcomes)) ? course.learningOutcomes : null;
+      if (!outcomes || outcomes.indexOf(row.outcome) === -1) { stale += 1; continue; }
+      entries.push(row);
+      if (!claimed.has(row.courseId)) claimed.set(row.courseId, new Set());
+      claimed.get(row.courseId).add(row.outcome);
+    }
+
+    let unmapped = 0;
+    for (const course of map.values()) {
+      const outcomes = Array.isArray(course.learningOutcomes) ? course.learningOutcomes : [];
+      const known = claimed.get(course.id);
+      for (const o of outcomes) {
+        if (!known || !known.has(o)) unmapped += 1;
+      }
+    }
+
+    return { entries, stale, unmapped, unclassified: 0 };
+  }
 
   // Everything that has to be done before this course can be: the parentId
   // chain, plus the one rule the payload does not carry in parentId — a tier-3
