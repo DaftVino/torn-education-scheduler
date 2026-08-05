@@ -2031,6 +2031,7 @@
       focusGroups: null,
       focuses: null,
       focusHealth: null,
+      focusOpenCategories: [],
       // Nothing to share: without a catalogue there is no queue this model can
       // vouch for, and a share string is a claim about a plan. Empty rather
       // than null, because the box renders either way and `null` in a textarea
@@ -2297,6 +2298,7 @@
       focusGroups: focusGroups,
       focuses: settings.focuses, // not read by any renderer; kept for tests/panel.test.js — see code-map
       focusHealth: focusHealth,
+      focusOpenCategories: Array.isArray(state.focusOpenCategories) ? state.focusOpenCategories : [],
       // Built from the pruned queue, in storage order — never the ordered
       // queue: ordering is a display preference, and storage keeps the raw
       // order. Sharing the ordered queue would silently rewrite a hand-built
@@ -2486,6 +2488,12 @@
       '  outline: var(--tes-focus-ring); outline-offset: 2px; }',
       '#tes-panel .tes-section { margin-bottom: var(--tes-gap-lg); }',
       '#tes-panel .tes-section-title { font-weight: bold; margin-bottom: var(--tes-gap-xs); color: var(--tm-meta); }',
+      '#tes-panel .tes-focus-section { border: 1px solid var(--tm-border-2); border-radius: 4px; padding: 8px; margin-bottom: var(--tes-gap-lg); }',
+      '#tes-panel .tes-focus-section-title { display: flex; justify-content: space-between; width: 100%; text-align: left; }',
+      '#tes-panel .tes-focus-row { display: grid; grid-template-columns: 2.5em 1.5em 1fr auto; align-items: center; gap: 8px; padding: 2px 0; }',
+      '#tes-panel .tes-focus-row input[type="checkbox"] { width: auto; }',
+      '#tes-panel .tes-focus-remaining { justify-self: end; text-align: right; }',
+      '#tes-panel .tes-focus-priority { box-sizing: border-box; width: 2.5em; }',
       '#tes-panel .tes-note { color: var(--tm-muted); margin-bottom: var(--tes-gap-sm); font-size: var(--tes-text-sm); }',
       '#tes-panel input { color: var(--tm-text); background: var(--tm-hover); border: 1px solid var(--tm-border-2);',
       '  border-radius: 4px; padding: 3px 6px; font-size: inherit; width: 10em; }',
@@ -2697,6 +2705,27 @@
     const heading = doc.createElement('div');
     heading.className = 'tes-section-title';
     heading.textContent = title;
+    section.appendChild(heading);
+    body.appendChild(section);
+    return section;
+  }
+
+  // Focus categories are collapsed independently and are deliberately not
+  // settings sections: their heading is a control, while settings headings
+  // must remain inert labels with the exact shape their callers expect.
+  function focusSection(doc, body, title, selectedCount, expanded, onToggle) {
+    const section = doc.createElement('div');
+    section.className = 'tes-focus-section';
+    const heading = doc.createElement('button');
+    heading.className = 'tes-focus-section-title';
+    const titleText = doc.createElement('span');
+    titleText.textContent = title;
+    heading.appendChild(titleText);
+    const countText = doc.createElement('span');
+    countText.textContent = `${selectedCount} selected`;
+    heading.appendChild(countText);
+    heading.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (heading.addEventListener) heading.addEventListener('click', onToggle);
     section.appendChild(heading);
     body.appendChild(section);
     return section;
@@ -2977,12 +3006,43 @@
 
     const toggle = handlers.onFocusToggle || function () {};
     const reprioritise = handlers.onFocusPriority || function () {};
+    const toggleSection = handlers.onFocusSectionToggle || function () {};
+    const openCategories = Array.isArray(model.focusOpenCategories)
+      ? model.focusOpenCategories
+      : [];
 
     for (const group of model.focusGroups) {
-      const section = settingsSection(doc, body, group.category);
+      const expanded = openCategories.indexOf(group.category) !== -1;
+      const selectedCount = group.selections.filter(function (sel) {
+        return sel.priority !== null;
+      }).length;
+      const section = focusSection(doc, body, group.category, selectedCount, expanded, function () {
+        toggleSection(group.category);
+      });
+      if (!expanded) continue;
       for (const sel of group.selections) {
         const row = doc.createElement('div');
-        row.className = 'tes-row';
+        row.className = 'tes-focus-row';
+
+        // The empty slot is always first. Its grid track reserves the
+        // priority control's space before a checkbox is chosen, so selecting
+        // one never shifts this or any other row sideways.
+        const prioritySlot = doc.createElement('span');
+        prioritySlot.className = 'tes-focus-priority-slot';
+        if (sel.priority !== null) {
+          const priorityInput = doc.createElement('input');
+          priorityInput.className = 'tes-focus-priority';
+          priorityInput.setAttribute('type', 'number');
+          priorityInput.setAttribute('min', '1');
+          priorityInput.value = String(sel.priority);
+          if (priorityInput.addEventListener) {
+            priorityInput.addEventListener('change', function () {
+              reprioritise(group.category, sel.selection, Number(priorityInput.value));
+            });
+          }
+          prioritySlot.appendChild(priorityInput);
+        }
+        row.appendChild(prioritySlot);
 
         const box = doc.createElement('input');
         box.setAttribute('type', 'checkbox');
@@ -2996,30 +3056,14 @@
         row.appendChild(box);
 
         const label = doc.createElement('span');
+        label.className = 'tes-focus-name';
         label.textContent = sel.selection;
         row.appendChild(label);
 
         const remaining = doc.createElement('span');
+        remaining.className = 'tes-focus-remaining';
         remaining.textContent = sel.remainingLabel;
         row.appendChild(remaining);
-
-        // Only once chosen: an unchosen selection has no number to change,
-        // and a renumbering control for something not on the list yet would
-        // invite a click that means nothing. Each chosen focus renders its
-        // own number beside it; there is no default and no greyed-out zero.
-        if (sel.priority !== null) {
-          const priorityInput = doc.createElement('input');
-          priorityInput.className = 'tes-focus-priority';
-          priorityInput.setAttribute('type', 'number');
-          priorityInput.setAttribute('min', '1');
-          priorityInput.value = String(sel.priority);
-          if (priorityInput.addEventListener) {
-            priorityInput.addEventListener('change', function () {
-              reprioritise(group.category, sel.selection, Number(priorityInput.value));
-            });
-          }
-          row.appendChild(priorityInput);
-        }
 
         section.appendChild(row);
       }
@@ -3428,7 +3472,7 @@
       // Same trio buildPanelModel's failure model carries, for the same
       // reason: no catalogue means no registry to check and no totals to
       // state.
-      focusGroups: null, focuses: null, focusHealth: null,
+      focusGroups: null, focuses: null, focusHealth: null, focusOpenCategories: [],
       consumables: null,
       // Same pair buildPanelModel carries, for the reason the comment above
       // gives: a renderer handed this model must not meet an undefined.
@@ -3446,7 +3490,7 @@
     // guards its own calls with `|| function(){}`) does not strictly need
     // these to exist here — but every other handler renderSettingsView calls
     // is kept for shape completeness, and these are the same kind of caller.
-    onFocusToggle: function () {}, onFocusPriority: function () {},
+    onFocusToggle: function () {}, onFocusPriority: function () {}, onFocusSectionToggle: function () {},
     // renderSettingsView (the only renderer that calls onImportPlan) is
     // unreachable through this handler set: both errorModel call sites pass
     // noopHandlers, errorModel hardcodes view: 'schedule', and renderPanel
@@ -3538,6 +3582,10 @@
     // it hidden next visit; a player who opened settings once does not want
     // settings every visit.
     let view = 'schedule';
+    // Focus sections are transient disclosure state. Entering the view starts
+    // closed every time, while an in-view heading click redraws just its own
+    // category open or closed without writing either storage key.
+    let focusOpenCategories = [];
     // Cleared by the next successful import, never persisted: it describes one
     // paste, and a stale reason beside a plan that imported fine is a lie.
     let importError = null;
@@ -3566,6 +3614,7 @@
           debugReport: debugReport,
           importError: importError,
           resetArmed: resetArmed,
+          focusOpenCategories: focusOpenCategories,
         });
 
         function commit(next) {
@@ -3636,7 +3685,9 @@
             // The focus button is absent outside focus ordering, but callers
             // can still invoke this route directly. Keep that route from
             // stranding the panel on a view whose entry is unavailable.
-            view = next === 'focus' && settings.orderMode !== 'focus' ? 'schedule' : next;
+            const nextView = next === 'focus' && settings.orderMode !== 'focus' ? 'schedule' : next;
+            if (nextView === 'focus' && view !== 'focus') focusOpenCategories = [];
+            view = nextView;
             draw(currentPlan, saveFailed === true);
           },
           // The view emits dotted `perks.*` paths for the nested group and a
@@ -3685,6 +3736,14 @@
             next.focuses = setFocusPriority(settings.focuses, category, selection, position);
             settings = normaliseSettings(next);
             settingsSaveFailed = !saveSettings(settings);
+            draw(currentPlan, saveFailed === true);
+          },
+          onFocusSectionToggle: function (category) {
+            resetArmed = false;
+            const index = focusOpenCategories.indexOf(category);
+            focusOpenCategories = index === -1
+              ? focusOpenCategories.concat(category)
+              : focusOpenCategories.filter(function (openCategory) { return openCategory !== category; });
             draw(currentPlan, saveFailed === true);
           },
           onToggleDebugReport: function () {
