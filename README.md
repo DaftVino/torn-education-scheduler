@@ -36,6 +36,11 @@ New to Torn education? Read the
   directly in its queue row.
 - Choose from four prerequisite-safe ordering strategies: **My focus first**,
   **As listed**, **Shortest first**, and **Unlocks first**.
+- Reorder the queue by hand using the up and down controls on each row. A move
+  that would put a course ahead of something it requires — or leave one behind
+  a course that requires it — is disabled rather than rejected after the fact,
+  and says which course is blocking it. Moving a course by hand switches the
+  ordering strategy to **As listed** and tells you it did.
 - Reconcile old saved plans with the live catalogue: courses that have since
   completed, started, or disappeared are removed and reported instead of being
   silently counted.
