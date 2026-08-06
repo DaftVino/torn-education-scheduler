@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Education Scheduler
 // @namespace    https://github.com/DaftVino/torn-education-scheduler
-// @version      1.1.0
-// @description  Plan Torn education with safe prerequisite queues, focus ordering, exact dates, degree/booster forecasts, perks, sharing, local saves, and diagnostics.
+// @version      1.2.0
+// @description  TORN PDA COMPATIBLE. Plan Torn education with safe prerequisite queues, focus ordering, exact dates, degree/booster forecasts, perks, sharing, local saves, and diagnostics.
 // @author       DaftVino
 // @license      MIT
 // @homepage     https://greasyfork.org/en/scripts/590070-torn-education-scheduler
@@ -10,7 +10,7 @@
 // @match        https://www.torn.com/page.php*
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @run-at       document-idle
+// @run-at       document-end
 // ==/UserScript==
 
 // @match cannot express a query string, so it is deliberately broader than the
@@ -28,8 +28,9 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '1.1.0';
+  const SCRIPT_VERSION = '1.2.0';
   const EDU_ENDPOINT = '/page.php?sid=educationInitData';
+  const FETCH_TIMEOUT_MS = 15000;
   const STORAGE_KEY = 'tes:plan';
   const SETTINGS_KEY = 'tes:settings';
   // The picker's "everything I have left" entry. A string, deliberately: it
@@ -1967,7 +1968,7 @@
   // token is required before any request goes out. When cookieString is not
   // supplied, the ambient cookie jar is read here (RUNTIME, not the engine) —
   // guarded so a realm with no such global cannot throw.
-  async function fetchEducationData(fetchImpl, cookieString) {
+  async function fetchEducationData(fetchImpl, cookieString, timeoutMs) {
     let cookies = cookieString;
     if (typeof cookies !== 'string') {
       try {
@@ -1993,43 +1994,70 @@
     // rendered panel, or storage.
     const url = `${EDU_ENDPOINT}&rfcv=${encodeURIComponent(token)}`;
 
-    let response;
-    try {
-      response = await doFetch(url, {
-        credentials: 'same-origin',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      });
-    } catch (e) {
+    const request = Promise.resolve().then(async function () {
+      let response;
+      try {
+        response = await doFetch(url, {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+      } catch (e) {
+        return { ok: false, reason: 'network', detail: String(e && e.message ? e.message : e) };
+      }
+
+      if (!response) return { ok: false, reason: 'network', detail: 'empty response' };
+      if (!response.ok) return { ok: false, reason: 'http', detail: `status ${response.status}` };
+
+      let text;
+      try {
+        text = await response.text();
+      } catch (e) {
+        return { ok: false, reason: 'network', detail: 'could not read response body' };
+      }
+
+      let raw;
+      try {
+        raw = JSON.parse(text);
+      } catch (e) {
+        // Never echo the response body. When Torn serves an HTML page here it is
+        // a logged-out or error page, and this repo has already found userID,
+        // logoutHash and a signed JWT inline in that markup. The size and type
+        // are enough to diagnose; the bytes are not ours to put on screen.
+        const shape = typeof text === 'string' ? `${text.length} bytes of non-JSON` : `a ${typeof text}`;
+        return { ok: false, reason: 'not-json', detail: `response was ${shape}` };
+      }
+
+      try {
+        return { ok: true, data: parsePayload(raw) };
+      } catch (e) {
+        return { ok: false, reason: (e && e.reason) || 'not-a-payload', detail: (e && e.message) || 'unknown parser failure' };
+      }
+    });
+
+    // Embedded webviews can leave a same-origin request pending indefinitely.
+    // Race the whole exchange, including body reading and parsing, so the
+    // existing React-fiber fallback gets a chance to answer. The rejection arm
+    // is attached before the race: an eventual late rejection is consumed and
+    // cannot surface as an unhandled rejection on Torn's page.
+    const limit = Number.isFinite(timeoutMs) && timeoutMs >= 0 ? timeoutMs : FETCH_TIMEOUT_MS;
+    let timeoutId = null;
+    const settledRequest = request.then(
+      function (value) { return { type: 'result', value: value }; },
+      function (error) { return { type: 'error', error: error }; }
+    );
+    const timeout = new Promise(function (resolve) {
+      timeoutId = setTimeout(function () { resolve({ type: 'timeout' }); }, limit);
+    });
+    const outcome = await Promise.race([settledRequest, timeout]);
+    if (timeoutId !== null) clearTimeout(timeoutId);
+    if (outcome.type === 'timeout') {
+      return { ok: false, reason: 'timeout', detail: 'education data request timed out' };
+    }
+    if (outcome.type === 'error') {
+      const e = outcome.error;
       return { ok: false, reason: 'network', detail: String(e && e.message ? e.message : e) };
     }
-
-    if (!response) return { ok: false, reason: 'network', detail: 'empty response' };
-    if (!response.ok) return { ok: false, reason: 'http', detail: `status ${response.status}` };
-
-    let text;
-    try {
-      text = await response.text();
-    } catch (e) {
-      return { ok: false, reason: 'network', detail: 'could not read response body' };
-    }
-
-    let raw;
-    try {
-      raw = JSON.parse(text);
-    } catch (e) {
-      // Never echo the response body. When Torn serves an HTML page here it is
-      // a logged-out or error page, and this repo has already found userID,
-      // logoutHash and a signed JWT inline in that markup. The size and type
-      // are enough to diagnose; the bytes are not ours to put on screen.
-      const shape = typeof text === 'string' ? `${text.length} bytes of non-JSON` : `a ${typeof text}`;
-      return { ok: false, reason: 'not-json', detail: `response was ${shape}` };
-    }
-
-    try {
-      return { ok: true, data: parsePayload(raw) };
-    } catch (e) {
-      return { ok: false, reason: (e && e.reason) || 'not-a-payload', detail: (e && e.message) || 'unknown parser failure' };
-    }
+    return outcome.value;
   }
 
   // React attaches its internals to DOM nodes under a key whose suffix is a
@@ -2172,9 +2200,15 @@
   }
 
   function isEducationPage() {
-    return typeof location !== 'undefined'
-      && location.pathname === '/page.php'
-      && /(\?|&)sid=education(&|$)/.test(location.search || '');
+    try {
+      if (typeof location === 'undefined'
+        || location.hostname !== 'www.torn.com'
+        || location.pathname !== '/page.php') return false;
+      const params = new URLSearchParams(location.search || '');
+      return params.get('sid') === 'education';
+    } catch (e) {
+      return false;
+    }
   }
 
   // Torn City Time is UTC+0, so these are the UTC getters and the instant is
@@ -2709,9 +2743,34 @@
   function findMountPoint(doc) {
     for (const selector of MOUNT_SELECTORS) {
       const el = doc.querySelector(selector);
-      if (el) return el;
+      // A React replacement can leave the old host reachable briefly. Mounting
+      // into a node explicitly known to be detached produces a panel that no
+      // player can see; DOM stubs and older webviews may omit isConnected, so
+      // only the definite false case is rejected.
+      if (el && el.isConnected !== false) return el;
     }
     return null;
+  }
+
+  function resolvePanelMount(doc) {
+    let mount = null;
+    let mountError = null;
+    try {
+      mount = findMountPoint(doc);
+    } catch (e) {
+      mountError = (e && e.message) || String(e);
+    }
+    if (!mount) mount = queryOne(doc, '#tes-fallback-mount');
+    if (!mount) {
+      try {
+        mount = doc.createElement('div');
+        mount.id = 'tes-fallback-mount';
+        doc.body.appendChild(mount);
+      } catch (e) {
+        return { mount: null, error: mountError || ((e && e.message) || String(e)) };
+      }
+    }
+    return { mount: mount, error: mountError };
   }
 
   // Injected once and left alone across redraws: the panel itself is torn
@@ -2755,6 +2814,10 @@
       '  --tes-gap-xs: 4px; --tes-gap-sm: 6px; --tes-gap: 8px; --tes-gap-lg: 14px;',
       '  --tes-focus-ring: 2px solid var(--tm-good-text);',
       '}',
+      '#tes-fallback-mount { position: fixed; right: 12px; bottom: 12px; z-index: 2147483647;',
+      '  box-sizing: border-box; width: min(720px, calc(100vw - 24px)); max-width: calc(100vw - 24px);',
+      '  max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; }',
+      '#tes-fallback-mount #tes-panel { min-width: 0; margin: 0; }',
       '#tes-panel { border: 1px solid var(--tm-border-2); background: var(--tm-bg); color: var(--tm-text);',
       // No 4px/8px step sums to 12px, so the outer margin is the one place a
       // token is a sum rather than a single step — this keeps the panel's
@@ -2897,6 +2960,19 @@
       // since one would reinstate for some users what removing it was for.
       '#tes-panel .tes-option-bachelor { color: var(--tm-good-text); }',
       '#tes-panel .tes-option-preset { color: var(--tm-accent-text); }',
+      '@media (max-width: 480px) {',
+      '  #tes-fallback-mount { right: 6px; bottom: 6px; width: calc(100vw - 12px); max-width: calc(100vw - 12px);',
+      '    max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); }',
+      '  #tes-panel { box-sizing: border-box; width: 100%; max-width: 100%; }',
+      '  #tes-panel .tes-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }',
+      '  #tes-panel .tes-nav .tes-settings { margin-left: 0; }',
+      '  #tes-panel .tes-nav button { min-width: 0; width: 100%; white-space: normal; }',
+      '  #tes-panel .tes-course-picker { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; }',
+      '  #tes-panel .tes-all-banner { grid-template-columns: minmax(0, 1fr); align-items: start; }',
+      '  #tes-panel .tes-all-title { overflow-wrap: normal; }',
+      '  #tes-panel .tes-all-figures { min-width: 0; justify-content: flex-start; text-align: left; }',
+      '  #tes-panel .tes-all-finish { white-space: normal; overflow-wrap: anywhere; }',
+      '}',
     ].join('\n');
   }
 
@@ -2958,11 +3034,13 @@
     title.textContent = VIEW_TITLES[view] || VIEW_TITLES.schedule;
     header.appendChild(title);
 
-    const toggle = doc.createElement('button');
-    toggle.className = 'tes-header-toggle';
-    toggle.textContent = model.collapsed ? 'show' : 'hide';
-    if (toggle.addEventListener) toggle.addEventListener('click', handlers.onToggle);
-    header.appendChild(toggle);
+    if (handlers !== noopHandlers) {
+      const toggle = doc.createElement('button');
+      toggle.className = 'tes-header-toggle';
+      toggle.textContent = model.collapsed ? 'show' : 'hide';
+      if (toggle.addEventListener) toggle.addEventListener('click', handlers.onToggle);
+      header.appendChild(toggle);
+    }
 
     panel.appendChild(header);
 
@@ -2982,6 +3060,11 @@
         failure.className = 'tes-error';
         failure.textContent = model.message;
         body.appendChild(failure);
+      } else if (model.status === 'loading') {
+        const loading = doc.createElement('div');
+        loading.className = 'tes-loading';
+        loading.textContent = model.message;
+        body.appendChild(loading);
       }
 
       // The view controls sit above the body so they keep their position as
@@ -3045,6 +3128,7 @@
       // say, so they are skipped rather than rendered empty.
       if (view === 'settings') renderSettingsView(doc, body, model, handlers);
       else if (model.status === 'error') { /* the failure line is the view */ }
+      else if (model.status === 'loading') { /* the loading line is the view */ }
       else if (view === 'grid') renderGridView(doc, body, model, handlers);
       else if (view === 'focus') renderFocusView(doc, body, model, handlers);
       else renderScheduleView(doc, body, model, handlers);
@@ -3272,7 +3356,7 @@
     // belief into a choice it just offered them.
     const orderNote = doc.createElement('div');
     orderNote.className = 'tes-note';
-    orderNote.textContent = 'Order does not change the finish date — courses run one at a time, so the total is the same either way. It changes how soon each course’s bonus starts paying off. It can also turn a queue with no date into one with a date: a queue whose courses are all valid but listed out of sequence can fail as-listed and succeed under the other two modes, which reorder to something followable.';
+    orderNote.textContent = "Order does not change the finish date — courses run one at a time, so the total is the same either way. It changes how soon each course's bonus starts paying off. It can also turn a queue with no date into one with a date: a queue whose courses are all valid but listed out of sequence can fail as-listed and succeed under the other two modes, which reorder to something followable.";
     planning.appendChild(orderNote);
 
     const recorded = settingsSection(
@@ -3302,7 +3386,7 @@
       link.setAttribute('href', FORUM_POST_URL);
       link.setAttribute('target', '_blank');
       link.setAttribute('rel', 'noopener noreferrer');
-      link.textContent = 'A beginner’s guide to education — which courses to take first, and why';
+      link.textContent = "A beginner's guide to education — which courses to take first, and why";
       guide.appendChild(link);
       const ask = doc.createElement('div');
       ask.className = 'tes-note';
@@ -3602,7 +3686,7 @@
     // the date with that rather than denying it.
     const overlap = doc.createElement('div');
     overlap.className = 'tes-note';
-    overlap.textContent = 'The dates overlap: each starts from today, as if you did that degree and nothing else, so they cannot be read as a sequence. The durations do add up — that is why doing all of them lands on the all-courses box’s date, years past any single degree.';
+    overlap.textContent = "The dates overlap: each starts from today, as if you did that degree and nothing else, so they cannot be read as a sequence. The durations do add up — that is why doing all of them lands on the all-courses box's date, years past any single degree.";
     body.appendChild(overlap);
 
     // Silent today: Torn keeps a course's prerequisites inside its own
@@ -3815,6 +3899,7 @@
     }
 
     const picker = doc.createElement('select');
+    picker.className = 'tes-course-picker';
     // A real <select> selects its first option, so whatever sits at the top is
     // what an unopened picker submits. That must not be "all 115 courses":
     // there is no bulk undo in this panel — removal is one course at a time —
@@ -3930,6 +4015,70 @@
   // re-render dropped our panel while the route never changed is the
   // bootstrap's job, in syncToRoute below.
   const NAV_INSTALLED_FLAG = '__tesNavInstalled';
+  const DOM_READY_POLL_MS = 50;
+  const DOM_READY_MAX_POLLS = 300;
+
+  function whenDocumentReady(doc, win, onReady) {
+    let finished = false;
+    let timer = null;
+    let polls = 0;
+
+    function hasUsableDom() {
+      try { return !!(doc && doc.documentElement && doc.body); }
+      catch (e) { return false; }
+    }
+
+    function cleanup() {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (doc && typeof doc.removeEventListener === 'function') {
+        doc.removeEventListener('DOMContentLoaded', check);
+      }
+      if (win && typeof win.removeEventListener === 'function') {
+        win.removeEventListener('load', check);
+      }
+    }
+
+    function finish() {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      try { onReady(); } catch (e) { /* startup failures must not escape onto Torn's page */ }
+    }
+
+    function check() {
+      if (finished) return;
+      if (hasUsableDom()) {
+        finish();
+        return;
+      }
+      if (polls >= DOM_READY_MAX_POLLS) {
+        finished = true;
+        cleanup();
+        return;
+      }
+      if (timer === null) {
+        polls += 1;
+        timer = setTimeout(function () {
+          timer = null;
+          check();
+        }, DOM_READY_POLL_MS);
+      }
+    }
+
+    if (doc && typeof doc.addEventListener === 'function') {
+      doc.addEventListener('DOMContentLoaded', check);
+    }
+    if (win && typeof win.addEventListener === 'function') win.addEventListener('load', check);
+    check();
+    return function stopWaiting() {
+      if (finished) return;
+      finished = true;
+      cleanup();
+    };
+  }
 
   function observeNavigation(doc, win, handlers) {
     if (!win || win[NAV_INSTALLED_FLAG]) return function () {};
@@ -3944,17 +4093,27 @@
     if (history) {
       for (const name of ['pushState', 'replaceState']) {
         if (typeof history[name] === 'function') {
-          originals[name] = history[name];
-          history[name] = function () {
-            const result = originals[name].apply(this, arguments);
+          const original = history[name];
+          const patched = function () {
+            const result = original.apply(this, arguments);
             notify();
             return result;
           };
+          // Some embedded webviews expose History methods as immutable native
+          // bindings. Treat patching as an optional signal: popstate and the
+          // MutationObserver still work, and initial mounting must never abort
+          // because assigning one of these properties throws in strict mode.
+          try {
+            history[name] = patched;
+            if (history[name] === patched) originals[name] = original;
+          } catch (e) { /* immutable PDA history method */ }
         }
       }
     }
 
-    if (typeof win.addEventListener === 'function') win.addEventListener('popstate', notify);
+    if (typeof win.addEventListener === 'function') {
+      try { win.addEventListener('popstate', notify); } catch (e) { /* optional navigation signal */ }
+    }
 
     let observer = null;
     const Observer = win.MutationObserver;
@@ -3967,9 +4126,13 @@
 
     return function disconnect() {
       if (history) {
-        for (const name of Object.keys(originals)) history[name] = originals[name];
+        for (const name of Object.keys(originals)) {
+          try { history[name] = originals[name]; } catch (e) { /* immutable after installation */ }
+        }
       }
-      if (typeof win.removeEventListener === 'function') win.removeEventListener('popstate', notify);
+      if (typeof win.removeEventListener === 'function') {
+        try { win.removeEventListener('popstate', notify); } catch (e) { /* already unavailable */ }
+      }
       if (observer && typeof observer.disconnect === 'function') observer.disconnect();
       win[NAV_INSTALLED_FLAG] = false;
     };
@@ -4002,6 +4165,12 @@
     };
   }
 
+  function loadingModel() {
+    const model = errorModel('Loading education data…');
+    model.status = 'loading';
+    return model;
+  }
+
   const noopHandlers = {
     onToggle: function () {}, onAdd: function () {}, onRemove: function () {}, onMove: function () {},
     onAddAll: function () {}, onAddPreset: function () {},
@@ -4030,10 +4199,6 @@
     const plan = loadPlan();
     let settings = loadSettings();
     let settingsSaveFailed = false;
-    // Two acquisition paths: the endpoint, then Torn's own React tree. The
-    // panel keeps calling this value fetchResult because buildPanelModel's
-    // contract has not changed — only where the data may have come from.
-    const fetchResult = await acquireEducationData(document);
 
     // The design requires the panel to be visible even when Torn's markup
     // does not match any known mount selector, rather than rendering
@@ -4044,30 +4209,36 @@
     // load. An unguarded throw here becomes an unhandled rejection and the page
     // goes blank with no hint why — the same failure draw()'s try/catch below
     // already exists to prevent, so the discipline extends to this phase too.
-    let mount = null;
-    let mountError = null;
+    let mountResult = resolvePanelMount(document);
+    let mount = mountResult.mount;
+    let mountError = mountResult.error;
+    if (!mount) return null;
+
+    // Give PDA and slow connections an immediate, visible execution signal.
+    // The inert shell writes no storage and offers no navigation controls; the
+    // same mount is redrawn with real data and handlers after acquisition.
     try {
-      mount = findMountPoint(document);
-    } catch (e) {
-      mountError = (e && e.message) || String(e);
-      mount = null;
-    }
-    if (!mount) {
-      try {
-        mount = document.createElement('div');
-        mount.id = 'tes-fallback-mount';
-        mount.style.position = 'fixed';
-        mount.style.bottom = '12px';
-        mount.style.right = '12px';
-        mount.style.zIndex = '2147483647';
-        document.body.appendChild(mount);
-      } catch (e) {
-        // There is nowhere left to draw, so there is no way to show this in
-        // the panel. Returning null is the honest end of the line: the host
-        // document is unusable and rejecting would only blank the page.
-        return null;
+      if (mountError !== null) {
+        return renderPanel(document, mount,
+          errorModel(`Education Scheduler could not read the page: ${mountError}`), noopHandlers);
       }
+      renderPanel(document, mount, loadingModel(), noopHandlers);
+    } catch (e) {
+      return null;
     }
+
+    // Two acquisition paths: the endpoint, then Torn's own React tree. The
+    // panel keeps calling this value fetchResult because buildPanelModel's
+    // contract has not changed — only where the data may have come from.
+    const fetchResult = await acquireEducationData(document);
+
+    // Torn may replace its content host while the request is in flight. Resolve
+    // the live host again so the final panel never lands in a detached tree;
+    // resolvePanelMount reuses the owned fallback instead of stacking another.
+    mountResult = resolvePanelMount(document);
+    if (!mountResult.mount) return null;
+    mount = mountResult.mount;
+    mountError = mountResult.error;
 
     // Prefill only where the decomposition is provably unique, and only into
     // fields the player has not already answered — null means "has not said",
@@ -4402,7 +4573,7 @@
             if (!data) { importError = 'No course data loaded, so a plan cannot be checked.'; draw(currentPlan, saveFailed === true); return; }
             const decoded = decodePlan(text, data.courses);
             if (!decoded.ok) {
-              importError = `Couldn’t import that plan (${decoded.reason}: ${decoded.detail}).`;
+              importError = `Couldn't import that plan (${decoded.reason}: ${decoded.detail}).`;
               draw(currentPlan, saveFailed === true);
               return;
             }
@@ -4502,6 +4673,12 @@
     return queryOne(document, '#tes-panel') !== null;
   }
 
+  function shouldMoveFallbackInline() {
+    if (queryOne(document, '#tes-fallback-mount') === null) return false;
+    try { return findMountPoint(document) !== null; }
+    catch (e) { return false; }
+  }
+
   function startMount() {
     // The generation this render belongs to. init() awaits the network, and
     // the player can leave the education page while it does; a render that
@@ -4555,7 +4732,7 @@
     if (inFlight > 0) return;
     // The common case by far: the observer fired for something that has
     // nothing to do with us.
-    if (mounted && panelPresent()) return;
+    if (mounted && panelPresent() && !shouldMoveFallbackInline()) return;
     // Either we have just arrived, or a React re-render of the container we
     // mounted into dropped our panel while the route never changed. Both are
     // fixed by mounting again — under a cap, because a page we cannot draw
@@ -4577,6 +4754,11 @@
     pending = setTimeout(function () { pending = null; syncToRoute(); }, 150);
   }
 
-  observeNavigation(document, window, { onRouteChange: scheduleSync });
-  syncToRoute();
+  whenDocumentReady(document, window, function () {
+    // Draw first. Navigation hooks are resilience for later SPA transitions,
+    // not a prerequisite for the current page; a PDA-specific hook failure
+    // must not suppress the one mount the player is waiting to see.
+    syncToRoute();
+    observeNavigation(document, window, { onRouteChange: scheduleSync });
+  });
 })();

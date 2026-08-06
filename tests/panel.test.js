@@ -363,6 +363,8 @@ test('the picker groups all five addable guide presets before all remaining and 
   const model = exports.buildPanelModel(state);
   const panel = exports.renderPanel(doc, mount, model, noopHandlers);
   const picker = panel.children[1].children.find((c) => c.tagName === 'select');
+  assert.strictEqual(picker.className, 'tes-course-picker',
+    'the course picker has no mobile-safe styling hook');
 
   // First is the inert placeholder — see the untouched-picker test above for
   // what sitting at the top of a <select> actually means.
@@ -1408,6 +1410,30 @@ test('findMountPoint uses prefix matching and tolerates absence', () => {
   assert.ok(!selectors.some((s) => /___[A-Za-z0-9]{4,}/.test(s)), 'must not use a full hashed class name');
 });
 
+test('findMountPoint rejects a host Torn has already detached', () => {
+  const { exports } = loadUserscript({ location: { search: '' } });
+  const detached = { isConnected: false };
+  const doc = {
+    querySelector(selector) {
+      return selector === '[class*="educationPage___"]' ? detached : null;
+    },
+  };
+  assert.strictEqual(exports.findMountPoint(doc), null);
+});
+
+test('the loading model renders a visible inert shell', () => {
+  const { exports } = loadUserscript({ location: { search: '' } });
+  assert.strictEqual(typeof exports.loadingModel, 'function');
+  const doc = makeFakeDocument();
+  const mount = doc.createElement('div');
+  const panel = exports.renderPanel(doc, mount, exports.loadingModel(), exports.noopHandlers);
+  assert.match(allText(panel), /loading education data/i);
+  assert.ok(!descendants(panel).some((node) => node.className === 'tes-nav'),
+    'the loading shell exposed controls with no live data');
+  assert.ok(!descendants(panel).some((node) => node.tagName === 'button'),
+    'the loading shell exposed a dead button');
+});
+
 test('init() renders a draw() that threw inside the panel instead of blanking the page', async () => {
   // The last untested safety net in the file. init() is async, so an unguarded
   // throw out of draw() is an unhandled rejection: no panel, no message, and a
@@ -1429,16 +1455,16 @@ test('init() renders a draw() that threw inside the panel instead of blanking th
   const mount = doc.createElement('div');
   doc.selectors['[class*="educationPage___"]'] = mount;
 
-  // `mount.appendChild(panel)` is the last statement in renderPanel, so the
-  // throw lands inside draw()'s try after a complete, otherwise-successful
-  // render — which is the realistic shape of the failure. It fails ONCE: the
-  // catch re-renders through this same mount, and a permanently exploding
+  // The first append is the new loading shell. `mount.appendChild(panel)` is
+  // the last statement in renderPanel, so the SECOND append throws inside the
+  // final draw() after a complete, otherwise-successful render. It fails once:
+  // the catch re-renders through this same mount, and a permanently exploding
   // mount would take the safety net down with it and prove nothing about it.
   let appendCalls = 0;
   const realAppend = mount.appendChild.bind(mount);
   mount.appendChild = function (child) {
     appendCalls += 1;
-    if (appendCalls === 1) throw new Error('mount exploded');
+    if (appendCalls === 2) throw new Error('mount exploded');
     return realAppend(child);
   };
 
@@ -1451,13 +1477,13 @@ test('init() renders a draw() that threw inside the panel instead of blanking th
   // Resolves rather than rejects: the whole point of the net.
   await exports.init();
 
-  assert.strictEqual(appendCalls, 2, 'the catch did not re-render exactly once through the same mount');
+  assert.strictEqual(appendCalls, 3, 'loading, final draw, and one catch redraw did not use the same mount');
   assert.strictEqual(
     doc.querySelector('#tes-fallback-mount'), null,
     'init() fell back to its own mount, so the exploding one was never the mount under test',
   );
 
-  const panel = mount.children.find((c) => c.id === 'tes-panel');
+  const panel = mount.children.find((c) => c.id === 'tes-panel' && !c.removed);
   assert.ok(panel, 'nothing was drawn after the throw — this is the blank page the catch exists to prevent');
 
   const body = panel.children[1];

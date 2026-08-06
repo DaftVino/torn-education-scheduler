@@ -185,6 +185,30 @@ test('acquireEducationData falls through to the fiber when the fetch fails', asy
   assert.strictEqual(result.data.courses.size, 131);
 });
 
+test('acquireEducationData falls through to fiber when the endpoint times out', async () => {
+  const payload = loadFixture();
+  const node = { nodeType: 1 };
+  node['__reactFiber$abc123'] = { memoizedProps: { data: payload } };
+  const doc = {
+    readyState: 'complete',
+    cookie: 'rfc_v=abcdefghijklm',
+    querySelector: () => null,
+    querySelectorAll: () => [node],
+    createElement: () => ({ style: {}, setAttribute() {}, appendChild() {}, addEventListener() {}, dataset: {} }),
+    body: { appendChild() {} },
+  };
+  const loaded = loadUserscript({
+    document: doc,
+    fetch: () => new Promise(() => {}),
+  });
+  const pending = loaded.exports.acquireEducationData(doc);
+  loaded.advanceTimersBy(loaded.exports.FETCH_TIMEOUT_MS);
+  const result = await pending;
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.source, 'fiber');
+  assert.strictEqual(result.data.courses.size, 131);
+});
+
 test('acquireEducationData prefers the fetch and never consults the fiber on success', async () => {
   const payload = loadFixture();
   let fiberTouched = false;

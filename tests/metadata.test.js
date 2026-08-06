@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
+const vm = require('node:vm');
 const { loadUserscript, SOURCE_PATH } = require('./load-userscript');
 
 test('harness can load the userscript and reach its internals', () => {
@@ -104,6 +105,25 @@ test('@match and @grant are exactly the declared security surface', () => {
   assert.strictEqual(/^\/\/ @connect/m.test(src), false, '@connect must not be present');
 });
 
+test('@run-at is document-end for Torn PDA compatibility', () => {
+  const src = fs.readFileSync(SOURCE_PATH, 'utf8');
+  const runAt = [...src.matchAll(/^\/\/ @run-at\s+(\S+)$/gm)].map((m) => m[1]);
+  assert.deepStrictEqual(runAt, ['document-end']);
+});
+
+test('Torn PDA quote normalization cannot corrupt the userscript syntax', () => {
+  const src = fs.readFileSync(SOURCE_PATH, 'utf8');
+  assert.doesNotMatch(src, /[“”‘’]/,
+    'typographic quotes are rewritten across the complete source by Torn PDA');
+  // Torn PDA's UserScriptsProvider.adaptSource() performs these replacements
+  // across the complete source before wrapping and injecting it.
+  const adapted = `(function() {${src}}());`
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
+  assert.doesNotThrow(() => new vm.Script(adapted),
+    'Torn PDA converted a typographic quote inside a string into invalid JavaScript');
+});
+
 test('@downloadURL and @updateURL are absent, and stay that way', () => {
   // There is no deploy target — the release is a tag plus the raw file URL —
   // so neither directive belongs here. Both are correctly absent today; this
@@ -115,15 +135,21 @@ test('@downloadURL and @updateURL are absent, and stay that way', () => {
 
 test('the education page guard accepts only the education page', () => {
   const cases = [
-    ['?sid=education', true],
-    ['?sid=education&foo=1', true],
-    ['?foo=1&sid=education', true],
-    ['?sid=educationInitData', false],
-    ['?sid=bookie', false],
-    ['', false],
+    [{ search: '?sid=education' }, true],
+    [{ search: '?sid=education&foo=1' }, true],
+    [{ search: '?foo=1&sid=education' }, true],
+    [{ search: '?sid=educationInitData' }, false],
+    [{ search: '?sid=education-extra' }, false],
+    [{ search: '?sid=bookie' }, false],
+    [{ search: '' }, false],
+    [{ hostname: 'torn.com' }, false],
+    [{ hostname: 'www.torn.com.evil.example' }, false],
+    [{ pathname: '/loader.php' }, false],
+    [{ pathname: undefined }, false],
+    [{ hostname: undefined }, false],
   ];
-  for (const [search, expected] of cases) {
-    const { exports } = loadUserscript({ location: { search } });
-    assert.strictEqual(exports.isEducationPage(), expected, `search=${search}`);
+  for (const [location, expected] of cases) {
+    const { exports } = loadUserscript({ location });
+    assert.strictEqual(exports.isEducationPage(), expected, `location=${JSON.stringify(location)}`);
   }
 });

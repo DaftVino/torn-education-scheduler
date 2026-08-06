@@ -104,6 +104,11 @@ function makeFakeDocument(options) {
       appendChild(child) { this.children.push(child); return child; },
       setAttribute(name, val) { this.attributes[name] = val; this[name] = val; },
       addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
+      removeEventListener(type, fn) {
+        const list = this.listeners[type] || [];
+        const i = list.indexOf(fn);
+        if (i !== -1) list.splice(i, 1);
+      },
       remove() { this.removed = true; },
     };
     if (tag === 'select') defineSelectValue(el);
@@ -131,7 +136,14 @@ function makeFakeDocument(options) {
       return null;
     },
     querySelectorAll() { return []; },
-    addEventListener() {},
+    listeners: {},
+    addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
+    removeEventListener(type, fn) {
+      const list = this.listeners[type] || [];
+      const i = list.indexOf(fn);
+      if (i !== -1) list.splice(i, 1);
+    },
+    fire(type) { for (const fn of (this.listeners[type] || []).slice()) fn({ type }); },
     body: body,
     registry: registry,
     // Always present and mutable, so a test can register an element it had to

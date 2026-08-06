@@ -55,6 +55,23 @@ function makeFakeDocument() {
   return sharedFakeDocument({ cookie: 'rfc_v=abcdefghijklm' });
 }
 
+function makeIncompleteDocument() {
+  const doc = makeFakeDocument();
+  const body = doc.body;
+  const documentElement = doc.documentElement;
+  doc.readyState = 'loading';
+  doc.body = null;
+  doc.documentElement = null;
+  return {
+    doc,
+    reveal() {
+      doc.body = body;
+      doc.documentElement = documentElement;
+      doc.readyState = 'complete';
+    },
+  };
+}
+
 // A document that throws on every query but can still build and hold elements:
 // exactly the case findMountPoint's try/catch exists for, and the only case in
 // which the "could not read the page" error can be shown at all.
@@ -176,6 +193,158 @@ test('the bootstrap installs the navigation observer exactly once on load', () =
   assert.strictEqual((win.listeners.popstate || []).length, 1, 'the bootstrap did not install a popstate listener');
 });
 
+test('a PDA webview with immutable history methods still performs the initial mount', async () => {
+  const history = {};
+  Object.defineProperties(history, {
+    pushState: { value() {}, writable: false, enumerable: true },
+    replaceState: { value() {}, writable: false, enumerable: true },
+  });
+  const doc = makeFakeDocument();
+  const loaded = loadUserscript({ document: doc, fetch: okFetch, history });
+  await flush();
+
+  assert.ok(doc.querySelector('#tes-panel'),
+    'patching immutable PDA history aborted bootstrap before the first panel');
+  assert.strictEqual((loaded.win.listeners.popstate || []).length, 1,
+    'the safer navigation signals were not installed after history patching failed');
+  assert.strictEqual(loaded.observers.length, 1,
+    'the MutationObserver fallback was not installed after history patching failed');
+});
+
+test('PDA bootstrap waits for body and documentElement, then mounts without a route signal', async () => {
+  const incomplete = makeIncompleteDocument();
+  let fetches = 0;
+  const loaded = loadUserscript({
+    document: incomplete.doc,
+    fetch: async () => { fetches += 1; return okFetch(); },
+  });
+  await flush();
+  assert.strictEqual(fetches, 0, 'bootstrap acquired data before the PDA DOM existed');
+  assert.strictEqual(loaded.observers.length, 0, 'navigation observer installed without a root');
+
+  incomplete.reveal();
+  incomplete.doc.fire('DOMContentLoaded');
+  await flush();
+
+  assert.strictEqual(fetches, 1, 'DOM readiness did not trigger exactly one initial acquisition');
+  assert.strictEqual(loaded.observers.length, 1, 'navigation observer was not installed after readiness');
+  assert.ok(incomplete.doc.querySelector('#tes-panel'), 'the panel did not mount after the PDA DOM arrived');
+
+  incomplete.doc.fire('DOMContentLoaded');
+  loaded.win.fire('load');
+  await flush();
+  assert.strictEqual(fetches, 1, 'duplicate readiness signals mounted twice');
+  assert.strictEqual(loaded.observers.length, 1, 'duplicate readiness signals installed two observers');
+});
+
+test('PDA bootstrap polling recovers when load already fired before injection', async () => {
+  const incomplete = makeIncompleteDocument();
+  incomplete.doc.readyState = 'complete';
+  let fetches = 0;
+  const loaded = loadUserscript({
+    document: incomplete.doc,
+    fetch: async () => { fetches += 1; return okFetch(); },
+  });
+  await flush();
+  assert.strictEqual(fetches, 0);
+
+  incomplete.reveal();
+  loaded.advanceTimersBy(50);
+  await flush();
+
+  assert.strictEqual(fetches, 1, 'bounded polling did not recover the late-injected DOM');
+  assert.ok(incomplete.doc.querySelector('#tes-panel'));
+});
+
+test('PDA DOM waiting stops cleanly when no usable document ever appears', async () => {
+  const incomplete = makeIncompleteDocument();
+  let fetches = 0;
+  const loaded = loadUserscript({
+    document: incomplete.doc,
+    fetch: async () => { fetches += 1; return okFetch(); },
+  });
+  loaded.advanceTimersBy(15000);
+  await flush();
+
+  assert.strictEqual(fetches, 0);
+  assert.strictEqual(loaded.pendingTimerCount(), 0, 'DOM readiness left an unbounded polling timer');
+  assert.strictEqual((incomplete.doc.listeners.DOMContentLoaded || []).length, 0,
+    'DOMContentLoaded listener survived terminal readiness timeout');
+  assert.strictEqual((loaded.win.listeners.load || []).length, 0,
+    'load listener survived terminal readiness timeout');
+  assert.strictEqual(loaded.observers.length, 0);
+});
+
+test('a loading shell is visible while education acquisition is pending', async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const doc = makeFakeDocument();
+  const loaded = loadUserscript({
+    document: doc,
+    fetch: async () => { await held; return okFetch(); },
+  });
+  await flush();
+
+  const loadingPanel = doc.querySelector('#tes-panel');
+  assert.ok(loadingPanel, 'no shell appeared while the request was pending');
+  assert.match(collectText(loadingPanel).join(' '), /loading education data/i);
+
+  release();
+  await flush();
+  const finalPanel = doc.querySelector('#tes-panel');
+  assert.ok(finalPanel, 'the loading shell was not replaced by the final panel');
+  assert.doesNotMatch(collectText(finalPanel).join(' '), /loading education data/i);
+});
+
+test('the final panel follows a Torn host replacement during loading', async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const doc = makeFakeDocument();
+  const firstHost = doc.createElement('div');
+  firstHost.isConnected = true;
+  doc.selectors['[class*="educationPage___"]'] = firstHost;
+  loadUserscript({ document: doc, fetch: async () => { await held; return okFetch(); } });
+  await flush();
+  assert.ok(firstHost.children.some((child) => child.id === 'tes-panel' && !child.removed),
+    'loading shell did not use the initial education host');
+
+  const replacementHost = doc.createElement('div');
+  replacementHost.isConnected = true;
+  firstHost.isConnected = false;
+  doc.selectors['[class*="educationPage___"]'] = replacementHost;
+  release();
+  await flush();
+
+  assert.ok(replacementHost.children.some((child) => child.id === 'tes-panel' && !child.removed),
+    'final panel stayed in Torn\'s detached host');
+  assert.ok(!firstHost.children.some((child) => child.id === 'tes-panel' && !child.removed),
+    'a live loading shell remained in the detached host');
+});
+
+test('a fallback panel moves into Torn page flow when the inline host arrives late', async () => {
+  const doc = makeFakeDocument();
+  let fetches = 0;
+  const loaded = loadUserscript({
+    document: doc,
+    fetch: async () => { fetches += 1; return okFetch(); },
+  });
+  await flush();
+  assert.ok(doc.querySelector('#tes-fallback-mount'), 'the initial fallback did not mount');
+
+  const inlineHost = doc.createElement('div');
+  inlineHost.isConnected = true;
+  doc.selectors['[class*="educationPage___"]'] = inlineHost;
+  loaded.observers[0].cb([], loaded.observers[0]);
+  loaded.runTimers();
+  await flush();
+
+  assert.strictEqual(doc.querySelector('#tes-fallback-mount'), null,
+    'the fixed fallback remained after Torn provided an inline host');
+  assert.ok(inlineHost.children.some((child) => child.id === 'tes-panel' && !child.removed),
+    'the panel did not move into Torn page flow');
+  assert.strictEqual(fetches, 2, 'moving inline did not perform exactly one fresh acquisition');
+});
+
 test('arriving at the education page without a reload mounts the panel', async () => {
   const doc = makeFakeDocument();
   // Loaded somewhere else in Torn: @run-at document-idle has already fired and
@@ -292,7 +461,9 @@ test('a mount whose render lands after the player has left does not orphan the p
   const doc = makeFakeDocument();
   const { win, runTimers } = loadUserscript({ document: doc, fetch: heldFetch });
   await flush();
-  assert.strictEqual(doc.querySelector('#tes-panel'), null, 'the panel drew before the fetch resolved');
+  const loadingPanel = doc.querySelector('#tes-panel');
+  assert.ok(loadingPanel, 'the loading shell did not draw before the fetch resolved');
+  assert.match(collectText(loadingPanel).join(' '), /loading education data/i);
 
   win.location.search = '?sid=crimes';
   win.fire('popstate');
