@@ -1,5 +1,11 @@
 # Torn Education Scheduler
 
+> ## 📱 TORN PDA COMPATIBLE
+>
+> Runs in the **Torn PDA** app as well as desktop Tampermonkey. The planner
+> lays out for narrow mobile screens, and the panel appears reliably under
+> PDA's own userscript engine.
+
 A Tampermonkey userscript that turns Torn's education page into a complete,
 live education planner. Build a prerequisite-safe course queue, choose which
 benefits to earn first, compare degree paths, and see exactly when the plan
@@ -106,9 +112,20 @@ do not alter Torn or spend any items.
 
 ## Install
 
+### Desktop
+
 1. Install [Tampermonkey](https://www.tampermonkey.net/).
 2. Install [Torn Education Scheduler from Greasy Fork](https://greasyfork.org/en/scripts/590070-torn-education-scheduler).
 3. Visit <https://www.torn.com/page.php?sid=education>.
+
+### Torn PDA (mobile)
+
+1. Add the script through Torn PDA's own userscript manager, using the same
+   [Greasy Fork](https://greasyfork.org/en/scripts/590070-torn-education-scheduler)
+   listing.
+2. Open the Education page in the app.
+
+No separate mobile build exists — the same file runs in both places.
 
 The scheduler appears in a themed, collapsible panel on the Education page.
 

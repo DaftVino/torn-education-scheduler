@@ -4,7 +4,7 @@ The one gate the harness cannot run. `/qa` and `/browse` are off for this repo
 (`CLAUDE.md`): the app under test is a third-party site behind a real login, so
 every case here is run by hand, in a real browser, signed into a real account.
 
-553 automated tests pass against a scrubbed fixture. Everything below exists
+611 automated tests pass against a scrubbed fixture. Everything below exists
 because a fixture cannot prove it: the live DOM, Torn's real React tree,
 Tampermonkey's sandbox, and whether the words on screen are true.
 
@@ -88,6 +88,9 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 ## Setup
 
 - Install the raw `torn-education-scheduler.user.js` in Tampermonkey.
+- **Torn PDA:** install with injection time set to **END**. Confirm its script
+  permissions retain `GM_getValue` and `GM_setValue`; no new page-context or
+  storage permission is required.
 - Storage is two keys, `tes:plan` and `tes:settings`. The script holds only
   `GM_setValue`/`GM_getValue` — there is no `GM_deleteValue` — so **reset state
   from Tampermonkey's dashboard → the script → Storage tab**, not the console.
@@ -111,6 +114,13 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 | A7 | Sit on the education page for 5+ minutes without navigating | Panel stays. `MAX_MOUNT_ATTEMPTS = 20` never decays, so a long dwell while Torn re-renders is the realistic exhaustion path — a panel that vanishes after minutes of idling is this bug, and it is a **known watch item, not yet fixed**. |
 | A8 | Collapse the panel, reload the page | Still collapsed. `collapsed` is a standing preference and does persist. |
 | A9 | Switch to Degrees, reload the page | Back on **Schedule**. The view is deliberately *not* persisted — Schedule after a reload is correct, not a bug. |
+| A10 | In Torn PDA with injection set to **END**, open Education directly | The panel first shows a loading shell, then its data. No blank interval, console error, or duplicate panel. |
+| A11 | In Torn PDA, enter Education from another Torn page without reloading | The panel mounts after the SPA route change; leaving Education removes it. Repeat several times and confirm exactly one panel. |
+| A12 | Simulate or reproduce late injection in Torn PDA (resume the app, then open Education after Torn has already loaded) | The panel appears without requiring another navigation. This covers readiness events that fired before the userscript arrived. |
+| A13 | With no usable inline education host temporarily available, inspect the panel on Torn PDA | The owned fallback is visible, connected to `body`, fits the viewport, and does not cover its own controls. Once the inline host appears, the panel returns to page flow without duplication. |
+| A14 | Check the fallback in portrait and landscape | Width stays within the viewport, content scrolls internally when needed, and controls remain reachable above mobile navigation/overlays. |
+| A15 | Install the exact distribution in Torn PDA and open Education directly | The script parses and the loading shell appears. This is the live guard against Torn PDA's `UserScriptsProvider.adaptSource` normalizing typographic quotation marks before injection; a parse error means the source is not ASCII-quote-safe. |
+| A16 | In Torn PDA portrait, visit Schedule, Focus, and Settings and use the nav/reset/defaults controls | Navigation is a contained two-column grid. Buttons wrap within the panel, stay tappable, and neither `reset` nor `defaults` causes horizontal overflow. |
 
 ## B. Data acquisition and the fiber fallback
 
@@ -123,6 +133,9 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 | B5 | Block the endpoint **and** confirm the fallback fails (e.g. on a Torn layout with no matching fiber) | A visible failure line naming the failure. Never a blank panel, never a silent `undefined`. |
 | B6 | Unblock, reload | Recovers on its own. |
 | B7 | Open Torn's own in-game clock (or any page that shows Torn City Time) next to the panel's finish line, e.g. `2026-08-04 · 21:00 TCT` | The two agree. This is the one thing only a live account can prove — a fixture has no live clock to check against — and the spec that introduced the split date/time/TCT label explicitly demands this comparison. |
+| B8 | On Torn PDA, throttle the education endpoint beyond 15 seconds | The loading shell remains visible through the wait, then the existing Fiber fallback supplies the same data if Torn's React tree is available. |
+| B9 | On Torn PDA, work offline or block the endpoint and make the Fiber path unavailable | A visible, actionable acquisition failure appears; there is never a blank panel or an endlessly silent loading state. Restore connectivity and confirm a retry/reload recovers. |
+| B10 | Complete A10–B9, reload or background/resume Torn PDA, and return to Education | The saved queue, settings, and collapsed preference persist exactly as on desktop. |
 
 ## C. Schedule view
 
@@ -130,6 +143,7 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 |---|---|---|
 | C1 | Open the course picker on a fresh account | The inert placeholder comes first. A visible **Guide presets** group follows with exactly `0-Start Here`, `1-Fighting`, `2-Crime`, `3-Trader / collector`, and `4-Undecided`, then all remaining and the individual courses. Presets render blue (`#6ea3d0`); tier-3 courses remain green (`#7ee081`) with no `[bachelor]` text. |
 | C1a | Same picker, on macOS specifically | The OS commonly ignores `<option>` colours. The **Guide presets** optgroup label must still distinguish the five routes even if their blue and bachelor green are absent. Confirm selection and add still work. On Windows/Linux Chrome or Firefox, confirm presets are blue and bachelors independently remain green. |
+| C1c | In Torn PDA portrait and landscape, open the course picker | The select stays within the panel width, never creates horizontal page/panel overflow, and remains usable with long preset or course labels. |
 | C1b | Complete, activate, or queue every remaining course in one preset | That preset disappears instead of remaining as an unselectable row. Other presets stay in numeric order; when no preset has work left, the empty **Guide presets** group also disappears. |
 | C2 | Look at the picker's **first** option before touching anything | The "all remaining courses" sentinel must not be sitting there as the browser's default selection — a stray `add` click would queue everything with no bulk undo. This was a real bug; confirm the fix held in a real `<select>`. |
 | C2a | Add `0-Start Here`, then add `1-Fighting` | The foundation appears once only. Fighting contributes its remaining Sports Science courses; no duplicate course appears. |
@@ -162,6 +176,7 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 |---|---|---|
 | E1 | Open Degrees at normal panel width | **Twelve divided rows, one per category, arranged in two columns.** Above the list, before it in reading order, a compact full-width banner titled **"all remaining courses"** uses the width horizontally: label left; existing small count/duration followed by the larger finish date on one wrapping line to the right. There are no degree cards or retired `.tes-grid`/`.tes-cell` elements. |
 | E1a | Confirm the banner's position, then narrow the panel | The banner renders **before** `.tes-degree-list` in the DOM. The twelve rows reflow to one column without clipping, horizontal scrolling or truncated text. |
+| E1b | In Torn PDA portrait, inspect the all-remaining banner | Its label, figures, and finish date stack cleanly inside the panel, with readable wrapping and no clipped or off-screen content. |
 | E2 | Read the dates across rows | Every row starts from **today**, independently. Eleven degrees finishing in 2026 beside an all-courses banner in 2029 is **expected**, not a bug — confirm the on-screen caveat says so clearly. |
 | E3 | Read the note about durations summing | It claims the boxes add up. Against today's catalogue that is true; confirm the sentence is present and reads honestly. |
 | E4 | Check a row for a category holding two tier-3 courses | No degree name in the identity (it would be false of both). A missing label here is correct. |

@@ -124,6 +124,50 @@ test('it never rejects, whatever the transport does', async () => {
   }
 });
 
+test('a request that never settles resolves as a non-sensitive timeout', async () => {
+  const loaded = loadUserscript({ location: { search: '' } });
+  assert.ok(Number.isFinite(loaded.exports.FETCH_TIMEOUT_MS), 'the production timeout is not exported');
+  const pending = loaded.exports.fetchEducationData(() => new Promise(() => {}), COOKIE, 25);
+  loaded.advanceTimersBy(25);
+  const result = await Promise.race([
+    pending,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('adapter stayed pending')), 100)),
+  ]);
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.reason, 'timeout');
+  assert.strictEqual(result.detail, 'education data request timed out');
+  assert.doesNotMatch(result.detail, /rfcv|abc123|educationInitData/i);
+});
+
+test('a request that settles before its deadline clears the timeout', async () => {
+  const loaded = loadUserscript({ location: { search: '' } });
+  const result = await loaded.exports.fetchEducationData(fetchReturning(loadFixture()), COOKIE, 25);
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(loaded.pendingTimerCount(), 0, 'the successful request left its timeout armed');
+});
+
+test('a late rejection after timeout is consumed', async () => {
+  let rejectFetch;
+  const loaded = loadUserscript({ location: { search: '' } });
+  const rejections = [];
+  const onUnhandled = (reason) => { rejections.push(reason); };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const pending = loaded.exports.fetchEducationData(
+      () => new Promise((_, reject) => { rejectFetch = reject; }), COOKIE, 25
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    loaded.advanceTimersBy(25);
+    const result = await pending;
+    assert.strictEqual(result.reason, 'timeout');
+    rejectFetch(new Error('late network failure'));
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+  assert.deepStrictEqual(rejections, [], 'late fetch rejection escaped after timeout');
+});
+
 test('a non-JSON response never puts the response body on screen', async () => {
   const { exports } = loadUserscript();
   const secret = '<!doctype html><script>var logoutHash="deadbeefcafe";</script>';

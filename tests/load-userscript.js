@@ -63,11 +63,11 @@ const EXPORT_NAMES = [
   // consumables: the Books ceiling, the floor date, and what it costs
   'SECONDS_PER_BOOK', 'SECONDS_PER_JOB_POINT', 'booksCeiling', 'planConsumables', 'formatMoney',
   // adapter
-  'fetchEducationData',
+  'FETCH_TIMEOUT_MS', 'fetchEducationData',
   // acquisition
   'looksLikePayload', 'searchForPayload', 'newWalkState', 'fiberRootsFrom', 'readFiberEducationData', 'acquireEducationData',
   // panel
-  'formatDate', 'formatTime', 'formatDuration', 'buildPanelModel', 'findMountPoint', 'renderPanel', 'init',
+  'formatDate', 'formatTime', 'formatDuration', 'buildPanelModel', 'loadingModel', 'findMountPoint', 'renderPanel', 'init',
   // panel stylesheet — test-only, so a rule's colour can be asserted without
   // a DOM to read the injected <style> element back out of
   'panelStyleText',
@@ -79,7 +79,7 @@ const EXPORT_NAMES = [
   // reset control (arm/confirm), wired into schedule/focus/settings' nav row
   'resetButton',
   // navigation
-  'unmountPanel', 'observeNavigation',
+  'unmountPanel', 'observeNavigation', 'whenDocumentReady',
   // debug report and published guide links
   // isResolvedUrl remains with the two URLs it guards (§ K1), so a future
   // placeholder cannot accidentally render as a real link.
@@ -146,8 +146,10 @@ function makeSandbox(options = {}) {
     hash: '',
   };
 
+  const documentListeners = {};
   const documentStub = {
     readyState: 'complete',
+    documentElement: {},
     querySelector: () => null,
     querySelectorAll: () => [],
     createElement: () => ({
@@ -155,14 +157,21 @@ function makeSandbox(options = {}) {
       setAttribute() {}, appendChild() {}, addEventListener() {},
       children: [], dataset: {},
     }),
-    addEventListener: () => {},
+    addEventListener(type, fn) { (documentListeners[type] = documentListeners[type] || []).push(fn); },
+    removeEventListener(type, fn) {
+      const list = documentListeners[type] || [];
+      const i = list.indexOf(fn);
+      if (i !== -1) list.splice(i, 1);
+    },
+    fire(type) { for (const fn of (documentListeners[type] || []).slice()) fn({ type }); },
+    listeners: documentListeners,
     body: { appendChild() {} },
   };
 
   // A real listener registry, not a no-op: observeNavigation() installs a
   // popstate listener and history patches, and the navigation tests have to be
   // able to fire them. `fire` is the test-side trigger.
-  const historyStub = {
+  const historyStub = options.history || {
     pushState() {}, replaceState() {},
   };
   const observers = [];
@@ -185,14 +194,33 @@ function makeSandbox(options = {}) {
     },
   };
 
-  // Timers are recorded rather than run: the bootstrap debounces route changes
-  // through setTimeout, so a test needs to decide when that deadline arrives.
+  // Deterministic timers. PDA readiness, navigation debounce and endpoint
+  // timeout use materially different delays; treating them as one undated bag
+  // lets a navigation test accidentally fire a network timeout too.
   let nextTimerId = 1;
+  let timerNow = 0;
   const timers = new Map();
   const runTimers = () => {
-    const due = Array.from(timers.values());
-    timers.clear();
-    for (const fn of due) if (typeof fn === 'function') fn();
+    if (timers.size === 0) return;
+    const nextDue = Math.min(...Array.from(timers.values(), (timer) => timer.due));
+    timerNow = Math.max(timerNow, nextDue);
+    const due = Array.from(timers.entries())
+      .filter(([, timer]) => timer.due <= timerNow)
+      .sort((a, b) => a[1].due - b[1].due || a[0] - b[0]);
+    for (const [id, timer] of due) {
+      timers.delete(id);
+      if (typeof timer.fn === 'function') timer.fn();
+    }
+  };
+  const advanceTimersBy = (ms) => {
+    const target = timerNow + Math.max(0, Number(ms) || 0);
+    while (timers.size > 0) {
+      const nextDue = Math.min(...Array.from(timers.values(), (timer) => timer.due));
+      if (nextDue > target) break;
+      timerNow = nextDue;
+      runTimers();
+    }
+    timerNow = target;
   };
 
   const sandbox = {
@@ -204,22 +232,31 @@ function makeSandbox(options = {}) {
     document: options.document || documentStub,
     fetch: windowStub.fetch,
     MutationObserver: windowStub.MutationObserver,
-    setTimeout: (fn) => { const id = nextTimerId++; timers.set(id, fn); return id; },
+    setTimeout: (fn, delay) => {
+      const id = nextTimerId++;
+      timers.set(id, { fn, due: timerNow + Math.max(0, Number(delay) || 0) });
+      return id;
+    },
     clearTimeout: (id) => { timers.delete(id); },
     setInterval: () => 0,
     clearInterval: () => {},
     GM_setValue: (k, v) => { gmStore.set(k, v); },
     GM_getValue: (k, d) => (gmStore.has(k) ? gmStore.get(k) : d),
-    URL, Blob: class {}, JSON, Math, Object, Array, Promise, Map, Set, Error,
+    URL, URLSearchParams, Blob: class {}, JSON, Math, Object, Array, Promise, Map, Set, Error,
   };
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
 
-  return { sandbox, gmStore, setNow: (ms) => { currentNow = ms; }, win: windowStub, observers, runTimers };
+  return {
+    sandbox, gmStore, setNow: (ms) => { currentNow = ms; }, win: windowStub,
+    observers, runTimers, advanceTimersBy, pendingTimerCount: () => timers.size,
+  };
 }
 
 function loadUserscript(options = {}) {
-  const { sandbox, gmStore, setNow, win, observers, runTimers } = makeSandbox(options);
+  const {
+    sandbox, gmStore, setNow, win, observers, runTimers, advanceTimersBy, pendingTimerCount,
+  } = makeSandbox(options);
   const context = vm.createContext(sandbox);
   vm.runInContext(buildInstrumentedSource(options), context, { filename: 'torn-education-scheduler.user.js' });
   if (sandbox.__TES_ERR__) throw sandbox.__TES_ERR__;
@@ -313,6 +350,8 @@ function loadUserscript(options = {}) {
     win,
     observers,
     runTimers,
+    advanceTimersBy,
+    pendingTimerCount,
     gmStore,
     setNow,
     transform: transformFromVM,

@@ -4,6 +4,31 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-06
+
+**TORN PDA COMPATIBLE.** The scheduler now runs inside the Torn PDA app as well
+as desktop Tampermonkey, and the panel lays out for narrow mobile screens. It is
+the same file in both places — there is no separate mobile build, and nothing
+about the arithmetic, stored plans, or security surface changed.
+
+### Changed
+
+- Hardened Torn PDA startup: the scheduler now starts at document end, guards
+  the Torn education route explicitly, waits safely for a usable DOM, shows a
+  loading shell before acquisition, and keeps a responsive owned fallback when
+  Torn's inline host is unavailable. The actual PDA launch failure was a source
+  parse error: its `UserScriptsProvider.adaptSource` normalizes typographic
+  quotation marks before injection, which turned curly apostrophes in
+  single-quoted JavaScript strings into invalid syntax. The distributed source
+  now uses ASCII-only quotes, protected by a regression test. The existing
+  endpoint-first, Fiber-fallback data acquisition order, calculations, and GM
+  storage/security model are unchanged.
+
+- Corrected the Torn PDA mobile layout: planner navigation uses a contained
+  two-column grid, the course picker cannot outgrow the panel, and the
+  all-remaining banner stacks its figures and finish date cleanly on narrow
+  screens. Manual Torn PDA recheck remains required.
+
 ## [1.1.0] - 2026-08-06
 
 ### Added

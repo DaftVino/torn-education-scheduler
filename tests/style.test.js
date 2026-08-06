@@ -179,6 +179,37 @@ test('buttons clear a 44px touch target', () => {
   assert.match(css(), /#tes-panel button[^}]*padding:\s*8px 12px/);
 });
 
+test('the owned fallback fits a narrow dynamic mobile viewport', () => {
+  const text = css();
+  assert.match(text, /#tes-fallback-mount\s*\{[^}]*position:\s*fixed/);
+  assert.match(text, /#tes-fallback-mount[^}]*box-sizing:\s*border-box/);
+  assert.match(text, /#tes-fallback-mount[^}]*max-width:\s*calc\(100vw\s*-\s*24px\)/);
+  assert.match(text, /#tes-fallback-mount[^}]*max-height:\s*calc\(100vh\s*-\s*24px\)[^}]*max-height:\s*calc\(100dvh\s*-\s*24px\)/);
+  assert.match(text, /#tes-fallback-mount[^}]*overflow-y:\s*auto/);
+  assert.match(text, /@media\s*\(max-width:\s*480px\)[\s\S]*#tes-fallback-mount/);
+
+  const panelRoot = /#tes-panel\s*\{([^}]*)\}/.exec(text)?.[1] || '';
+  assert.doesNotMatch(panelRoot, /position:\s*fixed|max-height:\s*calc\(100d?vh/,
+    'the inline desktop panel inherited fallback-only viewport positioning');
+});
+
+test('PDA navigation, course picker, and all-courses banner reflow inside the panel', () => {
+  const text = css();
+  const mobile = text.slice(text.indexOf('@media (max-width: 480px)'));
+  assert.match(mobile, /\.tes-nav\s*\{[^}]*display:\s*grid[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    'the five-button nav cannot wrap into a bounded mobile grid');
+  assert.match(mobile, /\.tes-nav \.tes-settings\s*\{[^}]*margin-left:\s*0/,
+    'the desktop auto margin still pushes settings/reset outside the panel');
+  assert.match(mobile, /\.tes-nav button\s*\{[^}]*min-width:\s*0[^}]*width:\s*100%/,
+    'mobile nav buttons retain their intrinsic width');
+  assert.match(mobile, /\.tes-course-picker\s*\{[^}]*box-sizing:\s*border-box[^}]*width:\s*100%[^}]*min-width:\s*0/,
+    'the native course select can grow wider than the panel');
+  assert.match(mobile, /\.tes-all-banner\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    'the aggregate title is still squeezed beside its figures');
+  assert.match(mobile, /\.tes-all-figures\s*\{[^}]*justify-content:\s*flex-start[^}]*text-align:\s*left/,
+    'stacked aggregate figures keep desktop right alignment');
+});
+
 test('ratio() agrees with contrast pairs that have a known exact answer', () => {
   // Two anchors, because one grey pair and one chromatic pair catch different
   // failure modes in ratio() — neither substitutes for the other.
