@@ -31,11 +31,37 @@ const IN_PROGRESS_COMPLETES_AT = 1767225600;
 
 if (!existsSync(RAW)) {
   console.error(`no raw capture at ${RAW}`);
-  console.error('capture one from the education page console, then re-run:');
-  console.error("  fetch('/page.php?sid=educationInitData').then(r=>r.json()).then(d=>{");
-  console.error("    const a=document.createElement('a');");
-  console.error("    a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,1)]));");
-  console.error("    a.download='educationInitData.json'; a.click()})");
+  console.error('On Torn\'s education page, paste this whole block into DevTools Console:');
+  console.error(String.raw`(async () => {
+  const cookieValue = name => {
+    const part = document.cookie.split(';').map(item => item.trim())
+      .find(item => item.startsWith(name + '='));
+    return part ? part.slice(name.length + 1) : null;
+  };
+  const token = cookieValue('rfc_v') || cookieValue('rfc_id');
+  if (!token) throw new Error('No rfc_v or rfc_id cookie found; reload the education page');
+  const response = await fetch(
+    '/page.php?sid=educationInitData&rfcv=' + encodeURIComponent(token),
+    {
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    },
+  );
+  const data = await response.json();
+  if (!response.ok || data.success !== true) {
+    throw new Error(data.error || ('Education request failed: HTTP ' + response.status));
+  }
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], {
+    type: 'application/json',
+  }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'educationInitData.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  console.log('Downloaded educationInitData.json');
+})().catch(console.error);`);
+  console.error('Move the download to tests/fixtures/raw/educationInitData.json, then re-run.');
   process.exit(1);
 }
 

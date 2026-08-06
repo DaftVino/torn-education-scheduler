@@ -27,6 +27,7 @@ test('the token block declares every colour, type, spacing and focus token', () 
   const block = tokenBlock(css());
   for (const name of ['--tm-bg', '--tm-border-2', '--tm-text', '--tm-muted', '--tm-meta',
     '--tm-good-text', '--tm-bad-text', '--tes-text', '--tes-text-sm',
+    '--tm-accent-text',
     '--tes-gap', '--tes-gap-lg', '--tes-focus-ring']) {
     assert.ok(block.includes(name), `missing token ${name}`);
   }
@@ -196,7 +197,7 @@ test('every -text token clears WCAG AA against the panel background', () => {
   const block = tokenBlock(css());
   const val = (name) => (new RegExp(`${name}\\s*:\\s*(#[0-9a-fA-F]{3,6})`).exec(block) || [])[1];
   const bg = val('--tm-bg');
-  for (const name of ['--tm-text', '--tm-muted', '--tm-meta', '--tm-good-text', '--tm-bad-text']) {
+  for (const name of ['--tm-text', '--tm-muted', '--tm-meta', '--tm-good-text', '--tm-bad-text', '--tm-accent-text']) {
     const r = ratio(val(name), bg);
     assert.ok(r >= 4.5, `${name} is ${r.toFixed(2)}:1 against --tm-bg, below AA's 4.5:1`);
   }

@@ -164,7 +164,7 @@ test('an error model still has an addable array', () => {
   assert.deepStrictEqual(model.addable, []);
 });
 
-const noopHandlers = { onToggle() {}, onAdd() {}, onRemove() {}, onPickerChange() {} };
+const noopHandlers = { onToggle() {}, onAdd() {}, onAddAll() {}, onAddPreset() {}, onRemove() {}, onPickerChange() {} };
 
 test('renderPanel injects the style element once and does not duplicate it across draws', () => {
   const { exports, state } = okState([]);
@@ -356,7 +356,7 @@ test('adding a course already in the queue does not duplicate it or its prerequi
   assert.strictEqual(new Set(afterSecond).size, afterSecond.length);
 });
 
-test('the picker offers the all-remaining entry second and marks the bachelors', () => {
+test('the picker groups all five addable guide presets before all remaining and marks bachelors separately', () => {
   const { exports, state } = okState([]);
   const doc = makeFakeDocument();
   const mount = doc.createElement('div');
@@ -367,14 +367,21 @@ test('the picker offers the all-remaining entry second and marks the bachelors',
   // First is the inert placeholder — see the untouched-picker test above for
   // what sitting at the top of a <select> actually means.
   assert.strictEqual(picker.children[0].value, '');
-  const all = picker.children[1];
+  const group = picker.children[1];
+  assert.strictEqual(group.tagName, 'optgroup');
+  assert.strictEqual(group.label, 'Guide presets');
+  assert.deepStrictEqual(group.children.map((option) => option.textContent), [
+    '0-Start Here', '1-Fighting', '2-Crime', '3-Trader / collector', '4-Undecided',
+  ]);
+  assert.ok(group.children.every((option) => option.className === 'tes-option-preset'));
+  const all = picker.children[2];
   assert.strictEqual(all.value, exports.ALL_COURSES_OPTION, 'the all-remaining entry is buried');
   // Unabbreviated on purpose (see the comment above formatDuration): the
   // picker is prose, not a dense readout, and matches the all-remaining
   // banner's own title rather than the grid's "crs". This assertion pins
   // that decision, not an oversight lagging behind the grid's abbreviation.
   assert.match(all.textContent, /all remaining courses \(115\)/);
-  assert.strictEqual(picker.children.length, model.addable.length + 2);
+  assert.strictEqual(picker.children.length, model.addable.length + 3);
   // The marker has to survive into the option the player actually reads, not
   // just the model: no text prefix any more (owner decision), so the class
   // is what carries it — see the "bachelor colour" test below for the rule
@@ -411,6 +418,71 @@ test('the bachelor colour is the finish-line green', () => {
   assert.match(exports.panelStyleText(), /\.tes-option-bachelor[^}]*var\(--tm-good-text\)/);
 });
 
+test('guide presets use blue text and never the bachelor green', () => {
+  const { exports } = okState([]);
+  const css = exports.panelStyleText();
+  assert.match(css, /\.tes-option-preset[^}]*var\(--tm-accent-text\)/);
+  assert.doesNotMatch(css, /\.tes-option-preset[^}]*var\(--tm-good-text\)/);
+  assert.match(css, /--tm-accent-text:\s*#6ea3d0/);
+});
+
+test('a guide preset dispatches by key before numeric course conversion', () => {
+  const { exports, state } = okState([]);
+  const doc = makeFakeDocument();
+  let presetKey = null;
+  let numeric = null;
+  const handlers = {
+    onToggle() {}, onRemove() {}, onPickerChange() {}, onAddAll() {},
+    onAdd: (id) => { numeric = id; },
+    onAddPreset: (key) => { presetKey = key; },
+  };
+  const body = exports.renderPanel(doc, doc.createElement('div'), exports.buildPanelModel(state), handlers).children[1];
+  const picker = body.children.find((child) => child.tagName === 'select');
+  picker.value = exports.GUIDE_PRESETS[1].value;
+  const add = body.children.find((child) => child.textContent === 'add');
+  for (const fn of add.listeners.click) fn();
+  assert.strictEqual(presetKey, 'fighting');
+  assert.strictEqual(numeric, null);
+});
+
+test('guide presets disappear when all their work is represented', () => {
+  const { exports, state } = okState([]);
+  const data = state.fetchResult.data;
+  state.plan.queue = exports.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
+  const model = exports.buildPanelModel(state);
+  assert.deepStrictEqual(model.guidePresets, []);
+
+  const doc = makeFakeDocument();
+  const panel = exports.renderPanel(doc, doc.createElement('div'), model, noopHandlers);
+  const picker = panel.children[1].children.find((child) => child.tagName === 'select');
+  assert.ok(!picker.children.some((child) => child.tagName === 'optgroup'));
+});
+
+test('one fully completed preset disappears while presets with work remain', () => {
+  const { exports, state } = okState([]);
+  const data = state.fetchResult.data;
+  data.completedIds = new Set();
+  data.activeCourse = null;
+  for (const course of data.courses.values()) course.status = 'available';
+  const foundation = exports.expandGuidePreset(
+    'foundation', data.completedIds, data.courses, data.activeCourse, []
+  );
+  assert.strictEqual(foundation.ok, true);
+  for (const id of foundation.courseIds) data.completedIds.add(id);
+
+  const model = exports.buildPanelModel(state);
+  assert.deepStrictEqual(model.guidePresets.map((preset) => preset.label), [
+    '1-Fighting', '2-Crime', '3-Trader / collector', '4-Undecided',
+  ]);
+  const doc = makeFakeDocument();
+  const panel = exports.renderPanel(doc, doc.createElement('div'), model, noopHandlers);
+  const picker = panel.children[1].children.find((child) => child.tagName === 'select');
+  const group = picker.children.find((child) => child.tagName === 'optgroup');
+  assert.deepStrictEqual(group.children.map((option) => option.textContent), [
+    '1-Fighting', '2-Crime', '3-Trader / collector', '4-Undecided',
+  ]);
+});
+
 // The failure this guards is not hypothetical: a browser selects the first
 // option, so before the placeholder existed an untouched picker submitted the
 // all-remaining sentinel, and a stray click on `add` queued the whole
@@ -437,7 +509,8 @@ test('an untouched picker submits nothing, not every remaining course', () => {
   assert.strictEqual(picker.value, '', 'an untouched picker is already on a real option');
   assert.notStrictEqual(picker.value, exports.ALL_COURSES_OPTION);
   // Still near the top, so it stays discoverable without scrolling 115 entries.
-  assert.strictEqual(picker.children[1].value, exports.ALL_COURSES_OPTION);
+  assert.strictEqual(picker.children[1].tagName, 'optgroup');
+  assert.strictEqual(picker.children[2].value, exports.ALL_COURSES_OPTION);
 
   const addButton = body.children.find((c) => c.textContent === 'add');
   for (const fn of addButton.listeners.click) fn();
@@ -452,6 +525,7 @@ test('an empty addable list offers no all-remaining entry to click', () => {
   const model = {
     status: 'ok', message: null, reductionLabel: '40% off',
     queue: [], addable: [], stale: [], problems: [],
+    guidePresets: [],
     finishLabel: null, totalLabel: null, collapsed: false,
     saveError: false, selectedCourseId: null,
     settings: { orderMode: 'as-listed' },
@@ -464,7 +538,8 @@ test('an empty addable list offers no all-remaining entry to click', () => {
   const panel = exports.renderPanel(doc, mount, model, handlers);
   const body = panel.children[1];
   const picker = body.children.find((c) => c.tagName === 'select');
-  assert.deepStrictEqual(picker.children.map((c) => c.value), [''], 'nothing is addable, so nothing may be offered');
+  assert.deepStrictEqual(picker.children.map((c) => c.tagName), ['option']);
+  assert.ok(!picker.children.some((child) => child.value === exports.ALL_COURSES_OPTION));
   const addButton = body.children.find((c) => c.textContent === 'add');
   for (const fn of (addButton.listeners.click || [])) fn();
   assert.strictEqual(addedAll, false, 'onAddAll fired with nothing to add');
@@ -1087,6 +1162,34 @@ test('editing a settings field stores it, and a rejected value falls back to its
   assert.strictEqual(stored().maxCooldownHours, 12, 'one bad field reset an unrelated good one');
 });
 
+test('changing max cooldown redraws the floor arithmetic and its cooldown descriptor together', async () => {
+  const { doc, stored } = await initWithFixture(undefined, { queue: [38], collapsed: false });
+  const floorText = () => {
+    const row = descendants(doc.querySelector('#tes-panel'))
+      .find((node) => node.className === 'tes-booster-row'
+        && descendants(node).some((child) => child.textContent === 'Maximum Books floor'));
+    assert.ok(row, 'the maximum-Books floor is missing');
+    return descendants(row).map((node) => node.textContent || '').join(' ');
+  };
+
+  const before = floorText();
+  assert.match(before, /48hr CD/);
+  const beforeBooks = Number(before.match(/(\d+) Books/)[1]);
+
+  const cooldown = fieldFor(openSettings(doc), 'Max booster cooldown (hours)');
+  cooldown.value = '24';
+  fire(cooldown, 'change');
+  assert.strictEqual(stored().maxCooldownHours, 24);
+
+  const nav = descendants(doc.querySelector('#tes-panel')).find((node) => node.className === 'tes-nav');
+  fire(nav.children.find((button) => /schedule/i.test(button.textContent)), 'click');
+  const after = floorText();
+  assert.match(after, /24hr CD/);
+  assert.doesNotMatch(after, /48hr CD/);
+  assert.notStrictEqual(Number(after.match(/(\d+) Books/)[1]), beforeBooks,
+    'the descriptor changed but the floor calculation did not');
+});
+
 test('changing a perk field leaves the schedule reduction read from Torn unchanged', async () => {
   const { doc, stored } = await initWithFixture();
   const reductionLine = () => descendants(doc.querySelector('#tes-panel'))
@@ -1382,6 +1485,7 @@ function state(overrides) {
 function handlers() {
   return {
     onToggle() {}, onAdd() {}, onRemove() {}, onAddAll() {},
+    onAddPreset() {},
     onPickerChange() {}, onViewChange() {},
     onSettingChange() {}, onToggleDebugReport() {}, onCopyDebugReport() {},
     onImportPlan() {},
@@ -1423,6 +1527,117 @@ async function bootInit(seedPlan, seedSettings) {
   const result = await initWithFixture(seedSettings, seedPlan);
   return { x: result.exports, doc: result.doc, gmStore: result.gmStore };
 }
+
+function freshRouteFixture() {
+  const fixture = loadFixture();
+  for (const category of fixture.categories) {
+    for (const course of category.courses) course.status = 'available';
+  }
+  fixture.activeCourse = null;
+  return fixture;
+}
+
+function courseInFixture(fixture, prefix) {
+  for (const category of fixture.categories) {
+    const found = category.courses.find((course) => course.prefix === prefix);
+    if (found) return found;
+  }
+  return null;
+}
+
+function chooseGuidePreset(doc, x, key) {
+  const body = doc.querySelector('#tes-panel').children[1];
+  const picker = body.children.find((child) => child.tagName === 'select');
+  const preset = x.GUIDE_PRESETS.find((candidate) => candidate.key === key);
+  picker.value = preset.value;
+  fire(picker, 'change');
+  const add = body.children.find((child) => child.textContent === 'add');
+  fire(add, 'click');
+}
+
+test('a guide preset stores its complete followable route including the foundation', async () => {
+  const fixture = freshRouteFixture();
+  const { exports: x, doc, gmStore } = await initWithFixture(undefined, undefined, fixture);
+  chooseGuidePreset(doc, x, 'fighting');
+  const stored = JSON.parse(gmStore.get(x.STORAGE_KEY)).queue;
+  const data = x.parsePayload(fixture);
+  const expected = x.expandGuidePreset('fighting', data.completedIds, data.courses, data.activeCourse, []);
+  assert.strictEqual(expected.ok, true);
+  assert.deepStrictEqual(stored, expected.courseIds);
+  assert.strictEqual(stored.length, 12);
+  assert.deepStrictEqual(x.validateQueue(stored, new Set(), data.courses), []);
+});
+
+test('Start Here then Fighting is duplicate-free, preserves the existing front, and changes no settings', async () => {
+  const fixture = freshRouteFixture();
+  const { exports: x, doc, gmStore } = await initWithFixture({
+    orderMode: 'focus', focuses: [{ category: 'Working Stats', selection: 'intelligence' }],
+  }, undefined, fixture);
+  const settingsBefore = gmStore.get(x.SETTINGS_KEY);
+  chooseGuidePreset(doc, x, 'foundation');
+  const start = JSON.parse(gmStore.get(x.STORAGE_KEY)).queue;
+  chooseGuidePreset(doc, x, 'fighting');
+  const combined = JSON.parse(gmStore.get(x.STORAGE_KEY)).queue;
+  const data = x.parsePayload(fixture);
+  const direct = x.expandGuidePreset('fighting', data.completedIds, data.courses, null, []).courseIds;
+  assert.deepStrictEqual(combined.slice(0, start.length), start);
+  assert.deepStrictEqual(combined, direct);
+  assert.strictEqual(new Set(combined).size, combined.length);
+  assert.strictEqual(gmStore.get(x.SETTINGS_KEY), settingsBefore);
+
+  const planBeforeNoop = gmStore.get(x.STORAGE_KEY);
+  chooseGuidePreset(doc, x, 'fighting');
+  assert.strictEqual(gmStore.get(x.STORAGE_KEY), planBeforeNoop, 'a represented preset rewrote the plan');
+});
+
+test('a preset sentinel survives picker state across redraws', async () => {
+  const fixture = freshRouteFixture();
+  const { exports: x, doc } = await initWithFixture(undefined, undefined, fixture);
+  const pickerIn = () => doc.querySelector('#tes-panel').children[1].children.find((child) => child.tagName === 'select');
+  const fighting = x.GUIDE_PRESETS.find((preset) => preset.key === 'fighting');
+  const picker = pickerIn();
+  picker.value = fighting.value;
+  fire(picker, 'change');
+  for (let i = 0; i < 2; i += 1) {
+    const toggle = doc.querySelector('#tes-panel').children[0].children[1];
+    fire(toggle, 'click');
+  }
+  assert.strictEqual(pickerIn().value, fighting.value);
+});
+
+test('a missing preset target adds nothing, names the failure, and clears after a valid add', async () => {
+  const fixture = freshRouteFixture();
+  const bio = courseInFixture(fixture, 'BIO1340');
+  for (const category of fixture.categories) {
+    category.courses = category.courses.filter((course) => course.prefix !== 'SPT3510');
+  }
+  const seed = { queue: [bio.id], collapsed: false };
+  const { exports: x, doc, gmStore } = await initWithFixture(undefined, seed, fixture);
+  const before = gmStore.get(x.STORAGE_KEY);
+  chooseGuidePreset(doc, x, 'fighting');
+  assert.strictEqual(gmStore.get(x.STORAGE_KEY), before, 'a partial route reached storage');
+  let error = descendants(doc.querySelector('#tes-panel')).find((child) => child.className === 'tes-error');
+  assert.ok(error);
+  assert.match(error.textContent, /1-Fighting/);
+  assert.match(error.textContent, /SPT3510/);
+
+  chooseGuidePreset(doc, x, 'foundation');
+  error = descendants(doc.querySelector('#tes-panel')).find((child) => child.className === 'tes-error');
+  assert.strictEqual(error, undefined);
+  const after = JSON.parse(gmStore.get(x.STORAGE_KEY)).queue;
+  assert.strictEqual(after[0], bio.id);
+  assert.strictEqual(new Set(after).size, after.length);
+});
+
+test('a preset save failure uses the existing visible save-error path', async () => {
+  const fixture = freshRouteFixture();
+  const { exports: x, doc, sandbox, gmStore } = await initWithFixture(undefined, undefined, fixture);
+  sandbox.GM_setValue = () => { throw new Error('storage blocked'); };
+  chooseGuidePreset(doc, x, 'foundation');
+  assert.strictEqual(gmStore.get(x.STORAGE_KEY), undefined);
+  const saveError = descendants(doc.querySelector('#tes-panel')).find((child) => child.className === 'tes-save-error');
+  assert.ok(saveError);
+});
 
 test('the nav row offers the focus view and titles it', () => {
   const { x } = load();
@@ -2597,7 +2812,7 @@ test('resetting settings leaves the queue alone', async () => {
   fire(findReset(), 'click');
   assert.deepStrictEqual(JSON.parse(gmStore.get(x.STORAGE_KEY)).queue, [34, 35],
     'the settings reset must not touch the stored queue');
-  assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 24,
+  assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 48,
     'the settings reset must actually restore the default, not silently no-op');
 });
 

@@ -6,7 +6,8 @@
   "description": "Development tooling for the Torn Education Scheduler userscript. Not shipped; adds no runtime dependencies.",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:syntax": "node --check torn-education-scheduler.user.js"
+    "test:syntax": "node --check torn-education-scheduler.user.js",
+    "verify:forum": "node scripts/verify-forum-post.js"
   },
   "devDependencies": {},
   "license": "MIT"

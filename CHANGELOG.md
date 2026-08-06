@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+
+- **Five beginner-guide route presets in the Schedule course picker** —
+  `0-Start Here`, `1-Fighting`, `2-Crime`, `3-Trader / collector` and
+  `4-Undecided`, grouped under a `Guide presets` heading above the course list.
+  Each loads a published route in one step instead of course-by-course, and the
+  leading numbers keep them in the order the guide follows. A preset whose
+  courses you have already queued or completed is hidden rather than offered as
+  a no-op.
+
+### Changed
+
+- The maximum-Books floor now defaults to a 48-hour booster cooldown. Its
+  descriptor states the cooldown used immediately after the cost (for example,
+  `48hr CD`) and stays synchronized if the setting is changed.
+
 ## [1.0.1] - 2026-08-05
 
 **Update if you installed 1.0.0.** Two different builds went out under that
