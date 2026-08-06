@@ -9,7 +9,6 @@ const {
   ROUTE_CODES,
   buildForumPostReport,
   compareRawCatalogue,
-  verifyForumPostDraft,
 } = require('../scripts/forum-post-data');
 
 test('the shipped guide presets match the editorial route definitions', () => {
@@ -75,11 +74,8 @@ test('the fresh raw catalogue comparator ignores account state but catches catal
   assert.throws(() => compareRawCatalogue(raw, report.rawFixture), /catalogue differs/);
 });
 
-test('the paste-ready BBCode contains the verified facts without naming other articles', () => {
-  const report = buildForumPostReport();
-  const draft = fs.readFileSync(path.join(__dirname, '..', 'docs', 'forum-post.md'), 'utf8');
-  assert.doesNotThrow(() => verifyForumPostDraft(draft, report));
-});
+// The draft itself is untracked (see .gitignore), so it cannot be asserted on
+// here — `npm run verify:forum` checks a local copy against this same report.
 
 test('the printed capture recipe carries both Torn request requirements', () => {
   const recipe = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'scrub-fixture.mjs'), 'utf8');

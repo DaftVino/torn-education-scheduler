@@ -36,3 +36,12 @@ tests/fixtures/*.html
 # content, kept locally for reference and removed from history before the repo
 # went public (see docs/designs/v0.2.0-scope.md).
 docs/initial-spec.md
+
+# The beginner's-guide forum post and its working papers. Editorial content
+# authored for Torn's forums, not part of the userscript — kept local so the
+# published version lives on the forum rather than in two places. The route
+# figures it quotes are still tested, via scripts/forum-post-data.js; only the
+# prose draft is untracked. Verify a local draft with `npm run verify:forum`.
+docs/forum-post.md
+docs/designs/forum-post-plan.md
+docs/Torn-Education-Beginner-Guide-proofing.docx
