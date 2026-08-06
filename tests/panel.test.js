@@ -164,7 +164,7 @@ test('an error model still has an addable array', () => {
   assert.deepStrictEqual(model.addable, []);
 });
 
-const noopHandlers = { onToggle() {}, onAdd() {}, onAddAll() {}, onAddPreset() {}, onRemove() {}, onPickerChange() {} };
+const noopHandlers = { onToggle() {}, onAdd() {}, onAddAll() {}, onAddPreset() {}, onRemove() {}, onMove() {}, onPickerChange() {} };
 
 test('renderPanel injects the style element once and does not duplicate it across draws', () => {
   const { exports, state } = okState([]);
@@ -1333,6 +1333,48 @@ test('the ordering the player chose is the order the panel renders', async () =>
   assert.deepStrictEqual(renderedQueueIds(unlocks.doc), [88, 1, 112, 63], 'the chosen ordering never reached the rendered queue');
 });
 
+test('a manual move materialises the visible order, switches to As listed, and persists', async () => {
+  const loaded = await initWithFixture(
+    { orderMode: 'shortest-first' },
+    { queue: [38, 39, 40], collapsed: false },
+  );
+  const { doc, gmStore, exports } = loaded;
+  assert.deepStrictEqual(renderedQueueIds(doc), [39, 38, 40],
+    'the automatic mode did not create a distinct visible order for the test');
+
+  const rows = descendants(doc.querySelector('#tes-panel'))
+    .filter((el) => el.className === 'tes-queue-row');
+  const down = rows[1].children[0].children[1];
+  assert.notStrictEqual(down.disabled, true, 'the independent neighbouring courses cannot be swapped');
+  fire(down, 'click');
+
+  assert.deepStrictEqual(JSON.parse(gmStore.get(exports.STORAGE_KEY)).queue, [39, 40, 38]);
+  assert.strictEqual(JSON.parse(gmStore.get(exports.SETTINGS_KEY)).orderMode, 'as-listed');
+  assert.deepStrictEqual(renderedQueueIds(doc), [39, 40, 38],
+    'the manually moved queue was immediately sorted back into place');
+  const notice = descendants(doc.querySelector('#tes-panel'))
+    .find((el) => el.className === 'tes-note tes-queue-notice');
+  assert.ok(notice, 'the automatic setting change was not explained');
+  assert.match(notice.textContent, /changed to As listed/i);
+});
+
+test('a disabled prerequisite move has no click handler and writes nothing', async () => {
+  const loaded = await initWithFixture(
+    { orderMode: 'as-listed' },
+    { queue: [22, 26, 32], collapsed: false },
+  );
+  const { doc, gmStore, exports } = loaded;
+  const before = gmStore.get(exports.STORAGE_KEY);
+  const rows = descendants(doc.querySelector('#tes-panel'))
+    .filter((el) => el.className === 'tes-queue-row');
+  const blockedDown = rows[0].children[0].children[1];
+  assert.strictEqual(blockedDown.disabled, true);
+  assert.deepStrictEqual(blockedDown.listeners.click || [], []);
+  fire(blockedDown, 'click');
+  assert.strictEqual(gmStore.get(exports.STORAGE_KEY), before);
+  assert.deepStrictEqual(renderedQueueIds(doc), [22, 26, 32]);
+});
+
 test('the ordering control says on screen that it does not change the finish date', async () => {
   // The one claim this feature must not be left to imply. Ordering changes
   // time-to-benefit, not the total — courses run one at a time, so the total is
@@ -1484,7 +1526,7 @@ function state(overrides) {
 // about the nav row, so they need a handler set renderPanel treats as live.
 function handlers() {
   return {
-    onToggle() {}, onAdd() {}, onRemove() {}, onAddAll() {},
+    onToggle() {}, onAdd() {}, onRemove() {}, onMove() {}, onAddAll() {},
     onAddPreset() {},
     onPickerChange() {}, onViewChange() {},
     onSettingChange() {}, onToggleDebugReport() {}, onCopyDebugReport() {},
@@ -2376,9 +2418,46 @@ test('a queue row is a compact two-line entry with identity before metadata', ()
   assert.match(main.textContent, /^[A-Z0-9]+ · /, 'the identity line does not lead with the course prefix');
   assert.doesNotMatch(main.textContent, /\bfin\b|days|hrs|wks/, 'timing leaked onto the identity line');
   assert.match(detail.textContent, / · fin .* · /, 'metadata does not use the chosen middle-dot sequence');
-  const remove = row.children.find((c) => c.tagName === 'button');
+  const remove = row.children.find((c) => c.className === 'tes-remove-course');
   assert.ok(remove, 'remove button missing from the row');
   assert.strictEqual(remove.dataset.courseId, '38', 'the remove action lost its course id');
+});
+
+test('queue rows start with two touching ghost-chevron buttons and expose their move state', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const model = x.buildPanelModel(state({ queue: [22, 26, 38], settings: { orderMode: 'as-listed' } }));
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const rows = descendants(panel).filter((c) => c.className === 'tes-queue-row');
+  const firstControl = rows[0].children[0];
+  assert.strictEqual(firstControl.className, 'tes-reorder', 'the reorder control is not first in the row');
+  assert.strictEqual(firstControl.children.length, 2);
+  assert.strictEqual(firstControl.children[0].className, 'tes-move tes-move-up');
+  assert.strictEqual(firstControl.children[1].className, 'tes-move tes-move-down');
+  assert.strictEqual(firstControl.children[0].disabled, true, 'the first course can move above the queue boundary');
+  assert.strictEqual(firstControl.children[1].disabled, true, 'a prerequisite can move below its dependent');
+  assert.match(firstControl.children[0].title, /already first/i);
+  assert.match(firstControl.children[1].title, /prerequisite/i);
+  assert.strictEqual(firstControl.children[0].children[0].className, 'tes-chevron tes-chevron-up');
+  assert.strictEqual(firstControl.children[1].children[0].className, 'tes-chevron tes-chevron-down');
+
+  const independentControl = rows[2].children[0];
+  assert.notStrictEqual(independentControl.children[0].disabled, true,
+    'an unrelated course cannot move across its neighbour');
+});
+
+test('the panel model precomputes prerequisite-safe adjacent move permissions', () => {
+  const { x } = load();
+  const model = x.buildPanelModel(state({ queue: [22, 26, 32, 38], settings: { orderMode: 'as-listed' } }));
+  const byId = new Map(model.queue.map((item) => [item.courseId, item]));
+  assert.strictEqual(byId.get(22).canMoveUp, false);
+  assert.strictEqual(byId.get(22).canMoveDown, false);
+  assert.strictEqual(byId.get(26).canMoveUp, false);
+  assert.strictEqual(byId.get(26).canMoveDown, false);
+  assert.strictEqual(byId.get(32).canMoveUp, false);
+  assert.strictEqual(byId.get(32).canMoveDown, true, 'an independent following course should be crossable');
+  assert.strictEqual(byId.get(38).canMoveUp, true);
+  assert.strictEqual(byId.get(38).canMoveDown, false);
 });
 
 test('a queue row preserves hostile-length Torn text in full', () => {

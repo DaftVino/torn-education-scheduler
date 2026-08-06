@@ -95,7 +95,7 @@ test('selected read-only layouts reflow without card or hover treatment', () => 
   assert.match(text, /\.tes-degree-list[^}]*repeat\(auto-fit,\s*minmax\(/,
     'the degree list does not collapse from two columns naturally');
   assert.match(text, /\.tes-degree-row[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto/);
-  assert.match(text, /\.tes-queue-row[^}]*grid-template-columns:\s*1fr auto/);
+  assert.match(text, /\.tes-queue-row[^}]*grid-template-columns:\s*30px minmax\(0,\s*1fr\) auto/);
   assert.match(text, /\.tes-booster-row[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto/);
   for (const name of ['tes-degree-row', 'tes-queue-row', 'tes-booster-row']) {
     const bodies = [...text.matchAll(new RegExp(`\\.${name}[^:{]*\\{([^}]*)\\}`, 'g'))]
@@ -103,6 +103,19 @@ test('selected read-only layouts reflow without card or hover treatment', () => 
     assert.ok(!/background\s*:|box-shadow\s*:/.test(bodies), `${name} gained card-like treatment`);
     assert.ok(!new RegExp(`\\.${name}:hover`).test(text), `${name} gained a hover cue despite being read-only`);
   }
+});
+
+test('ghost queue controls consume the existing row height without adding a gap', () => {
+  const text = css();
+  assert.match(text, /\.tes-queue-row[^}]*position:\s*relative/);
+  assert.match(text, /\.tes-reorder[^}]*position:\s*absolute[^}]*inset-block:\s*0[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*width:\s*30px/);
+  assert.match(text, /\.tes-move[^}]*flex:\s*1 1 50%[^}]*min-height:\s*0[^}]*padding:\s*0/);
+  assert.doesNotMatch(text, /\.tes-reorder[^}]*\bgap\s*:/, 'the two ghost buttons gained space at their shared middle edge');
+
+  const moveRules = [...text.matchAll(/\.tes-move[^:{]*\{([^}]*)\}/g)].map((m) => m[1]).join('\n');
+  assert.doesNotMatch(moveRules, /tm-good|#0{3,8}\b|\bblack\b/i,
+    'the neutral reorder control picked up green or black styling');
+  assert.match(text, /\.tes-move:disabled[^}]*cursor:\s*default/);
 });
 
 test('overview surfaces, aggregate banner, and Settings bars have clear hierarchy', () => {

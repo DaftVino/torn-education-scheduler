@@ -87,6 +87,62 @@ test('an empty queue validates clean', () => {
   assert.deepStrictEqual(exports.validateQueue([], completedIds, courses), []);
 });
 
+test('adjacent queue moves allow unrelated courses without mutating the input', () => {
+  const { exports, courses } = setup();
+  const queue = [22, 38, 39];
+  const before = queue.slice();
+  assert.deepStrictEqual(exports.canMoveQueueCourse(queue, 38, 'up', courses), {
+    allowed: true, reason: null, blockingCourseId: null,
+  });
+  assert.deepStrictEqual(exports.moveQueueCourse(queue, 38, 'up', courses), {
+    ok: true, reason: null, blockingCourseId: null, queue: [38, 22, 39],
+  });
+  assert.deepStrictEqual(queue, before, 'a move mutated the stored queue argument');
+});
+
+test('adjacent queue moves refuse both ways of crossing a prerequisite', () => {
+  const { exports, courses } = setup();
+  const queue = [22, 26, 32];
+  assert.deepStrictEqual(exports.canMoveQueueCourse(queue, 26, 'up', courses), {
+    allowed: false, reason: 'prerequisite', blockingCourseId: 22,
+  });
+  assert.deepStrictEqual(exports.canMoveQueueCourse(queue, 22, 'down', courses), {
+    allowed: false, reason: 'prerequisite', blockingCourseId: 26,
+  });
+  assert.deepStrictEqual(exports.canMoveQueueCourse(queue, 32, 'up', courses), {
+    allowed: false, reason: 'prerequisite', blockingCourseId: 26,
+  });
+  assert.deepStrictEqual(exports.canMoveQueueCourse(queue, 26, 'down', courses), {
+    allowed: false, reason: 'prerequisite', blockingCourseId: 32,
+  });
+});
+
+test('queue move boundaries are disabled and an invalid direction is inert', () => {
+  const { exports, courses } = setup();
+  const queue = [22, 38];
+  assert.deepStrictEqual(exports.canMoveQueueCourse(queue, 22, 'up', courses), {
+    allowed: false, reason: 'boundary', blockingCourseId: null,
+  });
+  assert.deepStrictEqual(exports.canMoveQueueCourse(queue, 38, 'down', courses), {
+    allowed: false, reason: 'boundary', blockingCourseId: null,
+  });
+  assert.deepStrictEqual(exports.moveQueueCourse(queue, 22, 'sideways', courses), {
+    ok: false, reason: 'invalid-direction', blockingCourseId: null, queue: [22, 38],
+  });
+});
+
+test('queue moves enforce transitive and bachelor prerequisites, not only parentId', () => {
+  const { exports, courses } = setup();
+  // MTH2320 transitively needs MTH1220, and BIO3420 gates on every Biology
+  // tier-2 course through the bachelor rule rather than parentId.
+  assert.deepStrictEqual(exports.canMoveQueueCourse([22, 32], 32, 'up', courses), {
+    allowed: false, reason: 'prerequisite', blockingCourseId: 22,
+  });
+  assert.deepStrictEqual(exports.canMoveQueueCourse([38, 42], 42, 'up', courses), {
+    allowed: false, reason: 'prerequisite', blockingCourseId: 38,
+  });
+});
+
 test('a cyclic prerequisite graph terminates instead of hanging the tab', () => {
   const { exports, courses, completedIds } = setup();
   // Torn's data is acyclic today, but a corrupt or changed payload must not

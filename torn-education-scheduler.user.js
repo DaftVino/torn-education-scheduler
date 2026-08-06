@@ -447,6 +447,56 @@
     return problems;
   }
 
+  // One click crosses exactly one neighbouring course, so movement permission
+  // is one graph question rather than a full queue re-validation per button.
+  // upstreamOf is the same composed prerequisite graph orderQueue uses: direct
+  // parents, transitive ancestors, and the tier-3 bachelor rule all count.
+  // A caller may share `cache` across every row so an all-courses queue does
+  // not walk the same catalogue hundreds of times while building its model.
+  function canMoveQueueCourse(queue, courseId, direction, courses, cache) {
+    if (direction !== 'up' && direction !== 'down') {
+      return { allowed: false, reason: 'invalid-direction', blockingCourseId: null };
+    }
+    if (!Array.isArray(queue) || !(courses instanceof Map)) {
+      return { allowed: false, reason: 'invalid-input', blockingCourseId: null };
+    }
+    const index = queue.indexOf(courseId);
+    if (index === -1) return { allowed: false, reason: 'missing-course', blockingCourseId: null };
+    const target = index + (direction === 'up' ? -1 : 1);
+    if (target < 0 || target >= queue.length) {
+      return { allowed: false, reason: 'boundary', blockingCourseId: null };
+    }
+
+    const crossedId = queue[target];
+    const scratch = cache || new Map();
+    // Moving up is illegal when the moving course needs the course it would
+    // cross. Moving down is the mirror: the crossed course needs the moving
+    // course and would be left ahead of its prerequisite.
+    const blocked = direction === 'up'
+      ? upstreamOf(courseId, courses, scratch).has(crossedId)
+      : upstreamOf(crossedId, courses, scratch).has(courseId);
+    return blocked
+      ? { allowed: false, reason: 'prerequisite', blockingCourseId: crossedId }
+      : { allowed: true, reason: null, blockingCourseId: null };
+  }
+
+  function moveQueueCourse(queue, courseId, direction, courses, cache) {
+    const copy = Array.isArray(queue) ? queue.slice() : [];
+    const permission = canMoveQueueCourse(queue, courseId, direction, courses, cache);
+    if (!permission.allowed) {
+      return {
+        ok: false, reason: permission.reason,
+        blockingCourseId: permission.blockingCourseId, queue: copy,
+      };
+    }
+    const index = copy.indexOf(courseId);
+    const target = index + (direction === 'up' ? -1 : 1);
+    const crossed = copy[target];
+    copy[target] = courseId;
+    copy[index] = crossed;
+    return { ok: true, reason: null, blockingCourseId: null, queue: copy };
+  }
+
   // Ordering does NOT change the finish date. Courses run one at a time, so
   // the total is a sum, and a sum does not care about order. What ordering
   // changes is time-to-benefit: how early each perk starts paying off. Several
@@ -2222,6 +2272,7 @@
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,
       presetError: state.presetError || null,
+      queueNotice: state.queueNotice || null,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
       // Lives in init()'s closure, never in storage — see resetButton. Read
@@ -2502,6 +2553,40 @@
               : `Your ${inference.totalPercent}% reduction has ${inference.candidates} possible combinations, so it cannot be read. Enter what you hold.`,
     };
 
+    const moveCache = new Map();
+    const queueItems = queue.map(function (id) {
+      const course = data.courses.get(id);
+      const up = canMoveQueueCourse(queue, id, 'up', data.courses, moveCache);
+      const down = canMoveQueueCourse(queue, id, 'down', data.courses, moveCache);
+      const disabledTitle = function (move, direction) {
+        if (move.reason === 'boundary') return direction === 'up'
+          ? 'Already first in the queue.'
+          : 'Already last in the queue.';
+        if (move.reason === 'prerequisite') {
+          const blocking = data.courses.get(move.blockingCourseId);
+          const blockingPrefix = blocking ? blocking.prefix : 'that course';
+          return direction === 'up'
+            ? `Cannot move before ${blockingPrefix}; it is a prerequisite.`
+            : `Cannot move after ${blockingPrefix}; this course is its prerequisite.`;
+        }
+        return 'This course cannot be moved in that direction.';
+      };
+      return {
+        courseId: id,
+        prefix: course.prefix,
+        name: course.name,
+        duration: course.duration,
+        durationLabel: formatDuration(course.duration),
+        finishesAt: finishById.get(id),
+        finishLabel: `${formatDate(finishById.get(id))} · ${formatTime(finishById.get(id))} TCT`,
+        bonusLabel: bonusLabel(course),
+        canMoveUp: up.allowed,
+        canMoveDown: down.allowed,
+        moveUpTitle: up.allowed ? `Move ${course.prefix} up` : disabledTitle(up, 'up'),
+        moveDownTitle: down.allowed ? `Move ${course.prefix} down` : disabledTitle(down, 'down'),
+      };
+    });
+
     return {
       status: 'ok',
       message: null,
@@ -2509,19 +2594,7 @@
       addable: addable,
       guidePresets: guidePresets,
       stale: stale,
-      queue: queue.map(function (id) {
-        const course = data.courses.get(id);
-        return {
-          courseId: id,
-          prefix: course.prefix,
-          name: course.name,
-          duration: course.duration,
-          durationLabel: formatDuration(course.duration),
-          finishesAt: finishById.get(id),
-          finishLabel: `${formatDate(finishById.get(id))} · ${formatTime(finishById.get(id))} TCT`,
-          bonusLabel: bonusLabel(course),
-        };
-      }),
+      queue: queueItems,
       problems: problems,
       // A wrong date stated confidently is worse than no date at all. When the
       // queue has unmet prerequisites it is not a plan the player can actually
@@ -2535,6 +2608,7 @@
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,
       presetError: state.presetError || null,
+      queueNotice: state.queueNotice || null,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
       // See the same field on the failure model above: it is read here, not
@@ -2708,13 +2782,18 @@
       '#tes-panel .tes-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }',
       // Queue entries and booster scenarios are quiet divided rows, never card
       // surfaces: no background or hover treatment to imply interaction.
-      '#tes-panel .tes-queue-row { display: grid; grid-template-columns: 1fr auto;',
+      '#tes-panel .tes-queue-row { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto;',
       '  align-items: center; gap: 2px 8px; padding: var(--tes-gap-sm) 0;',
       '  border-bottom: 1px solid var(--tm-border-2); }',
-      '#tes-panel .tes-queue-main { min-width: 0; overflow-wrap: anywhere; font-weight: bold; }',
-      '#tes-panel .tes-queue-detail { grid-column: 1; min-width: 0; overflow-wrap: anywhere;',
+      // Absolute positioning lets the control consume the row's existing
+      // vertical padding. It therefore receives the full current row height
+      // without becoming content that can make that row taller.
+      '#tes-panel .tes-reorder { position: absolute; inset-block: 0; inset-inline-start: 0;',
+      '  display: flex; flex-direction: column; width: 30px; }',
+      '#tes-panel .tes-queue-main { grid-column: 2; min-width: 0; overflow-wrap: anywhere; font-weight: bold; }',
+      '#tes-panel .tes-queue-detail { grid-column: 2; min-width: 0; overflow-wrap: anywhere;',
       '  color: var(--tm-meta); font-size: var(--tes-text-sm); }',
-      '#tes-panel .tes-queue-row button { grid-column: 2; grid-row: 1 / span 2; }',
+      '#tes-panel .tes-remove-course { grid-column: 3; grid-row: 1 / span 2; }',
       '#tes-panel .tes-boosters { margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-booster-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;',
       '  gap: 2px var(--tes-gap); padding: var(--tes-gap-sm) 0;',
@@ -2738,6 +2817,21 @@
       '#tes-panel button:focus-visible, #tes-panel select:focus-visible,',
       '#tes-panel input:focus-visible, #tes-panel textarea:focus-visible {',
       '  outline: var(--tes-focus-ring); outline-offset: 2px; }',
+      // Option B: two neutral ghost buttons touching at the middle. The icon
+      // is small, but each semantic button owns half of every pixel the row
+      // already provides. These rules deliberately override the shared green
+      // hover/focus treatment without introducing black into the control.
+      '#tes-panel .tes-move { flex: 1 1 50%; min-height: 0; padding: 0;',
+      '  display: flex; align-items: center; justify-content: center;',
+      '  box-sizing: border-box; color: var(--tm-meta); background: transparent;',
+      '  border-color: transparent; border-radius: 0; line-height: 1; }',
+      '#tes-panel .tes-move:hover:not(:disabled) { color: var(--tm-text); background: var(--tm-hover); border-color: transparent; }',
+      '#tes-panel .tes-move:focus-visible { outline: 2px solid var(--tm-meta); outline-offset: -2px; z-index: 1; }',
+      '#tes-panel .tes-move:disabled { color: var(--tm-border-2); background: transparent;',
+      '  border-color: transparent; cursor: default; }',
+      '#tes-panel .tes-chevron { width: 7px; height: 7px; border-style: solid; border-width: 2px 0 0 2px; }',
+      '#tes-panel .tes-chevron-up { transform: rotate(45deg); }',
+      '#tes-panel .tes-chevron-down { transform: rotate(225deg); }',
       '#tes-panel .tes-section { margin-bottom: var(--tes-gap-lg); }',
       '#tes-panel .tes-section-header { display: flex; align-items: baseline; justify-content: space-between;',
       '  flex-wrap: wrap; gap: var(--tes-gap-xs) var(--tes-gap); padding: var(--tes-gap-sm) var(--tes-gap);',
@@ -3537,6 +3631,12 @@
       presetError.textContent = model.presetError;
       body.appendChild(presetError);
     }
+    if (model.queueNotice) {
+      const queueNotice = doc.createElement('div');
+      queueNotice.className = 'tes-note tes-queue-notice';
+      queueNotice.textContent = model.queueNotice;
+      body.appendChild(queueNotice);
+    }
 
     const overview = doc.createElement('div');
     overview.className = 'tes-overview tes-schedule-overview';
@@ -3672,6 +3772,29 @@
     for (const item of model.queue) {
       const row = doc.createElement('div');
       row.className = 'tes-queue-row';
+      const reorder = doc.createElement('div');
+      reorder.className = 'tes-reorder';
+      const moveButton = function (direction, allowed, title) {
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.className = `tes-move tes-move-${direction}`;
+        button.title = title;
+        button.setAttribute('aria-label', `Move ${item.prefix} ${direction}`);
+        if (!allowed) {
+          button.disabled = true;
+          button.setAttribute('aria-disabled', 'true');
+        } else if (button.addEventListener && handlers.onMove) {
+          button.addEventListener('click', function () { handlers.onMove(item.courseId, direction); });
+        }
+        const chevron = doc.createElement('span');
+        chevron.className = `tes-chevron tes-chevron-${direction}`;
+        chevron.setAttribute('aria-hidden', 'true');
+        button.appendChild(chevron);
+        return button;
+      };
+      reorder.appendChild(moveButton('up', item.canMoveUp === true, item.moveUpTitle));
+      reorder.appendChild(moveButton('down', item.canMoveDown === true, item.moveDownTitle));
+      row.appendChild(reorder);
       const main = doc.createElement('span');
       main.className = 'tes-queue-main';
       main.textContent = `${item.prefix} · ${item.name}`;
@@ -3681,6 +3804,7 @@
       detail.textContent = `${item.durationLabel} · fin ${item.finishLabel} · ${item.bonusLabel}`;
       row.appendChild(detail);
       const remove = doc.createElement('button');
+      remove.className = 'tes-remove-course';
       remove.textContent = 'remove';
       remove.dataset.courseId = String(item.courseId);
       if (remove.addEventListener) {
@@ -3864,7 +3988,7 @@
       status: 'error', message: message, reductionLabel: null,
       queue: [], addable: [], guidePresets: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
       collapsed: false, saveError: false, selectedCourseId: null, view: 'schedule',
-      presetError: null,
+      presetError: null, queueNotice: null,
       // Every field below is filled even where nothing currently reads it, so
       // that a renderer handed this model can never meet an undefined. The real
       // orderModes list rather than an empty one, for the same reason: an empty
@@ -3879,7 +4003,7 @@
   }
 
   const noopHandlers = {
-    onToggle: function () {}, onAdd: function () {}, onRemove: function () {},
+    onToggle: function () {}, onAdd: function () {}, onRemove: function () {}, onMove: function () {},
     onAddAll: function () {}, onAddPreset: function () {},
     onPickerChange: function () {}, onViewChange: function () {},
     onSettingChange: function () {},
@@ -3979,6 +4103,10 @@
     // action clears it so an old catalogue mismatch cannot follow the player
     // around after they have moved on.
     let presetError = null;
+    // A manual move materialises the currently visible order and changes the
+    // ordering preference to As listed. Name that one automatic setting change
+    // on the resulting schedule so the Focus button disappearing is explained.
+    let queueNotice = null;
     // Built on demand and never persisted: it is a snapshot of one moment's
     // failure, and a stale one pasted into a forum thread describes a bug
     // nobody is looking at any more.
@@ -4020,6 +4148,7 @@
           settingsSaveFailed: settingsSaveFailed,
           selectedCourseId: selectedCourseId,
           presetError: presetError,
+          queueNotice: queueNotice,
           view: view,
           debugReport: debugReport,
           importError: importError,
@@ -4105,6 +4234,33 @@
               queue: currentPlan.queue.filter(function (id) { return id !== courseId; }),
               collapsed: currentPlan.collapsed,
             });
+          },
+          onMove: function (courseId, direction) {
+            resetArmed = false;
+            presetError = null;
+            queueNotice = null;
+            const data = fetchResult.ok ? fetchResult.data : null;
+            if (!data) return;
+            // Move what the player can see. Under an automatic mode that order
+            // can differ from storage, so a successful first move materialises
+            // the visible queue before As listed takes over.
+            const visibleQueue = model.queue.map(function (item) { return item.courseId; });
+            const moved = moveQueueCourse(visibleQueue, courseId, direction, data.courses);
+            if (!moved.ok) return;
+            if (settings.orderMode !== 'as-listed') {
+              const nextSettings = JSON.parse(JSON.stringify(settings));
+              nextSettings.orderMode = 'as-listed';
+              const normalised = normaliseSettings(nextSettings);
+              const saved = saveSettings(normalised);
+              settingsSaveFailed = !saved;
+              if (!saved) {
+                draw(currentPlan, saveFailed === true);
+                return;
+              }
+              settings = normalised;
+              queueNotice = 'Queue order changed to As listed for manual reordering.';
+            }
+            commit({ queue: moved.queue, collapsed: currentPlan.collapsed });
           },
           onPickerChange: function (value) {
             resetArmed = false;

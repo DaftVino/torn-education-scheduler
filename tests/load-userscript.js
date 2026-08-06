@@ -36,6 +36,7 @@ const EXPORT_NAMES = [
   'readRfcvToken',
   // prerequisites
   'unmetPrerequisites', 'validateQueue', 'requiredCoursesFor', 'allRemainingCourses',
+  'canMoveQueueCourse', 'moveQueueCourse',
   'plannedCompletions',
   // the picker's all-remaining sentinel
   'ALL_COURSES_OPTION', 'GUIDE_PRESETS', 'guidePresetForValue', 'expandGuidePreset',

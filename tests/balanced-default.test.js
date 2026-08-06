@@ -59,7 +59,8 @@ function handlers() {
 function renderedQueueIds(panel) {
   return descendants(panel)
     .filter((el) => el.className === 'tes-queue-row')
-    .map((row) => Number(row.children[2].dataset.courseId));
+    .map((row) => (row.children || []).find((child) => child.dataset && child.dataset.courseId !== undefined))
+    .map((remove) => Number(remove.dataset.courseId));
 }
 
 function rowFor(x, id, category, selection) {
