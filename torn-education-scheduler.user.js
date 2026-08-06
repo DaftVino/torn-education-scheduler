@@ -2,7 +2,7 @@
 // @name         Torn Education Scheduler
 // @namespace    https://github.com/DaftVino/torn-education-scheduler
 // @version      1.0.1
-// @description  Turns Torn's education page into a live planner: queue courses, get the exact finish date.
+// @description  Plan Torn education with safe prerequisite queues, focus ordering, exact dates, degree/booster forecasts, perks, sharing, local saves, and diagnostics.
 // @author       DaftVino
 // @license      MIT
 // @homepage     https://greasyfork.org/en/scripts/590070-torn-education-scheduler
@@ -36,6 +36,38 @@
   // shares a field with course ids, and Number('__all__') is NaN rather than a
   // plausible id, so a missed guard fails visibly instead of queueing course 0.
   const ALL_COURSES_OPTION = '__all__';
+  const GUIDE_PRESETS = Object.freeze([
+    Object.freeze({
+      key: 'foundation', value: '__preset__:foundation', label: '0-Start Here',
+      courseCodes: Object.freeze(['BIO1340', 'BIO2127']),
+    }),
+    Object.freeze({
+      key: 'fighting', value: '__preset__:fighting', label: '1-Fighting',
+      courseCodes: Object.freeze(['BIO1340', 'BIO2127', 'SPT3510']),
+    }),
+    Object.freeze({
+      key: 'crime', value: '__preset__:crime', label: '2-Crime',
+      courseCodes: Object.freeze([
+        'BIO1340', 'BIO2127',
+        'CMT1520', 'CMT2230', 'CMT2530', 'CMT2130', 'CMT2131',
+        'PSY1630', 'PSY2640', 'PSY2650', 'PSY2660', 'PSY2670', 'PSY2680',
+        'PSY2132', 'PSY3690',
+      ]),
+    }),
+    Object.freeze({
+      key: 'trader', value: '__preset__:trader', label: '3-Trader / collector',
+      courseCodes: Object.freeze(['BIO1340', 'BIO2127', 'HIS3210']),
+    }),
+    Object.freeze({
+      key: 'undecided', value: '__preset__:undecided', label: '4-Undecided',
+      courseCodes: Object.freeze([
+        'BIO1340', 'BIO2127',
+        'DEF1700', 'DEF2740', 'DEF2750', 'DEF2760',
+        'HAF1103', 'HAF2107', 'HAF2106', 'HAF2109',
+        'CBT1780', 'CBT2820', 'CBT2830', 'CBT2840', 'CBT2850',
+      ]),
+    }),
+  ]);
 
   // The two launch URLs, in different states: the script is listed, the forum
   // post is not yet written.
@@ -302,6 +334,75 @@
     const course = courses.get(activeCourse.id);
     if (course && course.status === 'inProgress') done.add(course.id);
     return done;
+  }
+
+  function guidePresetForValue(value) {
+    if (typeof value !== 'string') return null;
+    for (const preset of GUIDE_PRESETS) {
+      if (preset.value === value) return preset;
+    }
+    return null;
+  }
+
+  // Resolve a guide route against today's catalogue, then return only the
+  // work that must be appended after the player's existing queue. Resolution
+  // happens before expansion so a stale late target cannot produce half a
+  // route. The caller owns storage; this helper mutates none of its inputs.
+  function expandGuidePreset(presetKey, completedIds, courses, activeCourse, existingQueue) {
+    let preset = null;
+    for (const candidate of GUIDE_PRESETS) {
+      if (candidate.key === presetKey) { preset = candidate; break; }
+    }
+    if (!preset) {
+      return { ok: false, reason: 'unknown-preset', detail: `Unknown guide preset ${String(presetKey)}` };
+    }
+    if (!(courses instanceof Map)) {
+      return { ok: false, reason: 'invalid-catalogue', detail: 'No course catalogue is available' };
+    }
+
+    const byCode = new Map();
+    for (const course of courses.values()) {
+      if (course && typeof course.prefix === 'string') byCode.set(course.prefix, course);
+    }
+    const targets = [];
+    for (const code of preset.courseCodes) {
+      const course = byCode.get(code);
+      if (!course) {
+        return { ok: false, reason: 'missing-course', detail: `${code} is not in Torn's course catalogue` };
+      }
+      targets.push(course);
+    }
+
+    const done = plannedCompletions(completedIds instanceof Set ? completedIds : new Set(), courses, activeCourse);
+    for (const id of Array.isArray(existingQueue) ? existingQueue : []) {
+      const course = courses.get(id);
+      if (course && course.status !== 'inProgress') done.add(id);
+    }
+    const plannedDone = new Set(done);
+    const courseIds = [];
+    for (const target of targets) {
+      for (const id of requiredCoursesFor(target.id, done, courses)) {
+        if (done.has(id)) continue;
+        const course = courses.get(id);
+        if (!course) continue;
+        if (course.status === 'completed') { done.add(id); continue; }
+        if (course.status === 'inProgress') continue;
+        courseIds.push(id);
+        done.add(id);
+      }
+    }
+
+    const problems = validateQueue(courseIds, plannedDone, courses);
+    if (problems.length > 0) {
+      const first = problems[0];
+      const course = courses.get(first.courseId);
+      return {
+        ok: false,
+        reason: 'unfollowable-preset',
+        detail: `${course ? course.prefix : first.courseId} has unavailable prerequisites`,
+      };
+    }
+    return { ok: true, courseIds: courseIds };
   }
 
   // "Queue everything I have not done" — the question the community guides and
@@ -2117,9 +2218,10 @@
     const settings = panelSettings(state);
     const empty = {
       status: 'error', message: null, reductionLabel: null,
-      queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
+      queue: [], addable: [], guidePresets: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,
+      presetError: state.presetError || null,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
       // Lives in init()'s closure, never in storage — see resetButton. Read
@@ -2247,6 +2349,20 @@
       });
     }
     addable.sort(function (a, b) { return a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0; });
+
+    const guidePresets = GUIDE_PRESETS.map(function (preset) {
+      const expansion = expandGuidePreset(
+        preset.key, data.completedIds, data.courses, data.activeCourse, prunedQueue
+      );
+      return {
+        key: preset.key,
+        value: preset.value,
+        label: preset.label,
+        // A broken definition remains selectable so the add handler can name
+        // the stale course instead of turning a data error into a dead row.
+        disabled: expansion.ok && expansion.courseIds.length === 0,
+      };
+    });
 
     // Never present a guess as a reading. The note says in words which of the
     // two situations the player is in, so a prefilled field is visibly an
@@ -2391,6 +2507,7 @@
       message: null,
       reductionLabel: reductionLabel(data.reduction),
       addable: addable,
+      guidePresets: guidePresets,
       stale: stale,
       queue: queue.map(function (id) {
         const course = data.courses.get(id);
@@ -2417,6 +2534,7 @@
       totalLabel: (queue.length > 0 && problems.length === 0) ? formatDuration(result.totalSeconds) : null,
       collapsed: state.plan.collapsed === true,
       saveError: state.saveFailed === true,
+      presetError: state.presetError || null,
       selectedCourseId: state.selectedCourseId != null ? state.selectedCourseId : null,
       view: state.view || 'schedule',
       // See the same field on the failure model above: it is read here, not
@@ -2558,7 +2676,7 @@
       // Bookie's green fill now distinguishes Settings header bars; it is never
       // used as text. The measured -text variants remain the only green/red
       // text colours because they clear AA against the panel background.
-      '  --tm-good-bg: #2a6b3a; --tm-good-text: #7ee081; --tm-bad-text: #ff8080;',
+      '  --tm-good-bg: #2a6b3a; --tm-good-text: #7ee081; --tm-bad-text: #ff8080; --tm-accent-text: #6ea3d0;',
       '  --tes-text-sm: 12px; --tes-text: 14px; --tes-text-lg: 1.25em;',
       '  --tes-gap-xs: 4px; --tes-gap-sm: 6px; --tes-gap: 8px; --tes-gap-lg: 14px;',
       '  --tes-focus-ring: 2px solid var(--tm-good-text);',
@@ -2684,6 +2802,7 @@
       // it, so those players see no marker. Accepted trade — no fallback prefix,
       // since one would reinstate for some users what removing it was for.
       '#tes-panel .tes-option-bachelor { color: var(--tm-good-text); }',
+      '#tes-panel .tes-option-preset { color: var(--tm-accent-text); }',
     ].join('\n');
   }
 
@@ -3412,6 +3531,12 @@
       saveError.textContent = "Couldn't save your plan — your last change may not persist.";
       body.appendChild(saveError);
     }
+    if (model.presetError) {
+      const presetError = doc.createElement('div');
+      presetError.className = 'tes-error';
+      presetError.textContent = model.presetError;
+      body.appendChild(presetError);
+    }
 
     const overview = doc.createElement('div');
     overview.className = 'tes-overview tes-schedule-overview';
@@ -3578,8 +3703,20 @@
     placeholder.textContent = '— choose a course —';
     if (model.selectedCourseId == null) placeholder.selected = true;
     picker.appendChild(placeholder);
-    // Second, so it is reachable without scrolling a ~115-entry list, but never
-    // the default. Only when there is something left to add: an entry reading
+    const presetGroup = doc.createElement('optgroup');
+    presetGroup.label = 'Guide presets';
+    for (const preset of model.guidePresets || []) {
+      const opt = doc.createElement('option');
+      opt.value = preset.value;
+      opt.textContent = preset.label;
+      opt.className = 'tes-option-preset';
+      opt.disabled = preset.disabled === true;
+      if (model.selectedCourseId === preset.value) opt.selected = true;
+      presetGroup.appendChild(opt);
+    }
+    picker.appendChild(presetGroup);
+    // Kept near the top, below the five guide presets, but never the default.
+    // Only when there is something left to add: an entry reading
     // "all remaining (0)" invites a click that can do nothing.
     if (model.addable.length > 0) {
       const allOpt = doc.createElement('option');
@@ -3621,6 +3758,8 @@
         // and Number() would turn it into NaN, which the integer guard would
         // then swallow silently.
         if (picker.value === ALL_COURSES_OPTION) { handlers.onAddAll(); return; }
+        const preset = guidePresetForValue(picker.value);
+        if (preset) { handlers.onAddPreset(preset.key); return; }
         const chosen = Number(picker.value);
         if (Number.isInteger(chosen)) handlers.onAdd(chosen);
       });
@@ -3723,8 +3862,9 @@
   function errorModel(message) {
     return {
       status: 'error', message: message, reductionLabel: null,
-      queue: [], addable: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
+      queue: [], addable: [], guidePresets: [], stale: [], problems: [], finishLabel: null, totalLabel: null,
       collapsed: false, saveError: false, selectedCourseId: null, view: 'schedule',
+      presetError: null,
       // Every field below is filled even where nothing currently reads it, so
       // that a renderer handed this model can never meet an undefined. The real
       // orderModes list rather than an empty one, for the same reason: an empty
@@ -3740,7 +3880,7 @@
 
   const noopHandlers = {
     onToggle: function () {}, onAdd: function () {}, onRemove: function () {},
-    onAddAll: function () {},
+    onAddAll: function () {}, onAddPreset: function () {},
     onPickerChange: function () {}, onViewChange: function () {},
     onSettingChange: function () {},
     onToggleDebugReport: function () {}, onCopyDebugReport: function () {},
@@ -3835,6 +3975,10 @@
     }
 
     let selectedCourseId = null;
+    // One failed preset action, shown on Schedule and never persisted. A later
+    // action clears it so an old catalogue mismatch cannot follow the player
+    // around after they have moved on.
+    let presetError = null;
     // Built on demand and never persisted: it is a snapshot of one moment's
     // failure, and a stale one pasted into a forum thread describes a bug
     // nobody is looking at any more.
@@ -3875,6 +4019,7 @@
           settings: settings,
           settingsSaveFailed: settingsSaveFailed,
           selectedCourseId: selectedCourseId,
+          presetError: presetError,
           view: view,
           debugReport: debugReport,
           importError: importError,
@@ -3891,10 +4036,12 @@
         return renderPanel(document, mount, model, {
           onToggle: function () {
             resetArmed = false;
+            presetError = null;
             commit({ queue: currentPlan.queue, collapsed: !currentPlan.collapsed });
           },
           onAdd: function (courseId) {
             resetArmed = false;
+            presetError = null;
             if (currentPlan.queue.indexOf(courseId) !== -1) return;
             // Queue the whole prerequisite chain, not just the course the
             // player picked — the panel must never invite a plan validateQueue
@@ -3917,6 +4064,7 @@
           // reorder or discard a plan the player already built.
           onAddAll: function () {
             resetArmed = false;
+            presetError = null;
             const data = fetchResult.ok ? fetchResult.data : null;
             if (!data) return;
             const everything = allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
@@ -3924,8 +4072,35 @@
             if (toAdd.length === 0) return;
             commit({ queue: currentPlan.queue.concat(toAdd), collapsed: currentPlan.collapsed });
           },
+          onAddPreset: function (presetKey) {
+            resetArmed = false;
+            const data = fetchResult.ok ? fetchResult.data : null;
+            if (!data) return;
+            const expansion = expandGuidePreset(
+              presetKey, data.completedIds, data.courses, data.activeCourse, currentPlan.queue
+            );
+            if (!expansion.ok) {
+              let label = String(presetKey);
+              for (const preset of GUIDE_PRESETS) {
+                if (preset.key === presetKey) { label = preset.label; break; }
+              }
+              presetError = `Couldn't add ${label} — ${expansion.detail}.`;
+              draw(currentPlan, saveFailed === true);
+              return;
+            }
+            presetError = null;
+            if (expansion.courseIds.length === 0) {
+              draw(currentPlan, saveFailed === true);
+              return;
+            }
+            commit({
+              queue: currentPlan.queue.concat(expansion.courseIds),
+              collapsed: currentPlan.collapsed,
+            });
+          },
           onRemove: function (courseId) {
             resetArmed = false;
+            presetError = null;
             commit({
               queue: currentPlan.queue.filter(function (id) { return id !== courseId; }),
               collapsed: currentPlan.collapsed,
@@ -3933,10 +4108,13 @@
           },
           onPickerChange: function (value) {
             resetArmed = false;
+            presetError = null;
             // The sentinel is preserved rather than coerced: Number('__all__')
             // is NaN, so the integer guard below would reset the picker to the
             // top of the list on the next redraw.
             if (value === ALL_COURSES_OPTION) { selectedCourseId = ALL_COURSES_OPTION; return; }
+            const preset = guidePresetForValue(value);
+            if (preset) { selectedCourseId = preset.value; return; }
             // The placeholder, back to "nothing chosen". Number('') is 0 and
             // passes Number.isInteger, so without this the panel remembers a
             // selection of course 0 — harmless only because no course has that
@@ -3948,6 +4126,7 @@
           },
           onViewChange: function (next) {
             resetArmed = false;
+            presetError = null;
             // The focus button is absent outside focus ordering, but callers
             // can still invoke this route directly. Keep that route from
             // stranding the panel on a view whose entry is unavailable.
@@ -4088,6 +4267,7 @@
           },
           onResetConfirm: function () {
             resetArmed = false;
+            presetError = null;
             if (view === 'schedule') {
               commit({ queue: [], collapsed: currentPlan.collapsed });
               return;

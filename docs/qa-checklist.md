@@ -76,9 +76,9 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
    not a reported defect, but the rank now divides by course duration, so a long
    course with a big gain no longer automatically beats a short one with a small
    gain. Nothing was wrong with these categories before; they still need a look.
-3. **Focus is the default Queue order** — § M1, § M1a, § N5. A fresh install's
-   *queue* is unchanged, because focus ordering with no focuses chosen falls back
-   to as-listed. Only the nav entry is new.
+3. **Focus is the default Queue order** — § M1, § M1a, § N5. With no focuses
+   chosen, it uses the balanced default: gain multipliers, then quantified
+   benefits, then unlocks. The nav entry is available immediately.
 4. **The nav row is static** — every planner button renders on every view now,
    rather than the row showing only the views you were not on.
 5. **The Focus view is restructured** — § M2, § M2a, § M2b, § M3a, § M3b.
@@ -128,9 +128,11 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 
 | # | Steps | Expected |
 |---|---|---|
-| C1 | Open the course picker | ~115 options, no `[bachelor]` text anywhere. Tier-3 courses render in green (`#7ee081`, the same green as the finish-line total), not as plain text. |
-| C1a | Same picker, on macOS specifically | The OS draws the `<select>` menu itself and commonly ignores an option's colour, so bachelor courses show **no green marker at all** there — no prefix either, since none is kept as a fallback. This is expected on macOS, not a defect: confirm the picker still works (count, selection, add) even though the marker is invisible. On Windows/Linux Chrome or Firefox, confirm the green **is** visible — that is the platform the colour is for. |
+| C1 | Open the course picker | The inert placeholder comes first. A visible **Guide presets** group follows with exactly `0-Start Here`, `1-Fighting`, `2-Crime`, `3-Trader / collector`, and `4-Undecided`, then all remaining and the individual courses. Presets render blue (`#6ea3d0`); tier-3 courses remain green (`#7ee081`) with no `[bachelor]` text. |
+| C1a | Same picker, on macOS specifically | The OS commonly ignores `<option>` colours. The **Guide presets** optgroup label must still distinguish the five routes even if their blue and bachelor green are absent. Confirm selection and add still work. On Windows/Linux Chrome or Firefox, confirm presets are blue and bachelors independently remain green. |
 | C2 | Look at the picker's **first** option before touching anything | The "all remaining courses" sentinel must not be sitting there as the browser's default selection — a stray `add` click would queue everything with no bulk undo. This was a real bug; confirm the fix held in a real `<select>`. |
+| C2a | Add `0-Start Here`, then add `1-Fighting` | The foundation appears once only. Fighting contributes its remaining Sports Science courses; no duplicate course appears. |
+| C2b | Build a short hand-ordered queue, then add any guide preset | Existing rows remain at the front in their stored order and the preset appends only unfinished work. Settings, Focus choices, and Torn enrolment are unchanged. |
 | C3 | Add a single tier-1 course | Appears in the queue **as two compact lines sharing one row**: `prefix · name` first, then a smaller line containing `duration · fin <date> · <bonus>`. A finish date and a total print in the summary above. |
 | C3a | Read the second line for a course whose payload carries a `learningOutcomes` entry | Names the real benefit, in Torn's own words — never inferred or guessed from the course's name. |
 | C3b | Add one of the **31 courses with no `learningOutcomes` at all** | The second line reads `Bonus: not listed by Torn` (or, if the course also grants a working stat, the stat figure plus `· other bonus not listed by Torn`) — never blank, never a made-up benefit. |
@@ -213,7 +215,7 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 | J1 | Settings → build the debug report | The report renders **on screen before any copy button exists**. A copy button that hides its payload is how people leak things they did not know they had. |
 | J2 | Read the whole report | Version, manager, acquisition source, payload shape, settings, queue codes. Absent fields read `not recorded`, never `undefined`. |
 | J3 | Search the report for your session token, `logoutHash`, your user ID, any JWT, any course timestamps | **None present.** The report is built from an allowlist. |
-| J4 | Check the contact line | Names Greasy Fork in prose. No URL renders — `GREASY_FORK_URL` and `FORUM_POST_URL` are both `null` until launch, so **no `<a>` should appear anywhere**, here or in Help. |
+| J4 | Check the contact line and Help links | The contact line carries the resolved Greasy Fork URL. The forum guide link remains absent while `FORUM_POST_URL` is unresolved. |
 | J5 | Trigger the failure state (§ B5), then build a report from it | The Failure block carries a **real reason and detail**, not "not recorded". This is the only path that populates them, and it regressed once already. |
 | J6 | Toggle the report off | Report and copy button both go away. |
 
@@ -245,7 +247,7 @@ but nobody has watched a real queue re-sort in a real browser yet.
 
 | # | Steps | Expected |
 |---|---|---|
-| M1 | On a **fresh install**, look at the nav row before touching Settings | The `focus` button is present and **enabled**. Focus is now the default Queue order, so the feature is available out of the box. The queue itself is unchanged from as-listed, because focus ordering degrades to as-listed until you pick a focus — confirm the queue order matches what as-listed gives. |
+| M1 | On a **fresh install**, look at the nav row before touching Settings | The `focus` button is present and **enabled**. Focus is the default Queue order, and with no selection the queue uses the balanced default: gain multipliers first, quantified benefits next, unlocks last. Confirm the overview calls it a starting point rather than an optimum. |
 | M1a | In Settings, change Queue order to anything other than "My focus first", then look at the nav row | The `focus` button is **gone** — not greyed out, absent. Changing it back makes the button reappear. This replaced the disabled-button-with-a-title behaviour: the button is present by default now, so there is no longer a discoverability problem for a disabled state to solve. |
 | M1b | Open Focus and inspect the area immediately below the nav | The sorting button and both guidance paragraphs sit inside one green-outlined dark overview. There is clear space below the sorting button, and the first category begins outside the overview. |
 | M2 | Click the `focus` button | The Focus view opens. **All ten category sections are collapsed**, each an outlined box using the same border as the degrees-page cards. No selection names are visible yet. |

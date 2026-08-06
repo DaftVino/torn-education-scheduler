@@ -38,7 +38,7 @@ const EXPORT_NAMES = [
   'unmetPrerequisites', 'validateQueue', 'requiredCoursesFor', 'allRemainingCourses',
   'plannedCompletions',
   // the picker's all-remaining sentinel
-  'ALL_COURSES_OPTION',
+  'ALL_COURSES_OPTION', 'GUIDE_PRESETS', 'guidePresetForValue', 'expandGuidePreset',
   // schedule
   'schedule', 'buildDegreeGrid',
   // queue ordering
