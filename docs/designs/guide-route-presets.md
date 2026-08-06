@@ -26,9 +26,10 @@ foundation comes first and keep the presets in the same order as the guide.
 
 The untouched picker must remain safe. Its inert `— choose a course —` option
 stays first, selected by default. Immediately after it, add an
-`<optgroup label="Guide presets">` containing the five presets in numeric
-order. The existing `all remaining courses` option follows the group, then the
-individual course options.
+`<optgroup label="Guide presets">` containing the presets that still have work
+in numeric order. On a fresh account that is all five. The existing
+`all remaining courses` option follows the group, then the individual course
+options.
 
 Each preset option gets class `tes-option-preset` and uses a new text-safe blue
 accent:
@@ -44,9 +45,11 @@ not honour option colours consistently, especially on macOS, so colour is not
 the only indicator: the `Guide presets` optgroup remains the semantic and
 visible fallback. Do not make preset options green or rely on black/dark text.
 
-A preset with no courses left to add remains in the group but is disabled. Its
-visible name does not change; the exact five names above remain stable for the
-guide and tests.
+A preset with no courses left to add is omitted from the group, matching the
+existing individual-course picker behavior. If every preset is fully
+completed, active, or already queued, omit the empty `Guide presets` optgroup
+as well. The exact five names above remain stable definitions, but only routes
+with work left (or a broken definition that needs to surface an error) render.
 
 ## Preset membership
 
@@ -107,7 +110,7 @@ families before numeric conversion.
 
 ## Failure and feedback
 
-- A fully completed or already queued preset is disabled and cannot submit.
+- A fully completed or already queued preset is omitted and cannot submit.
 - A partially completed preset adds only remaining work.
 - A preset containing the active course treats it as planned complete and does
   not queue it again.
@@ -128,6 +131,7 @@ Add fixture-backed coverage for:
   prerequisite-valid membership already verified for the forum guide;
 - presets 1–4 containing both foundation courses;
 - completed, active, queued, and duplicate courses being omitted;
+- fully represented presets, and an empty preset optgroup, being omitted;
 - selecting Start Here and then a direction producing the same set as selecting
   that direction once;
 - a missing target code causing a visible error and no stored queue change;

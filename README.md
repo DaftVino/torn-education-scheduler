@@ -25,7 +25,8 @@ reduction. No API key is required.
 - Load one of five numbered beginner-guide presets directly from the course
   picker. Each route appends only unfinished work and prerequisites, includes
   the two-course Start Here foundation where needed, and leaves an existing
-  hand-built queue intact.
+  hand-built queue intact. A preset leaves the picker once all of its work is
+  completed, active, or already queued.
 - See the total queued time, exact finish date and time in Torn City Time, and
   a projected finish for every queued course.
 - See each course's working-stat gains and Torn-provided learning outcomes

@@ -1,7 +1,9 @@
 # Beginner-guide route presets — implementation plan
 
 > **STATUS: IMPLEMENTED; SIGNED-IN BROWSER QA PENDING.** This plan implements
-> `docs/designs/guide-route-presets.md`. It does not edit
+> `docs/designs/guide-route-presets.md`, including the post-implementation UX
+> correction that omits fully represented presets instead of disabling them.
+> It does not edit
 > `docs/forum-post.md`; the owner's current forum wording is read-only input.
 
 **Goal:** Add the five forum-guide routes to the Schedule picker as safe,
@@ -11,8 +13,8 @@ replace the player's queue.
 **Architecture:** A frozen runtime registry holds preset labels, non-numeric
 picker values, and stable Torn course codes. A pure engine helper resolves and
 prerequisite-expands one preset against the live catalogue. `buildPanelModel`
-derives the five picker rows and their disabled state. `renderScheduleView`
-groups them in an `<optgroup>`, while `init()` owns mutation, transient failure
+derives only the picker rows that still have work to add. `renderScheduleView`
+groups them in an `<optgroup>` when any remain, while `init()` owns mutation, transient failure
 feedback, and storage. The existing `orderQueue()` path remains the sole place
 that applies the player's ordering preference.
 
@@ -251,16 +253,15 @@ git commit -m "feat: define and expand the beginner guide presets"
 ### Model shape
 
 Add `guidePresets` to both model shapes. The fetch/error model carries `[]`.
-The success model maps all five registry entries to:
+The success model maps registry entries that still have work to:
 
 ```javascript
-{ key, value, label, disabled }
+{ key, value, label }
 ```
 
-For each row, call `expandGuidePreset` against the pruned stored queue.
-`disabled` is true only when expansion succeeds with zero additions. A broken
-preset remains enabled so selecting it can reach the named atomic-failure path
-in Task 4.
+For each row, call `expandGuidePreset` against the pruned stored queue. Omit a
+preset when expansion succeeds with zero additions. A broken preset remains
+selectable so selecting it can reach the named atomic-failure path in Task 4.
 
 Keep the existing `selectedCourseId` field name to avoid a broad rename, but
 document and test its widened union: `null | integer | ALL_COURSES_OPTION |
@@ -272,22 +273,23 @@ Replace the direct-child assumptions in the existing “all remaining entry
 second” tests with this required structure:
 
 1. `picker.children[0]`: inert placeholder option;
-2. `picker.children[1]`: `<optgroup label="Guide presets">` containing exactly
-   the five preset options in numeric order;
-3. `picker.children[2]`: all remaining, when anything is addable;
+2. when at least one preset has work, `picker.children[1]`:
+   `<optgroup label="Guide presets">` containing the remaining preset options
+   in numeric order;
+3. the next child: all remaining, when anything is addable;
 4. remaining direct children: the existing individual course options.
 
 Also assert:
 
-- each preset option has `tes-option-preset`, its exact registry value, and the
-  model's disabled state;
+- each preset option has `tes-option-preset` and its exact registry value;
 - the optgroup label is present as the non-colour indicator;
 - individual bachelors remain `tes-option-bachelor` and never receive the
   preset class;
-- all presets remain visible and disabled when they have nothing left to add;
+- fully represented presets are absent, while partially represented presets
+  remain visible;
 - the placeholder remains the actual value of an untouched select;
 - the all-remaining option is absent when no individual course is addable,
-  while the disabled preset group remains; and
+  and an empty preset group is absent too; and
 - direct renderer dispatch calls `onAddPreset(key)` for a preset, never
   `onAdd(Number(value))`.
 
@@ -316,9 +318,10 @@ Expected: FAIL — no guide optgroup/model rows or accent token exist.
 
 ### Step 4: Implement model, renderer, and handler shape
 
-Render the optgroup immediately after the placeholder. Assign `disabled` as a
-boolean property on each option. Continue rendering all-remaining and ordinary
-courses exactly as today after the group.
+Render the optgroup immediately after the placeholder when the filtered model
+contains at least one row. Do not render disabled preset options or an empty
+group. Continue rendering all-remaining and ordinary courses exactly as today
+after the group when it is present.
 
 Before numeric conversion in the add click listener:
 
@@ -420,7 +423,8 @@ Add one `onAddPreset(presetKey)` handler:
 2. call `expandGuidePreset` with live data and `currentPlan.queue`;
 3. on failure, build a bounded message naming the preset and missing target,
    set `presetError`, redraw the unchanged plan, and do not call `savePlan`;
-4. on zero additions, clear the error and redraw/no-op without writing;
+4. retain a defensive zero-additions no-op for programmatic/stale calls even
+   though that preset is absent from the current picker;
 5. on success, clear the error and commit
    `currentPlan.queue.concat(result.courseIds)` through the existing `commit`.
 
@@ -461,8 +465,9 @@ that presets append unfinished work without replacing a plan.
 In `docs/qa-checklist.md`, add signed-in checks for:
 
 - the placeholder remaining first and inert;
-- a visible `Guide presets` group before all remaining;
-- five exact labels in numeric order;
+- a visible `Guide presets` group before all remaining when routes remain;
+- five exact labels in numeric order on a fresh account;
+- fully represented presets and an empty preset group disappearing;
 - blue preset options on Windows/Linux while bachelors remain green;
 - macOS retaining the group label even if both option colours are ignored;
 - Start Here then Fighting producing no duplicates;
@@ -538,14 +543,17 @@ Automated implementation is not release-complete until an owner checks a real,
 signed-in Torn education page:
 
 1. Open the picker without touching it; confirm the placeholder is selected.
-2. Confirm `Guide presets` precedes all remaining and contains five labels.
+2. On a fresh account, confirm `Guide presets` precedes all remaining and
+   contains five labels.
 3. On Windows/Linux, confirm presets are blue and bachelors remain green.
 4. On macOS, confirm the group label still distinguishes presets even if the
    native menu ignores both option colours.
 5. Add `0-Start Here`, then `1-Fighting`; confirm no foundation duplicate.
 6. Add a preset to a hand-built queue; confirm the existing rows remain and
    the displayed order still follows the selected Queue order.
-7. Confirm the script does not enrol in a Torn course or change Focus/settings.
+7. Queue or complete every remaining course in a preset; confirm that preset
+   disappears and an empty group is never left behind.
+8. Confirm the script does not enrol in a Torn course or change Focus/settings.
 
 Record screenshots and results in the normal QA handoff. Version bump, tag,
 push, Greasy Fork update, and forum publication are outside this plan.
@@ -554,7 +562,7 @@ push, Greasy Fork update, and forum publication are outside this plan.
 
 **Spec coverage:** labels and membership → Task 2; optgroup and blue/non-green
 indicator → Task 3; completion/active/queued filtering and prerequisite-safe
-append → Tasks 2 and 4; disabled completed presets → Task 3; missing-code atomic
+append → Tasks 2 and 4; omitted completed presets → Task 3; missing-code atomic
 failure → Tasks 2 and 4; documentation → Task 5; unchanged ordering/storage
 scope → Tasks 2 and 4.
 
@@ -566,8 +574,8 @@ browser has.
 nothing unless the pure helper returns success. A stale late target therefore
 cannot leave half a route in storage.
 
-**Single responsibility:** the engine computes additions; the model computes
-disabled presentation; the renderer groups and dispatches; `init()` alone
+**Single responsibility:** the engine computes additions; the model filters
+fully represented presets; the renderer groups and dispatches; `init()` alone
 mutates storage and owns transient errors.
 
 **Forum preservation:** no task lists `docs/forum-post.md` as writable. The

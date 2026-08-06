@@ -111,9 +111,10 @@ GM storage, the fetch adapter, the panel, and the bootstrap.
 
 Guide-preset addendum (superseding the older picker-union clause above):
 `selectedCourseId` also carries one of the five exact preset sentinel strings.
-The model exposes `guidePresets[{key,value,label,disabled}]`; successful empty
-expansions disable a row, while broken definitions stay enabled so the action
-can display the missing course. `presetError` is transient render state, never
+The model exposes `guidePresets[{key,value,label}]`; successful empty
+expansions omit a row (and the renderer omits an empty group), while broken
+definitions stay selectable so the action can display the missing course.
+`presetError` is transient render state, never
 plan or settings data.
 | `gatherDebugContext(state)` — builds `buildDebugReport`'s input from the live `{fetchResult, plan, settings}`, naming every field explicitly: shape only (course/category counts, whether the reduction was constant, whether an active course was present), never the payload itself. `GM_info` and `navigator` are both read through `typeof` guards — `GM_info` is ambient in every manager and is deliberately **not** in `@grant`, because a grant would widen the security surface for a diagnostic nicety; neither exists in the test sandbox, and an unguarded reference is a `ReferenceError` that blanks the panel. Absent either way, the report says "not recorded". Three producer-side guards keep untrusted text out of `String()`, since `buildDebugReport` is a renderer and does not filter: `queueCodes` requires `typeof c.prefix === 'string'` and falls back to the id (`normaliseCourse` copies `prefix` across unchecked, so this is what stops `join(' ')` invoking a `toString` Torn supplied); `failureReason`/`failureDetail`/`source` go through `debugText`, which **drops** a non-string rather than coercing it (the catch blocks build theirs from `(e && e.message)`, and a thrown value is whatever threw it); and `failureDetail` is clamped to `MAX_DETAIL_CHARS` with a visible truncation marker, because `parsePayload` splices Torn's own `raw.error` in whole and that string is not ours to size. `focusStale`/`focusUnmapped` come from `focusRegistry(data.courses)` — `null` on a failed acquisition, since the registry needs real course data to say anything; `focusSelections` is `settings.focuses.length`, present whenever `settings` is, independent of whether acquisition succeeded | 2586-2586 |
 | `MOUNT_SELECTORS` | 2629-2629 |

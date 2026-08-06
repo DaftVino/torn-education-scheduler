@@ -2350,18 +2350,18 @@
     }
     addable.sort(function (a, b) { return a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0; });
 
-    const guidePresets = GUIDE_PRESETS.map(function (preset) {
+    const guidePresets = GUIDE_PRESETS.flatMap(function (preset) {
       const expansion = expandGuidePreset(
         preset.key, data.completedIds, data.courses, data.activeCourse, prunedQueue
       );
-      return {
+      if (expansion.ok && expansion.courseIds.length === 0) return [];
+      // A broken definition remains selectable so the add handler can name
+      // the stale course instead of turning a data error into a hidden row.
+      return [{
         key: preset.key,
         value: preset.value,
         label: preset.label,
-        // A broken definition remains selectable so the add handler can name
-        // the stale course instead of turning a data error into a dead row.
-        disabled: expansion.ok && expansion.courseIds.length === 0,
-      };
+      }];
     });
 
     // Never present a guess as a reading. The note says in words which of the
@@ -3710,11 +3710,11 @@
       opt.value = preset.value;
       opt.textContent = preset.label;
       opt.className = 'tes-option-preset';
-      opt.disabled = preset.disabled === true;
+      // Fully represented presets are filtered out by buildPanelModel.
       if (model.selectedCourseId === preset.value) opt.selected = true;
       presetGroup.appendChild(opt);
     }
-    picker.appendChild(presetGroup);
+    if (presetGroup.children.length > 0) picker.appendChild(presetGroup);
     // Kept near the top, below the five guide presets, but never the default.
     // Only when there is something left to add: an entry reading
     // "all remaining (0)" invites a click that can do nothing.

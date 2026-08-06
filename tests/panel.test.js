@@ -356,7 +356,7 @@ test('adding a course already in the queue does not duplicate it or its prerequi
   assert.strictEqual(new Set(afterSecond).size, afterSecond.length);
 });
 
-test('the picker groups five guide presets before all remaining and marks bachelors separately', () => {
+test('the picker groups all five addable guide presets before all remaining and marks bachelors separately', () => {
   const { exports, state } = okState([]);
   const doc = makeFakeDocument();
   const mount = doc.createElement('div');
@@ -445,13 +445,42 @@ test('a guide preset dispatches by key before numeric course conversion', () => 
   assert.strictEqual(numeric, null);
 });
 
-test('guide presets stay visible but disable when all their work is represented', () => {
+test('guide presets disappear when all their work is represented', () => {
   const { exports, state } = okState([]);
   const data = state.fetchResult.data;
   state.plan.queue = exports.allRemainingCourses(data.completedIds, data.courses, data.activeCourse);
   const model = exports.buildPanelModel(state);
-  assert.strictEqual(model.guidePresets.length, 5);
-  assert.ok(model.guidePresets.every((preset) => preset.disabled));
+  assert.deepStrictEqual(model.guidePresets, []);
+
+  const doc = makeFakeDocument();
+  const panel = exports.renderPanel(doc, doc.createElement('div'), model, noopHandlers);
+  const picker = panel.children[1].children.find((child) => child.tagName === 'select');
+  assert.ok(!picker.children.some((child) => child.tagName === 'optgroup'));
+});
+
+test('one fully completed preset disappears while presets with work remain', () => {
+  const { exports, state } = okState([]);
+  const data = state.fetchResult.data;
+  data.completedIds = new Set();
+  data.activeCourse = null;
+  for (const course of data.courses.values()) course.status = 'available';
+  const foundation = exports.expandGuidePreset(
+    'foundation', data.completedIds, data.courses, data.activeCourse, []
+  );
+  assert.strictEqual(foundation.ok, true);
+  for (const id of foundation.courseIds) data.completedIds.add(id);
+
+  const model = exports.buildPanelModel(state);
+  assert.deepStrictEqual(model.guidePresets.map((preset) => preset.label), [
+    '1-Fighting', '2-Crime', '3-Trader / collector', '4-Undecided',
+  ]);
+  const doc = makeFakeDocument();
+  const panel = exports.renderPanel(doc, doc.createElement('div'), model, noopHandlers);
+  const picker = panel.children[1].children.find((child) => child.tagName === 'select');
+  const group = picker.children.find((child) => child.tagName === 'optgroup');
+  assert.deepStrictEqual(group.children.map((option) => option.textContent), [
+    '1-Fighting', '2-Crime', '3-Trader / collector', '4-Undecided',
+  ]);
 });
 
 // The failure this guards is not hypothetical: a browser selects the first
@@ -496,9 +525,7 @@ test('an empty addable list offers no all-remaining entry to click', () => {
   const model = {
     status: 'ok', message: null, reductionLabel: '40% off',
     queue: [], addable: [], stale: [], problems: [],
-    guidePresets: exports.GUIDE_PRESETS.map((preset) => ({
-      key: preset.key, value: preset.value, label: preset.label, disabled: true,
-    })),
+    guidePresets: [],
     finishLabel: null, totalLabel: null, collapsed: false,
     saveError: false, selectedCourseId: null,
     settings: { orderMode: 'as-listed' },
@@ -511,8 +538,7 @@ test('an empty addable list offers no all-remaining entry to click', () => {
   const panel = exports.renderPanel(doc, mount, model, handlers);
   const body = panel.children[1];
   const picker = body.children.find((c) => c.tagName === 'select');
-  assert.deepStrictEqual(picker.children.map((c) => c.tagName), ['option', 'optgroup']);
-  assert.ok(picker.children[1].children.every((option) => option.disabled === true));
+  assert.deepStrictEqual(picker.children.map((c) => c.tagName), ['option']);
   assert.ok(!picker.children.some((child) => child.value === exports.ALL_COURSES_OPTION));
   const addButton = body.children.find((c) => c.textContent === 'add');
   for (const fn of (addButton.listeners.click || [])) fn();
