@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Education Scheduler
 // @namespace    https://github.com/DaftVino/torn-education-scheduler
-// @version      1.0.1
+// @version      1.1.0
 // @description  Plan Torn education with safe prerequisite queues, focus ordering, exact dates, degree/booster forecasts, perks, sharing, local saves, and diagnostics.
 // @author       DaftVino
 // @license      MIT
@@ -28,7 +28,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '1.0.1';
+  const SCRIPT_VERSION = '1.1.0';
   const EDU_ENDPOINT = '/page.php?sid=educationInitData';
   const STORAGE_KEY = 'tes:plan';
   const SETTINGS_KEY = 'tes:settings';
@@ -69,16 +69,16 @@
     }),
   ]);
 
-  // The two launch URLs, in different states: the script is listed, the forum
-  // post is not yet written.
+  // Both launch destinations are published. Keep these canonical URLs beside
+  // the placeholder guard used by every renderer.
   //
-  // PLACEHOLDER_TOKEN is live, not a leftover — FORUM_POST_URL is built from
-  // it and isResolvedUrl matches on it. To resolve: replace the whole string,
-  // never part of it — a half-edited URL would read as resolved.
+  // PLACEHOLDER_TOKEN is retained as the isResolvedUrl sentinel. Any future
+  // unresolved launch URL must contain the whole token; a half-edited value
+  // could otherwise read as resolved.
   const PLACEHOLDER_TOKEN = 'REPLACE_BEFORE_LAUNCH';
   // Same address as @homepage above: one place to send people, not two.
   const GREASY_FORK_URL = 'https://greasyfork.org/en/scripts/590070-torn-education-scheduler';
-  const FORUM_POST_URL = `https://www.torn.com/forums.php#/${PLACEHOLDER_TOKEN}`;
+  const FORUM_POST_URL = 'https://www.torn.com/forums.php#p=threads&f=61&t=16589908&b=0&a=0';
 
   // Every consumer tests this, never the constant's own truthiness: a
   // placeholder is a non-empty string, so `if (FORUM_POST_URL)` would render a
@@ -3893,7 +3893,7 @@
 
     // One unobtrusive line: a player who needs the guide will not go looking
     // in settings for it, but the schedule view must not become an advert.
-    // Null URL renders nothing at all, exactly as in the settings view.
+    // An unresolved URL renders nothing at all, exactly as in the settings view.
     if (isResolvedUrl(FORUM_POST_URL)) {
       const foot = doc.createElement('div');
       foot.className = 'tes-foot';

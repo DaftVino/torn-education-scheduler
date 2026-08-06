@@ -36,15 +36,8 @@ test('the newest CHANGELOG heading is the version being shipped', () => {
     'the newest CHANGELOG heading and @version disagree — a bumped script ships invisibly');
 });
 
-// § K1. The two URL constants are placeholders until the script is published,
-// and they resolve at different moments — the Greasy Fork listing exists before
-// the forum post is written — so this is a two-pass resolution, not one.
-//
-// The failure being prevented is shipping a literal placeholder to users. That
-// happens at publication, and the observable signal for "published" is
-// @downloadURL/@updateURL: those only get added once a Greasy Fork listing
-// exists to point at. So the two halves of § K1 are tied together here — adding
-// auto-update without resolving the URLs fails the build.
+// Both § K1 URL constants are published. Keep the original release guard so a
+// future placeholder cannot ship alongside explicit auto-update metadata.
 test('an unresolved URL placeholder cannot ship alongside auto-update', () => {
   const src = fs.readFileSync(SOURCE_PATH, 'utf8');
   const hasPlaceholder = /REPLACE_BEFORE_LAUNCH/.test(src);

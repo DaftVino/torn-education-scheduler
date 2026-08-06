@@ -216,7 +216,7 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 | J1 | Settings → build the debug report | The report renders **on screen before any copy button exists**. A copy button that hides its payload is how people leak things they did not know they had. |
 | J2 | Read the whole report | Version, manager, acquisition source, payload shape, settings, queue codes. Absent fields read `not recorded`, never `undefined`. |
 | J3 | Search the report for your session token, `logoutHash`, your user ID, any JWT, any course timestamps | **None present.** The report is built from an allowlist. |
-| J4 | Check the contact line and Help links | The contact line carries the resolved Greasy Fork URL. The forum guide link remains absent while `FORUM_POST_URL` is unresolved. |
+| J4 | Check the contact line and Help links | The contact line carries the resolved Greasy Fork URL. Settings and the Schedule footer link to the published [Torn forum guide](https://www.torn.com/forums.php#p=threads&f=61&t=16589908&b=0&a=0), open it in a new tab, and use `rel="noopener noreferrer"`. |
 | J5 | Trigger the failure state (§ B5), then build a report from it | The Failure block carries a **real reason and detail**, not "not recorded". This is the only path that populates them, and it regressed once already. |
 | J6 | Toggle the report off | Report and copy button both go away. |
 

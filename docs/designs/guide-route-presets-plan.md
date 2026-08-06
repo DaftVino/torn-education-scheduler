@@ -1,10 +1,12 @@
 # Beginner-guide route presets — implementation plan
 
-> **STATUS: IMPLEMENTED; SIGNED-IN BROWSER QA PENDING.** This plan implements
+> **STATUS: IMPLEMENTED; SIGNED-IN BROWSER QA PASSED.** This plan implements
 > `docs/designs/guide-route-presets.md`, including the post-implementation UX
 > correction that omits fully represented presets instead of disabling them.
 > It does not edit
 > `docs/forum-post.md`; the owner's current forum wording is read-only input.
+
+> **Published guide:** [Torn forum thread 16589908](https://www.torn.com/forums.php#p=threads&f=61&t=16589908&b=0&a=0)
 
 **Goal:** Add the five forum-guide routes to the Schedule picker as safe,
 blue-marked presets that atomically append only unfinished work and never

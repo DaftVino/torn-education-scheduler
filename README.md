@@ -6,6 +6,9 @@ benefits to earn first, compare degree paths, and see exactly when the plan
 will finish using your current course progress and personal education-time
 reduction. No API key is required.
 
+New to Torn education? Read the
+[practical beginner's guide and script companion](https://www.torn.com/forums.php#p=threads&f=61&t=16589908&b=0&a=0).
+
 ## Screenshots
 
 <p align="center">

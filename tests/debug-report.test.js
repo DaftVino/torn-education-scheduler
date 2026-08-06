@@ -142,15 +142,14 @@ test('the report survives missing optional fields', () => {
   assert.ok(!report.includes('undefined'), 'an absent field rendered as undefined');
 });
 
-// § K1 resolves in two passes, and the project is now between them: the script
-// is listed on Greasy Fork, so GREASY_FORK_URL is real; the forum post is
-// unwritten, so FORUM_POST_URL is still a placeholder. This test pins that
-// split state rather than either extreme, because the mixed case is the one a
-// half-done resolution would break — and it is the state that ships today.
-test('the contact line carries the resolved Greasy Fork URL, and the guide URL stays unresolved', () => {
+// Both § K1 publication passes are complete. The debug report deliberately
+// carries only the Greasy Fork contact URL; the Torn guide URL belongs in the
+// rendered Help and Schedule links, never in diagnostic text.
+test('both published launch URLs are resolved and the report carries only Greasy Fork', () => {
   const { exports: x } = loadUserscript();
-  assert.strictEqual(x.isResolvedUrl(x.GREASY_FORK_URL), true, 'pass 1 has landed; this should be a real URL');
-  assert.strictEqual(x.isResolvedUrl(x.FORUM_POST_URL), false, 'pass 2 has not; the forum post is unwritten');
+  assert.strictEqual(x.isResolvedUrl(x.GREASY_FORK_URL), true, 'the Greasy Fork URL is unresolved');
+  assert.strictEqual(x.isResolvedUrl(x.FORUM_POST_URL), true, 'the published forum URL is unresolved');
+  assert.strictEqual(x.FORUM_POST_URL, RESOLVED_FORUM_POST_URL);
 
   const report = x.buildDebugReport(sampleInput(x));
   assert.ok(/greasy fork/i.test(report), 'the report does not say where to send it');
@@ -257,18 +256,11 @@ test('the report is rendered in full before the copy button appears beside it', 
   assert.ok(copyIndex > nodes.indexOf(pre), 'the copy button precedes the report it copies');
 });
 
-// The other direction, and the one that actually matters at launch. Everything
-// else about § K1 asserts that nothing renders while the URLs are placeholders
-// — which is true today and will be false on the day it counts. These load the
-// script with the URLs resolved exactly as the owner will resolve them (replace
-// the whole string) and check the links appear and point at the right place.
-//
-// Without them, "the wiring works once you fill the URL in" is a claim nothing
-// tests, on a path nobody can see, and the first person to find out otherwise
-// would be a user.
-test('resolving the guide URL makes the settings view render a real link', () => {
-  const { exports: x } = loadUserscript({ resolveLaunchUrls: true });
-  assert.strictEqual(x.isResolvedUrl(x.FORUM_POST_URL), true, 'the launch-day lever did not resolve the URL');
+// The production source now takes this path by default; these tests pin both
+// visible links to the exact published thread.
+test('the published guide URL makes the settings view render a real link', () => {
+  const { exports: x } = loadUserscript();
+  assert.strictEqual(x.isResolvedUrl(x.FORUM_POST_URL), true, 'the published guide URL is unresolved');
   const doc = makeFakeDocument();
   const body = doc.createElement('div');
   x.renderSettingsView(doc, body, settingsModel(x, null), {});
@@ -282,8 +274,8 @@ test('resolving the guide URL makes the settings view render a real link', () =>
   assert.ok(links[0].textContent.length > 0, 'the link rendered with no text to click');
 });
 
-test('resolving the guide URL makes the schedule view render its foot link', () => {
-  const { exports: x } = loadUserscript({ resolveLaunchUrls: true });
+test('the published guide URL makes the schedule view render its foot link', () => {
+  const { exports: x } = loadUserscript();
   const doc = makeFakeDocument();
   const body = doc.createElement('div');
   x.renderScheduleView(doc, body, {
@@ -308,7 +300,7 @@ test('resolving the Greasy Fork URL puts it in the debug report', () => {
 });
 
 test('the settings view renders no link element while the guide URL is unresolved', () => {
-  const { exports: x } = loadUserscript();
+  const { exports: x } = loadUserscript({ unresolveForumPostUrl: true });
   const doc = makeFakeDocument();
   const body = doc.createElement('div');
   x.renderSettingsView(doc, body, settingsModel(x, null), {});
@@ -319,7 +311,7 @@ test('the settings view renders no link element while the guide URL is unresolve
 });
 
 test('the schedule view renders no foot link while the guide URL is unresolved', () => {
-  const { exports: x } = loadUserscript();
+  const { exports: x } = loadUserscript({ unresolveForumPostUrl: true });
   const doc = makeFakeDocument();
   const body = doc.createElement('div');
   x.renderScheduleView(doc, body, {

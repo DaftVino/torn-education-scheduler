@@ -4,7 +4,21 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-06
+
 ### Added
+
+- **Manual queue reordering, which cannot produce a queue you can't follow.**
+  Each queue row carries up and down controls. A move that would put a course
+  ahead of something it requires — or leave a course behind something that
+  requires it — is disabled rather than offered and then rejected, and the
+  control says which course is blocking it. Ordering still does not change the
+  finish date; courses run one at a time, so the total is a sum. What it
+  changes is how early each perk starts paying off.
+
+  Moving a course by hand switches the ordering preference to **As listed** and
+  says so, because a manual order and an automatic one cannot both be in
+  effect. The order you were looking at is what gets kept.
 
 - **Five beginner-guide route presets in the Schedule course picker** —
   `0-Start Here`, `1-Fighting`, `2-Crime`, `3-Trader / collector` and
@@ -15,6 +29,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
   a no-op.
 
 ### Changed
+
+- Resolved the scheduler's Help and Schedule guide links to the published
+  [Torn Education Scheduler beginner's guide](https://www.torn.com/forums.php#p=threads&f=61&t=16589908&b=0&a=0).
 
 - The maximum-Books floor now defaults to a 48-hour booster cooldown. Its
   descriptor states the cooldown used immediately after the cost (for example,

@@ -2,9 +2,11 @@
 
 **Date:** 2026-08-06
 
-**Status:** implemented; signed-in browser QA pending
+**Status:** SHIPPED in v1.1.0 (2026-08-06). Signed-in browser QA passed.
 
 **Public route source:** `docs/forum-post.md`
+
+**Published guide:** [Torn forum thread 16589908](https://www.torn.com/forums.php#p=threads&f=61&t=16589908&b=0&a=0)
 
 **Verified route data:** `scripts/forum-post-data.js`
 

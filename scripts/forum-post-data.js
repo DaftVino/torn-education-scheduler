@@ -233,46 +233,47 @@ function money(value) {
   return `$${value.toLocaleString('en-US')}`;
 }
 
-function verifyForumPostDraft(bbcode, report) {
-  if (typeof bbcode !== 'string' || !bbcode.trim()) throw new Error('forum post draft is empty');
+function verifyForumPostDraft(html, report) {
+  if (typeof html !== 'string' || !html.trim()) throw new Error('forum post draft is empty');
   const required = [
-    '[size=6][b]Torn Education: a practical beginner\'s route[/b][/size]',
-    '[url=https://greasyfork.org/en/scripts/590070-torn-education-scheduler]Greasy Fork[/url]',
-    'This guide is designed to be followed with [url=https://greasyfork.org/en/scripts/590070-torn-education-scheduler]Torn Education Scheduler[/url]',
+    '<span style="font-size: 18px;"><strong>Torn Education Scheduler: a practical beginner\'s guide &amp; script companion</strong></span>',
+    '<a href="https://greasyfork.org/en/scripts/590070-torn-education-scheduler">Greasy Fork</a>',
+    'This guide is designed to be followed with <a href="https://greasyfork.org/en/scripts/590070-torn-education-scheduler">Torn Education Scheduler</a>',
     'When this guide says to load a route, add its course codes to that planner.',
-    'When it mentions Focus, that means choosing the benefit you want the scheduler to prioritise.',
-    'The scheduler also puts these routes directly in its course picker as [b]Guide presets[/b]: [b]0-Start Here, 1-Fighting, 2-Crime, 3-Trader / collector, and 4-Undecided[/b].',
+    'When it mentions Focus, that means choosing the benefit you want the scheduler to prioritize.',
+    'The scheduler also puts these routes directly in its course picker as <strong>Guide presets</strong>: <strong>0-Start Here, 1-Fighting, 2-Crime, 3-Trader / collector, and 4-Undecided</strong>.',
     'Presets 1–4 already include the Start Here foundation',
-    'In the scheduler, select [b]0-Start Here[/b] and press [b]add[/b].',
-    'Scheduler preset: [b]1-Fighting[/b].',
-    'Scheduler preset: [b]2-Crime[/b].',
-    'Scheduler preset: [b]3-Trader / collector[/b].',
-    'Scheduler preset: [b]4-Undecided[/b].',
+    'In the scheduler, select <strong>0-Start Here</strong> and press <strong>add</strong>.',
+    'Scheduler preset: <strong>1-Fighting</strong>.',
+    'Scheduler preset: <strong>2-Crime</strong>.',
+    'Scheduler preset: <strong>3-Trader / collector</strong>.',
+    'Scheduler preset: <strong>4-Undecided</strong>.',
     'please share it with the newer players and new friends you meet',
-    'please open the Feedback tab on the [url=https://greasyfork.org/en/scripts/590070-torn-education-scheduler]Greasy Fork page[/url]',
+    'please open the Feedback tab on the <a href="https://greasyfork.org/en/scripts/590070-torn-education-scheduler">Greasy Fork page</a>',
     'Bug reports, feature requests, and ideas for improving either the guide or the script are all welcome.',
     'Ordering changes when you receive each benefit; it does not change the total finish time.',
     'heuristic',
-    `Foundation[/td][td]${report.routes.foundation.days} days[/td][td]${money(report.routes.foundation.cost)}[/td][td]Complete`,
-    `Fighting[/td][td]${report.routes.fighting.days} days[/td][td]${money(report.routes.fighting.cost)}[/td][td]${report.routes.fighting.remainingAt182} days left`,
-    `Crime[/td][td]${report.routes.crime.days} days[/td][td]${money(report.routes.crime.cost)}[/td][td]${report.routes.crime.remainingAt182} days left`,
-    `Trader / collector[/td][td]${report.routes.trader.days} days[/td][td]${money(report.routes.trader.cost)}[/td][td]${report.routes.trader.remainingAt182} days left`,
-    `Undecided sampler[/td][td]${report.routes.undecided.days} days[/td][td]${money(report.routes.undecided.cost)}[/td][td]${report.routes.undecided.remainingAt182} days left`,
+    `Foundation</td><td>${report.routes.foundation.days} days</td><td>${money(report.routes.foundation.cost)}</td><td>Complete`,
+    `Fighting</td><td>${report.routes.fighting.days} days</td><td>${money(report.routes.fighting.cost)}</td><td>${report.routes.fighting.remainingAt182} days left`,
+    `Crime</td><td>${report.routes.crime.days} days</td><td>${money(report.routes.crime.cost)}</td><td>${report.routes.crime.remainingAt182} days left`,
+    `Trader / collector</td><td>${report.routes.trader.days} days</td><td>${money(report.routes.trader.cost)}</td><td>${report.routes.trader.remainingAt182} days left`,
+    `Undecided sampler</td><td>${report.routes.undecided.days} days</td><td>${money(report.routes.undecided.cost)}</td><td>${report.routes.undecided.remainingAt182} days left`,
     `Business is ${report.categories.Business.days} days and ${money(report.categories.Business.cost)}`,
     `Law is ${report.categories.Law.days} days and ${money(report.categories.Law.cost)}`,
   ];
   for (const [category, counts] of Object.entries(report.taxonomy.categories)) {
-    required.push(`${category}[/td][td]${counts.selections}[/td][td]${counts.links}[/td][td]${counts.courses}`);
+    const escapedCategory = category.replace(/&/g, '&amp;');
+    required.push(`${escapedCategory}</td><td>${counts.selections}</td><td>${counts.links}</td><td>${counts.courses}`);
   }
   for (const text of required) {
-    if (!bbcode.includes(text)) throw new Error(`forum draft is missing verified text: ${text}`);
+    if (!html.includes(text)) throw new Error(`forum draft is missing verified text: ${text}`);
   }
 
-  for (const tag of ['b', 'i', 'size', 'list', 'table', 'tr', 'th', 'td', 'url']) {
-    const openings = (bbcode.match(new RegExp(`\\[${tag}(?:=[^\\]]+)?\\]`, 'gi')) || []).length;
-    const closings = (bbcode.match(new RegExp(`\\[/${tag}\\]`, 'gi')) || []).length;
+  for (const tag of ['p', 'strong', 'em', 'span', 'a', 'ul', 'ol', 'li', 'table', 'tr', 'th', 'td']) {
+    const openings = (html.match(new RegExp(`<${tag}(?:\\s[^>]*)?>`, 'gi')) || []).length;
+    const closings = (html.match(new RegExp(`</${tag}>`, 'gi')) || []).length;
     if (openings !== closings) {
-      throw new Error(`forum draft has unbalanced [${tag}] tags: ${openings} open / ${closings} close`);
+      throw new Error(`forum draft has unbalanced <${tag}> tags: ${openings} open / ${closings} close`);
     }
   }
 
@@ -284,9 +285,10 @@ function verifyForumPostDraft(bbcode, report) {
     [/^#{1,6}\s/m, 'Markdown heading'],
     [/^\|.*\|\s*$/m, 'Markdown table row'],
     [/\[[^\]\n]+\]\(https?:\/\/[^)]+\)/i, 'Markdown link'],
+    [/\[(?:\/?(?:b|i|size|url|list|table|tr|th|td)|\*)[^\]]*\]/i, 'BBCode tag'],
   ];
   for (const [pattern, label] of forbidden) {
-    if (pattern.test(bbcode)) throw new Error(`forum draft contains a forbidden ${label}`);
+    if (pattern.test(html)) throw new Error(`forum draft contains a forbidden ${label}`);
   }
   return true;
 }

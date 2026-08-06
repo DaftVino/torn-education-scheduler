@@ -80,51 +80,40 @@ const EXPORT_NAMES = [
   'resetButton',
   // navigation
   'unmountPanel', 'observeNavigation',
-  // debug report and the (still unresolved) guide links
-  // isResolvedUrl sits with the two URLs it guards (§ K1): they are
-  // placeholders until launch, and every consumer gates on it rather than on
-  // a constant's truthiness.
+  // debug report and published guide links
+  // isResolvedUrl remains with the two URLs it guards (§ K1), so a future
+  // placeholder cannot accidentally render as a real link.
   'GREASY_FORK_URL', 'FORUM_POST_URL', 'isResolvedUrl', 'buildDebugReport', 'gatherDebugContext',
 ];
 
-// The two § K1 launch URLs are module-level consts inside the IIFE, closed
-// over by every renderer that reads them, so a test cannot inject a resolved
-// one from outside. Without this the link path is only ever asserted in the
-// direction that is true today — "renders nothing while unresolved" — and the
-// direction that matters at launch is never exercised at all. That is the
-// shape of two defects this repo has already shipped, so it gets a lever.
-//
-// It does exactly what the owner will do on launch day: replace the whole
-// string, per the instruction in the source. Deliberately NOT a blanket
-// find-and-replace of the token — rewriting PLACEHOLDER_TOKEN itself would
-// leave isResolvedUrl comparing the resolved URL against its own slug and
-// reporting it unresolved, which would make this lever prove the opposite of
-// what it claims.
+// The § K1 launch URLs are module-level consts inside the IIFE, closed over by
+// every renderer that reads them. These test-only replacements exercise both a
+// known alternate URL and the unresolved fallback without changing the guard
+// token itself.
 const RESOLVED_GREASY_FORK_URL = 'https://greasyfork.org/en/scripts/123456-torn-education-scheduler';
-const RESOLVED_FORUM_POST_URL = 'https://www.torn.com/forums.php#/p=threads&f=61&t=16000000';
+const RESOLVED_FORUM_POST_URL = 'https://www.torn.com/forums.php#p=threads&f=61&t=16589908&b=0&a=0';
+const UNRESOLVED_FORUM_POST_URL = 'https://www.torn.com/forums.php#REPLACE_BEFORE_LAUNCH';
+
+function replaceLaunchUrl(source, name, url) {
+  const pattern = new RegExp(`const ${name} = (?:\`[^\`]*\`|'[^']*'|"[^"]*");`);
+  if (!pattern.test(source)) {
+    throw new Error(`${name} is not a simple string literal — update replaceLaunchUrl`);
+  }
+  return source.replace(pattern, `const ${name} = ${JSON.stringify(url)};`);
+}
 
 function resolveLaunchUrls(source) {
-  // Either form: a template literal while the URL is a placeholder, or a plain
-  // quoted string once it has been resolved for real. Both are swapped, so a
-  // test that wants a known URL gets one whether or not launch has happened —
-  // otherwise these tests would start passing vacuously the moment a URL
-  // resolved, which is when they matter most.
-  const swap = function (text, name, url) {
-    const pattern = new RegExp(`const ${name} = (?:\`[^\`]*\`|'[^']*'|"[^"]*");`);
-    if (!pattern.test(text)) {
-      throw new Error(`${name} is not a simple string literal — update resolveLaunchUrls`);
-    }
-    return text.replace(pattern, `const ${name} = ${JSON.stringify(url)};`);
-  };
-  let out = swap(source, 'GREASY_FORK_URL', RESOLVED_GREASY_FORK_URL);
-  out = swap(out, 'FORUM_POST_URL', RESOLVED_FORUM_POST_URL);
+  let out = replaceLaunchUrl(source, 'GREASY_FORK_URL', RESOLVED_GREASY_FORK_URL);
+  out = replaceLaunchUrl(out, 'FORUM_POST_URL', RESOLVED_FORUM_POST_URL);
   return out;
 }
 
 function buildInstrumentedSource(options = {}) {
-  const original = options.resolveLaunchUrls
-    ? resolveLaunchUrls(fs.readFileSync(SOURCE_PATH, 'utf8'))
-    : fs.readFileSync(SOURCE_PATH, 'utf8');
+  let original = fs.readFileSync(SOURCE_PATH, 'utf8');
+  if (options.resolveLaunchUrls) original = resolveLaunchUrls(original);
+  if (options.unresolveForumPostUrl) {
+    original = replaceLaunchUrl(original, 'FORUM_POST_URL', UNRESOLVED_FORUM_POST_URL);
+  }
   const marker = '})();';
   const idx = original.lastIndexOf(marker);
   if (idx === -1) throw new Error('Could not find IIFE close marker in production source');
