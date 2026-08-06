@@ -1277,7 +1277,7 @@
   const ORDER_MODES = ORDER_MODE_LABELS.map(function (m) { return m.id; });
   const FOCUS_RANK_BASES = FOCUS_RANK_BASIS_LABELS.map(function (b) { return b.id; });
   const SETTINGS_DEFAULTS = {
-    maxCooldownHours: 24,
+    maxCooldownHours: 48,
     booksOwned: 0,
     bookPrice: 13500000,
     jobPoints: 0,
@@ -3600,7 +3600,7 @@
       scenario(
         'Maximum Books floor',
         c.floorFinishLabel,
-        `${c.floorBooks} Books · ${costText} · ${c.floorDurationLabel}`
+        `${c.floorBooks} Books · ${costText} · ${model.settings.maxCooldownHours}hr CD · ${c.floorDurationLabel}`
       );
       if (!c.floorCostLabel) {
         const priceNote = doc.createElement('div');

@@ -1162,6 +1162,34 @@ test('editing a settings field stores it, and a rejected value falls back to its
   assert.strictEqual(stored().maxCooldownHours, 12, 'one bad field reset an unrelated good one');
 });
 
+test('changing max cooldown redraws the floor arithmetic and its cooldown descriptor together', async () => {
+  const { doc, stored } = await initWithFixture(undefined, { queue: [38], collapsed: false });
+  const floorText = () => {
+    const row = descendants(doc.querySelector('#tes-panel'))
+      .find((node) => node.className === 'tes-booster-row'
+        && descendants(node).some((child) => child.textContent === 'Maximum Books floor'));
+    assert.ok(row, 'the maximum-Books floor is missing');
+    return descendants(row).map((node) => node.textContent || '').join(' ');
+  };
+
+  const before = floorText();
+  assert.match(before, /48hr CD/);
+  const beforeBooks = Number(before.match(/(\d+) Books/)[1]);
+
+  const cooldown = fieldFor(openSettings(doc), 'Max booster cooldown (hours)');
+  cooldown.value = '24';
+  fire(cooldown, 'change');
+  assert.strictEqual(stored().maxCooldownHours, 24);
+
+  const nav = descendants(doc.querySelector('#tes-panel')).find((node) => node.className === 'tes-nav');
+  fire(nav.children.find((button) => /schedule/i.test(button.textContent)), 'click');
+  const after = floorText();
+  assert.match(after, /24hr CD/);
+  assert.doesNotMatch(after, /48hr CD/);
+  assert.notStrictEqual(Number(after.match(/(\d+) Books/)[1]), beforeBooks,
+    'the descriptor changed but the floor calculation did not');
+});
+
 test('changing a perk field leaves the schedule reduction read from Torn unchanged', async () => {
   const { doc, stored } = await initWithFixture();
   const reductionLine = () => descendants(doc.querySelector('#tes-panel'))
@@ -2784,7 +2812,7 @@ test('resetting settings leaves the queue alone', async () => {
   fire(findReset(), 'click');
   assert.deepStrictEqual(JSON.parse(gmStore.get(x.STORAGE_KEY)).queue, [34, 35],
     'the settings reset must not touch the stored queue');
-  assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 24,
+  assert.strictEqual(JSON.parse(gmStore.get(x.SETTINGS_KEY)).maxCooldownHours, 48,
     'the settings reset must actually restore the default, not silently no-op');
 });
 

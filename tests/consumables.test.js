@@ -342,6 +342,15 @@ test('the rendered floor row never separates its date from its cost', () => {
   );
   assert.ok(line.includes(c.floorFinishLabel), `the floor row rendered without its date: ${line}`);
   assert.ok(line.includes(String(c.floorBooks)), `the floor line does not say how many Books: ${line}`);
+  assert.ok(
+    line.includes(`${c.floorCostLabel} · 48hr CD · ${c.floorDurationLabel}`),
+    `the floor descriptor does not name its default cooldown after the cost: ${line}`,
+  );
+
+  const custom = schedulePanel({ settings: { maxCooldownHours: 24 } });
+  const customLine = rowText(floorRow(custom.nodes));
+  assert.ok(customLine.includes('24hr CD'), `the descriptor drifted from the calculation: ${customLine}`);
+  assert.ok(!customLine.includes('48hr CD'), `the descriptor is hard-coded: ${customLine}`);
 });
 
 test('the rendered panel says Books do not touch the running course', () => {

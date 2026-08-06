@@ -59,9 +59,9 @@ reduction. No API key is required.
   prerequisites, course count, duration, and finish date.
 - Model job points at 30 minutes of course-time reduction each.
 - Model owned Books of Carols at six hours of course-time reduction each,
-  constrained by your maximum booster cooldown.
+  constrained by your maximum booster cooldown (48 hours by default).
 - See the shortest possible Book of Carols finish date, the number of Books it
-  can use, and the cost when a Book price is supplied.
+  can use, its cost, and the cooldown assumption used for that floor.
 
 ### Settings, sharing, and reliability
 

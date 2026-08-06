@@ -147,7 +147,7 @@ test('decodePlan treats untrusted settings as untrusted', () => {
   // Nonsense settings fall back to defaults; they never reach storage as-is.
   const out = x.decodePlan('TES1|q=34|c=-99|p=abc|o=drop-tables|m=7', courses);
   assert.strictEqual(out.ok, true);
-  assert.strictEqual(out.settings.maxCooldownHours, 24);
+  assert.strictEqual(out.settings.maxCooldownHours, 48);
   assert.strictEqual(out.settings.bookPrice, 13500000);
   assert.strictEqual(out.settings.orderMode, 'focus');
   assert.strictEqual(out.settings.perks.meritsPercent, null);
@@ -217,7 +217,7 @@ test('a malformed field is ignored rather than half-read', () => {
   assert.deepStrictEqual(out.queue, [34]);
   assert.strictEqual(out.settings.maxCooldownHours, 48, 'a good field was lost to a bad neighbour');
   // `=48` must not have been read as a cooldown by the key-less route.
-  assert.strictEqual(x.decodePlan('TES1|=48', courses).settings.maxCooldownHours, 24);
+  assert.strictEqual(x.decodePlan('TES1|=48', courses).settings.maxCooldownHours, 48);
 });
 
 test('a repeated key resolves to its last occurrence, deterministically', () => {
@@ -325,7 +325,7 @@ test('settings that are individually valid but jointly absurd decode to exactly 
   assert.strictEqual(out.settings.orderMode, 'unlocks-first');
   // One past each bound falls back to the default, per field.
   const past = x.decodePlan('TES1|c=8761|b=100001|p=1000000000001|j=1000001|m=22', courses);
-  assert.strictEqual(past.settings.maxCooldownHours, 24);
+  assert.strictEqual(past.settings.maxCooldownHours, 48);
   assert.strictEqual(past.settings.booksOwned, 0);
   assert.strictEqual(past.settings.bookPrice, 13500000);
   assert.strictEqual(past.settings.jobPoints, 0);

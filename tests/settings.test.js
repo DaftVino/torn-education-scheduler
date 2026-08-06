@@ -9,7 +9,7 @@ test('freshSettings returns the documented defaults, and a new object each call'
   const b = x.freshSettings();
   assert.notStrictEqual(a, b);
   assert.notStrictEqual(a.perks, b.perks, 'perks object is shared between calls');
-  assert.strictEqual(a.maxCooldownHours, 24);
+  assert.strictEqual(a.maxCooldownHours, 48);
   assert.strictEqual(a.booksOwned, 0);
   assert.strictEqual(a.bookPrice, 13500000);
   assert.strictEqual(a.jobPoints, 0);
@@ -42,8 +42,8 @@ test('normaliseSettings repairs one bad field without discarding the rest', () =
 
 test('normaliseSettings rejects out-of-range and nonsense input', () => {
   const { exports: x } = loadUserscript();
-  assert.strictEqual(x.normaliseSettings({ maxCooldownHours: -5 }).maxCooldownHours, 24);
-  assert.strictEqual(x.normaliseSettings({ maxCooldownHours: 100000 }).maxCooldownHours, 24);
+  assert.strictEqual(x.normaliseSettings({ maxCooldownHours: -5 }).maxCooldownHours, 48);
+  assert.strictEqual(x.normaliseSettings({ maxCooldownHours: 100000 }).maxCooldownHours, 48);
   assert.strictEqual(x.normaliseSettings({ bookPrice: -1 }).bookPrice, 13500000);
   assert.strictEqual(x.normaliseSettings({ jobPoints: 1.5 }).jobPoints, 0);
   assert.strictEqual(x.normaliseSettings({ orderMode: 'nonsense' }).orderMode, 'focus');

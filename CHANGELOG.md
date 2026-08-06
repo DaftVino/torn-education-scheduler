@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Changed
+
+- The maximum-Books floor now defaults to a 48-hour booster cooldown. Its
+  descriptor states the cooldown used immediately after the cost (for example,
+  `48hr CD`) and stays synchronized if the setting is changed.
+
 ## [1.0.1] - 2026-08-05
 
 **Update if you installed 1.0.0.** Two different builds went out under that

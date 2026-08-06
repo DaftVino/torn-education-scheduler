@@ -184,7 +184,7 @@ fixes themselves have not been seen in a browser.** Highest-value re-checks:
 
 | # | Steps | Expected |
 |---|---|---|
-| G1 | With a queue and a cooldown budget set, read the booster scenarios | Job points (when present), owned Books (when present) and the maximum-Books floor appear as quiet divided rows with right-aligned dates. The floor's shortest finish date, Book count and cost stay together in one row. |
+| G1 | With a queue and a cooldown budget set, read the booster scenarios | Job points (when present), owned Books (when present) and the maximum-Books floor appear as quiet divided rows with right-aligned dates. The floor's shortest finish date, Book count, cost, cooldown descriptor (default `48hr CD`), and duration stay together in one row. Changing Max booster cooldown updates both the arithmetic and that descriptor. |
 | G2 | Leave **Book of Carols price** unset or `0` | Reads **"cost unknown, no Book price set"** — never `$0`. "$0" would tell the player the floor is free. |
 | G3 | Set a real price | A real cost appears. Check the Book count is plausible against your cooldown — an overstated count was a caught bug (up to 43×). |
 | G4 | Queue a plan with an unmet prerequisite | The Book lines disappear too, on the same rule as the finish date. |
