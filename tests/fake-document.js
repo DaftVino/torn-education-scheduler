@@ -33,6 +33,20 @@
  * of this harness is entirely in the divergences it refuses to have.
  */
 
+// A browser's select.options collection includes options nested inside an
+// optgroup. Keep that one useful DOM abstraction rather than making every
+// picker test know which options happen to be direct children.
+function selectOptions(select) {
+  const out = [];
+  (function walk(node) {
+    for (const child of (node && node.children) || []) {
+      if (child.tagName === 'option') out.push(child);
+      else walk(child);
+    }
+  }(select));
+  return out;
+}
+
 // A browser resolves `select.value` from its options; it is not a field.
 // Reading:
 //   - the LAST option marked selected (a single-select keeps one, and a later
@@ -51,7 +65,7 @@ function defineSelectValue(el) {
     configurable: true,
     enumerable: true,
     get() {
-      const options = this.children;
+      const options = selectOptions(this);
       if (written !== null) {
         const match = options.find((o) => o.value === written);
         if (match) return match.value;
@@ -66,7 +80,7 @@ function defineSelectValue(el) {
     },
     set(v) {
       written = String(v);
-      optionsAtWrite = this.children.length;
+      optionsAtWrite = selectOptions(this).length;
     },
   });
 }

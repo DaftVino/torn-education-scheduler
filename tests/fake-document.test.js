@@ -19,6 +19,22 @@ function selectWith(doc, values, selectedIndexes) {
   return select;
 }
 
+function selectWithGroup(doc, directValue, groupedValues) {
+  const select = doc.createElement('select');
+  const direct = doc.createElement('option');
+  direct.value = directValue;
+  select.appendChild(direct);
+  const group = doc.createElement('optgroup');
+  group.label = 'Presets';
+  for (const value of groupedValues) {
+    const option = doc.createElement('option');
+    option.value = value;
+    group.appendChild(option);
+  }
+  select.appendChild(group);
+  return { select, group };
+}
+
 test('an empty select reports no value', () => {
   const doc = makeFakeDocument();
   assert.strictEqual(doc.createElement('select').value, '');
@@ -49,6 +65,26 @@ test('writing a value an option offers selects that option', () => {
   assert.strictEqual(select.value, 'b');
 });
 
+test('an untouched select keeps its direct placeholder ahead of grouped options', () => {
+  const doc = makeFakeDocument();
+  const { select } = selectWithGroup(doc, '', ['preset-a', 'preset-b']);
+  assert.strictEqual(select.value, '');
+});
+
+test('writing a grouped option value selects it like a direct option', () => {
+  const doc = makeFakeDocument();
+  const { select } = selectWithGroup(doc, '', ['preset-a', 'preset-b']);
+  select.value = 'preset-b';
+  assert.strictEqual(select.value, 'preset-b');
+});
+
+test('a grouped option marked selected wins normally', () => {
+  const doc = makeFakeDocument();
+  const { select, group } = selectWithGroup(doc, '', ['preset-a', 'preset-b']);
+  group.children[0].selected = true;
+  assert.strictEqual(select.value, 'preset-a');
+});
+
 test('writing a value no option offers reports nothing, not the string', () => {
   const doc = makeFakeDocument();
   const select = selectWith(doc, ['a', 'b']);
@@ -66,6 +102,19 @@ test('an option appended after an unmatched write ends the unselected state', ()
   select.appendChild(added);
   // A browser's "ask for a reset" step selects the first option once one
   // exists and nothing is selected; the failed write does not survive it.
+  assert.strictEqual(select.value, 'a');
+});
+
+test('a grouped option appended after an unmatched write ends the unselected state', () => {
+  const doc = makeFakeDocument();
+  const select = selectWith(doc, ['a']);
+  select.value = 'nope';
+  assert.strictEqual(select.value, '');
+  const group = doc.createElement('optgroup');
+  const added = doc.createElement('option');
+  added.value = 'preset-a';
+  group.appendChild(added);
+  select.appendChild(group);
   assert.strictEqual(select.value, 'a');
 });
 
