@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+
+- A **summary** toggle after Focus in the nav row. It opens a compact block
+  above `Queue fin:` with the path's course and degree counts, queued time,
+  finish date, working stats gained, and each bonus the queue delivers. Bonuses
+  are listed per selection and never added across different kinds, and a long
+  category opens to its full list. It closes when you use any other control,
+  and it is not saved.
+
 ## [1.2.0] - 2026-08-06
 
 **TORN PDA COMPATIBLE.** The scheduler now runs inside the Torn PDA app as well

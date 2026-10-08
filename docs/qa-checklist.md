@@ -304,6 +304,19 @@ misclick and a lost queue or lost focus selections.
 | O2 | While on Settings, inspect the gear button in devtools | It carries `aria-current="page"`, but is **not visually restyled** to look different from the other three views' gear button — it stays a landmark, not a fourth toggle target that happens to be selected. |
 | O3 | Click the panel's header title — the text naming the current view, to the left of `hide`/`show` | **Nothing happens.** Only the real button on the right (labelled `hide` or `show`) toggles the panel. This used to be a single clickable header; it is now two elements and only one of them responds. |
 
+## P. Path summary
+
+| # | Steps | Expected |
+|---|---|---|
+| P1 | Look at the nav row with Queue order on My focus first, then on Shortest first | `summary` sits directly after `focus` (after `degrees` when focus is hidden), on a **light fill with dark text**: the only inverted button in the panel. |
+| P2 | Empty the queue, then hover `summary` | It is disabled, and the tooltip reads `Queue a course to see a path summary.` |
+| P3 | Queue a few courses and click `summary` | A block opens **above `Queue fin:`**, inside the green outline: counts and queued time, finish date, working stats, one line per bonus category. The button turns green. |
+| P4 | With it open, use each in turn (reopening between): another tab, the header `hide`/`show`, choosing a course in the picker, removing a course | Each one **closes it**. The picker case matters most: the block must disappear, and the picker must keep your choice. |
+| P5 | From Degrees, click `summary` | One click lands on Schedule with the summary already open. |
+| P6 | Add all remaining courses and open the summary | The Unlocks & Abilities line ends `+N more`. Tapping it opens the full list, and that does **not** close the summary. |
+| P7 | Same queue, on desktop **and** in Torn PDA | The longest line wraps inside the panel; nothing widens it or scrolls sideways. |
+| P8 | Open the summary, then reload the page | It is closed after the reload. |
+
 ---
 
 ## Recording results

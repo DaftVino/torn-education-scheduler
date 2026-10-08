@@ -740,11 +740,12 @@ test('the shell renders the requested view with every available nav button', () 
 
   // Planner destinations are fixed controls, including the current view.
   // v0.3.0 Task 2 adds a reset button after settings on schedule, focus and
-  // settings — never grid, which owns no player data.
-  assert.strictEqual(fallback.nav.children.length, 5);
-  assert.strictEqual(grid.nav.children.length, 4);
-  assert.strictEqual(focus.nav.children.length, 5);
-  assert.strictEqual(settings.nav.children.length, 5);
+  // settings — never grid, which owns no player data. v1.3.0 adds the
+  // summary toggle after the planner buttons, on every view.
+  assert.strictEqual(fallback.nav.children.length, 6);
+  assert.strictEqual(grid.nav.children.length, 5);
+  assert.strictEqual(focus.nav.children.length, 6);
+  assert.strictEqual(settings.nav.children.length, 6);
   for (const [view, rendered] of [['schedule', fallback], ['grid', grid], ['focus', focus], ['settings', settings]]) {
     const label = view === 'grid' ? 'degrees' : view;
     const current = rendered.nav.children.find((b) => b.textContent === label || (view === 'settings' && /settings/i.test(b.textContent)));
@@ -755,9 +756,9 @@ test('the shell renders the requested view with every available nav button', () 
   const noFocusSchedule = draw('schedule', 'shortest-first');
   const noFocusGrid = draw('grid', 'shortest-first');
   const noFocusSettings = draw('settings', 'shortest-first');
-  assert.strictEqual(noFocusSchedule.nav.children.length, 4);
-  assert.strictEqual(noFocusGrid.nav.children.length, 3);
-  assert.strictEqual(noFocusSettings.nav.children.length, 4);
+  assert.strictEqual(noFocusSchedule.nav.children.length, 5);
+  assert.strictEqual(noFocusGrid.nav.children.length, 4);
+  assert.strictEqual(noFocusSettings.nav.children.length, 5);
 });
 
 // Task 4: settings becomes a permanent right-aligned landmark rather than a
@@ -1559,7 +1560,7 @@ function handlers() {
     onImportPlan() {},
     onFocusToggle() {}, onFocusPriority() {}, onFocusSectionToggle() {}, onFocusCompletedToggle() {},
     onFocusRankToggle() {},
-    onResetArm() {}, onResetConfirm() {},
+    onResetArm() {}, onResetConfirm() {}, onSummaryToggle() {},
   };
 }
 
@@ -3050,4 +3051,163 @@ test('every focus number is gone after a focus reset, not just the selections', 
   assert.strictEqual(
     descendants(panelEl()).filter((c) => c.className === 'tes-focus-priority').length,
     0);
+});
+
+function summaryButton(panel) {
+  const nav = descendants(panel).find((c) => c.className === 'tes-nav');
+  return nav && nav.children.find((b) => /tes-path-summary-toggle/.test(b.className));
+}
+function validQueue(n) {
+  const { exports: x } = loadUserscript();
+  const d = x.parsePayload(loadFixture());
+  return Array.from(x.allRemainingCourses(d.completedIds, d.courses, d.activeCourse)).slice(0, n);
+}
+
+test('the summary toggle sits directly after focus, or after degrees when focus is hidden', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const draw = (orderMode) => navLabels(x.renderPanel(doc, doc.body,
+    x.buildPanelModel(state({ queue: validQueue(3), settings: { orderMode } })), handlers()));
+  assert.deepStrictEqual(draw('focus').slice(0, 4), ['schedule', 'degrees', 'focus', 'summary']);
+  assert.deepStrictEqual(draw('shortest-first').slice(0, 3), ['schedule', 'degrees', 'summary']);
+});
+
+test('the summary toggle is disabled with the reason for each cause', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const { exports: y } = loadUserscript();
+  const d = y.parsePayload(loadFixture());
+  const bachelor = Array.from(y.allRemainingCourses(d.completedIds, d.courses, d.activeCourse))
+    .find((id) => d.courses.get(id).tier === 3);
+  for (const [s, reason] of [
+    [state({ queue: [] }), x.PATH_SUMMARY_REASONS.empty],
+    [state({ queue: [bachelor] }), x.PATH_SUMMARY_REASONS.prerequisites],
+    [state({ fetchFailed: true }), x.PATH_SUMMARY_REASONS.noData],
+  ]) {
+    const btn = summaryButton(x.renderPanel(doc, doc.body, x.buildPanelModel(s), handlers()));
+    assert.strictEqual(btn.disabled, true);
+    assert.strictEqual(btn.title, reason);
+    assert.strictEqual(btn.attributes['aria-pressed'], 'false');
+  }
+});
+
+test('an open summary renders every line in order, first in the overview, above Queue fin', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const model = x.buildPanelModel(Object.assign(state({ queue: validQueue(5) }), { summaryOpen: true }));
+  // A synthetic summary so every optional line is present at once; Task 2 owns the text itself.
+  model.pathSummary = {
+    headline: 'H', finish: 'F', workingStats: 'W',
+    categories: [{ text: 'C1', fullText: null }, { text: 'C2 +3 more', fullText: 'C2 all' }],
+    healthNote: 'N',
+  };
+  const panel = x.renderPanel(doc, doc.body, model, handlers());
+  const overview = descendants(panel).find((c) => c.className === 'tes-overview tes-schedule-overview');
+  assert.strictEqual(overview.children[0].className, 'tes-path-summary');
+  assert.strictEqual(overview.children[1].className, 'tes-finish');
+  const shape = (el) => [el.tagName, el.className, el.textContent];
+  assert.deepStrictEqual(overview.children[0].children.map(shape), [
+    ['div', 'tes-path-summary-headline', 'H'],
+    ['div', 'tes-path-summary-finish', 'F'],
+    ['div', 'tes-path-summary-line', 'W'],
+    ['div', 'tes-path-summary-line', 'C1'],
+    ['details', 'tes-path-summary-line', ''],
+    ['div', 'tes-note tes-path-summary-note', 'N'],
+  ]);
+  const disclosure = overview.children[0].children[4];
+  assert.deepStrictEqual(disclosure.children.map(shape), [
+    ['summary', '', 'C2 +3 more'],
+    ['div', 'tes-path-summary-full', 'C2 all'],
+  ]);
+  const btn = summaryButton(panel);
+  assert.match(btn.className, /tes-path-summary-open/);
+  assert.strictEqual(btn.attributes['aria-pressed'], 'true');
+});
+
+test('a closed summary renders no block', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: validQueue(5) })), handlers());
+  assert.ok(!descendants(panel).some((c) => c.className === 'tes-path-summary'));
+});
+
+test('clicking a disabled summary toggle calls nothing', () => {
+  const { x } = load();
+  const doc = makeDocument();
+  let calls = 0;
+  const h = Object.assign(handlers(), { onSummaryToggle() { calls += 1; } });
+  const panel = x.renderPanel(doc, doc.body, x.buildPanelModel(state({ queue: [] })), h);
+  fire(summaryButton(panel), 'click');
+  assert.strictEqual(calls, 0);
+});
+
+function livePanel(doc) { return doc.querySelector('#tes-panel'); }
+function summaryBlock(doc) {
+  return descendants(livePanel(doc)).find((c) => c.className === 'tes-path-summary');
+}
+function navButtonLabelled(doc, re) {
+  const nav = descendants(livePanel(doc)).find((c) => c.className === 'tes-nav');
+  return nav.children.find((b) => re.test(b.textContent));
+}
+function pressed(doc) { return summaryButton(livePanel(doc)).attributes['aria-pressed']; }
+
+test('init: the summary opens on one click and closes on the next', async () => {
+  const { doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+  fire(summaryButton(livePanel(doc)), 'click');
+  // A handler fired by the render itself would close it during its own draw,
+  // leaving no block in the panel now in the document.
+  assert.ok(summaryBlock(doc), 'the summary did not open, or closed during its own draw');
+  assert.strictEqual(pressed(doc), 'true');
+  fire(summaryButton(livePanel(doc)), 'click');
+  assert.ok(!summaryBlock(doc));
+  assert.strictEqual(pressed(doc), 'false');
+});
+
+test('init: each other nav button closes the summary on that one click', async () => {
+  for (const re of [/^schedule$/, /^degrees$/, /^focus$/, /settings/, /^reset$/]) {
+    const { doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+    fire(summaryButton(livePanel(doc)), 'click');
+    assert.ok(summaryBlock(doc));
+    fire(navButtonLabelled(doc, re), 'click');
+    assert.strictEqual(pressed(doc), 'false', `${re} left the summary open`);
+    assert.ok(!summaryBlock(doc));
+  }
+});
+
+test('init: a picker change closes the summary although that handler never draws', async () => {
+  const { x, doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+  fire(summaryButton(livePanel(doc)), 'click');
+  const picker = () => descendants(livePanel(doc)).find((c) => c.className === 'tes-course-picker');
+  picker().value = x.ALL_COURSES_OPTION;
+  fire(picker(), 'change');
+  assert.ok(!summaryBlock(doc), 'state closed but the block stayed on screen');
+  assert.strictEqual(pressed(doc), 'false');
+  assert.strictEqual(picker().value, x.ALL_COURSES_OPTION, 'the forced redraw lost the choice');
+});
+
+test('init: removing a course closes the summary', async () => {
+  const { doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+  fire(summaryButton(livePanel(doc)), 'click');
+  fire(descendants(livePanel(doc)).find((c) => c.className === 'tes-remove-course'), 'click');
+  assert.ok(!summaryBlock(doc));
+  assert.strictEqual(pressed(doc), 'false');
+});
+
+test('init: from degrees, one click lands on Schedule with the summary open', async () => {
+  const { doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+  fire(navButtonLabelled(doc, /^degrees$/), 'click');
+  fire(summaryButton(livePanel(doc)), 'click');
+  // VIEW_TITLES.schedule: the header names the view it landed on.
+  assert.strictEqual(livePanel(doc).children[0].children[0].textContent, 'Education Scheduler');
+  assert.ok(summaryBlock(doc));
+});
+
+test('init: emptying the queue closes the summary and disables its button', async () => {
+  const { doc } = await bootInit({ queue: validQueue(2), collapsed: false });
+  fire(summaryButton(livePanel(doc)), 'click');
+  for (let i = 0; i < 2; i++) {
+    fire(descendants(livePanel(doc)).find((c) => c.className === 'tes-remove-course'), 'click');
+  }
+  assert.ok(!summaryBlock(doc));
+  assert.strictEqual(summaryButton(livePanel(doc)).disabled, true);
 });

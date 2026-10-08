@@ -951,6 +951,76 @@
     return { unit, total, remaining, statable };
   }
 
+  // What a queued path delivers, per (category, selection) and never summed
+  // across them: the same rule focusTotals and focusScores keep. Each figure
+  // is focusTotals' own `remaining` with every course OUTSIDE the queue
+  // treated as banked, so the unit rule and FOCUS_UNSTATABLE are focusTotals'
+  // rather than a second copy of them. Within a category, units are grouped
+  // (percent, flat, count) and never ranked against each other.
+  // `unmatched` is this path's own data health: taxonomy rows on queued
+  // courses whose outcome text Torn no longer shows, plus outcome strings on
+  // queued courses the taxonomy never claimed. A catalogue-wide figure would
+  // warn a plan about courses it does not contain.
+  // FOCUS_CATEGORIES is declared further down; it is read only when this
+  // runs, long after the IIFE has initialised.
+  const PATH_GAIN_UNIT_RANK = Object.freeze({ percent: 0, flat: 1, count: 2 });
+  function pathGains(queue, courses) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const ids = Array.isArray(queue)
+      ? queue.filter(function (id, i, a) { return map.has(id) && a.indexOf(id) === i; })
+      : [];
+    const out = { courseCount: ids.length, degreeCount: 0, workingStats: [], categories: [], unmatched: 0 };
+    if (ids.length === 0) return out;
+
+    const queued = new Set(ids);
+    const notQueued = new Set();
+    for (const id of map.keys()) if (!queued.has(id)) notQueued.add(id);
+
+    out.degreeCount = ids.filter(function (id) { return map.get(id).tier === 3; }).length;
+
+    for (const stat of WORKING_STATS) {
+      const t = focusTotals({ category: FOCUS_WORKING_STATS, selection: stat }, map, notQueued);
+      if (t.remaining > 0) out.workingStats.push({ stat: stat, amount: t.remaining });
+    }
+
+    for (const category of FOCUS_CATEGORIES) {
+      if (category === FOCUS_WORKING_STATS) continue;
+      const selections = FOCUS_TAXONOMY
+        .filter(function (r) { return r.category === category; })
+        .map(function (r) { return r.selection; })
+        .filter(function (s, i, a) { return a.indexOf(s) === i; });
+      const gains = [];
+      for (const selection of selections) {
+        const t = focusTotals({ category: category, selection: selection }, map, notQueued);
+        if (t.remaining > 0) gains.push({ selection: selection, unit: t.unit, amount: t.remaining });
+      }
+      if (gains.length === 0) continue;
+      gains.sort(function (a, b) {
+        const ra = PATH_GAIN_UNIT_RANK[a.unit];
+        const rb = PATH_GAIN_UNIT_RANK[b.unit];
+        if (ra !== rb) return ra - rb;
+        if (a.unit !== 'count' && a.amount !== b.amount) return b.amount - a.amount;
+        return a.selection < b.selection ? -1 : a.selection > b.selection ? 1 : 0;
+      });
+      out.categories.push({ category: category, gains: gains });
+    }
+
+    for (const row of FOCUS_TAXONOMY) {
+      if (!queued.has(row.courseId)) continue;
+      const outcomes = map.get(row.courseId).learningOutcomes;
+      if (!Array.isArray(outcomes) || outcomes.indexOf(row.outcome) === -1) out.unmatched += 1;
+    }
+    for (const id of ids) {
+      const outcomes = map.get(id).learningOutcomes;
+      if (!Array.isArray(outcomes)) continue;
+      for (const o of outcomes) {
+        const claimed = FOCUS_TAXONOMY.some(function (r) { return r.courseId === id && r.outcome === o; });
+        if (!claimed) out.unmatched += 1;
+      }
+    }
+    return out;
+  }
+
   // Everything that must be done before this course can be: the parentId chain,
   // plus the rule the payload does not carry — a tier-3 bachelor requires every
   // tier-2 course in its own category. The two compose, which is why this is one
@@ -2295,6 +2365,56 @@
       : `${totals.remaining} course${totals.remaining === 1 ? '' : 's'} left, no fixed total`;
   }
 
+  // Why the summary toggle is disabled, one string per cause, so a failed
+  // fetch is never described as a problem with the player's queue.
+  const PATH_SUMMARY_REASONS = Object.freeze({
+    noData: 'No course data loaded, so there is no path to summarise.',
+    empty: 'Queue a course to see a path summary.',
+    prerequisites: 'This queue has unmet prerequisites, so it has no finish date to summarise.',
+  });
+
+  // The summary toggle's text, built here so the renderer only places strings.
+  // Every figure is one (category, selection) or one stat; nothing is summed
+  // across them, for the reason pathGains gives. No Books floor date: a floor
+  // without its Book count and cost is a number nobody can act on, and the
+  // booster block directly below already shows it with both.
+  const PATH_SUMMARY_ITEMS_PER_LINE = 4;
+  function pathSummaryModel(gains, labels) {
+    const num = function (n) { return Number(n.toFixed(2)).toLocaleString('en-US'); };
+    const plural = function (n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; };
+    const head = [plural(gains.courseCount, 'course')];
+    if (gains.degreeCount > 0) head.push(plural(gains.degreeCount, 'degree'));
+    // "queued": the finish date also waits for the active course, so a bare
+    // duration beside it would read as wrong.
+    head.push(`${labels.totalLabel} queued`);
+
+    const workingStats = gains.workingStats.length === 0 ? null
+      : 'Working stats: ' + gains.workingStats.map(function (w) { return `+${num(w.amount)} ${w.stat}`; }).join(' · ');
+
+    const categories = gains.categories.map(function (c) {
+      const items = c.gains.map(function (g) {
+        if (g.unit === 'percent') return `${g.selection} +${num(g.amount)}%`;
+        if (g.unit === 'flat') return `${g.selection} +${num(g.amount)}`;
+        return g.selection;
+      });
+      if (items.length <= PATH_SUMMARY_ITEMS_PER_LINE) {
+        return { text: `${c.category}: ${items.join(' · ')}`, fullText: null };
+      }
+      const shown = items.slice(0, PATH_SUMMARY_ITEMS_PER_LINE);
+      return {
+        text: `${c.category}: ${shown.join(' · ')} · +${items.length - shown.length} more`,
+        fullText: `${c.category}: ${items.join(' · ')}`,
+      };
+    });
+
+    const healthNote = gains.unmatched > 0
+      ? "Some of these courses' bonuses could not be matched to Torn's current text and are not counted."
+      : null;
+
+    return { headline: head.join(' · '), finish: `Finishes ${labels.finishLabel}`,
+      workingStats: workingStats, categories: categories, healthNote: healthNote };
+  }
+
   function buildPanelModel(state) {
     // Computed once, here, so nothing downstream depends on the caller having
     // normalised: panelSettings runs normaliseSettings, which turns anything —
@@ -2319,6 +2439,7 @@
       // No payload means no total to reduce, so there is no floor date to
       // quote — and a floor date is the one thing that must never be guessed.
       consumables: null,
+      summaryAvailable: false, summaryReason: PATH_SUMMARY_REASONS.noData, summaryOpen: false, pathSummary: null,
       orderModes: ORDER_MODE_LABELS,
       // Null until the player asks for it. An acquisition failure is exactly
       // when the report is most wanted — and it is genuinely reachable from
@@ -2621,6 +2742,19 @@
       };
     });
 
+    // The finish date's own gate, so the button's disabled state and the
+    // finish line cannot disagree about whether this queue is a plan. The
+    // summary itself is built only while open: pathGains costs about 7 ms on
+    // a full queue, and every click redraws.
+    const summaryAvailable = queue.length > 0 && problems.length === 0;
+    const summaryOpen = state.summaryOpen === true && summaryAvailable;
+    const pathSummary = summaryOpen
+      ? pathSummaryModel(pathGains(queue, data.courses), {
+          totalLabel: formatDuration(result.totalSeconds),
+          finishLabel: `${formatDate(result.finishesAt)} · ${formatTime(result.finishesAt)} TCT`,
+        })
+      : null;
+
     return {
       status: 'ok',
       message: null,
@@ -2652,6 +2786,13 @@
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: perkInference,
       consumables: consumablesModel,
+      // Closure state in init(), never stored. A summary cannot be open with
+      // nothing to show, even if a queue edit removed it between draws.
+      summaryAvailable: summaryAvailable,
+      summaryReason: summaryAvailable ? null
+        : (queue.length === 0 ? PATH_SUMMARY_REASONS.empty : PATH_SUMMARY_REASONS.prerequisites),
+      summaryOpen: summaryOpen,
+      pathSummary: pathSummary,
       orderModes: ORDER_MODE_LABELS,
       debugReport: state.debugReport || null,
       grid: grid,
@@ -2810,6 +2951,10 @@
       // used as text. The measured -text variants remain the only green/red
       // text colours because they clear AA against the panel background.
       '  --tm-good-bg: #2a6b3a; --tm-good-text: #7ee081; --tm-bad-text: #ff8080; --tm-accent-text: #6ea3d0;',
+      // The one dark ink in the panel, for the one inverted control. A
+      // background token must never be used as text (style test), so the
+      // summary toggle gets an ink named for what it is.
+      '  --tes-ink-on-light: #1f1f1f;',
       '  --tes-text-sm: 12px; --tes-text: 14px; --tes-text-lg: 1.25em;',
       '  --tes-gap-xs: 4px; --tes-gap-sm: 6px; --tes-gap: 8px; --tes-gap-lg: 14px;',
       '  --tes-focus-ring: 2px solid var(--tm-good-text);',
@@ -2830,6 +2975,14 @@
       '#tes-panel .tes-header-toggle { font-weight: normal; }',
       '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-nav .tes-settings { margin-left: auto; }',
+      '#tes-panel .tes-path-summary-toggle { background: var(--tm-text); color: var(--tes-ink-on-light); border-color: var(--tm-text); }',
+      '#tes-panel .tes-path-summary-toggle.tes-path-summary-open { background: var(--tm-good-text); border-color: var(--tm-good-text); }',
+      '#tes-panel .tes-path-summary-toggle:disabled { background: var(--tm-hover); color: var(--tm-muted); border-color: var(--tm-border-2); cursor: not-allowed; }',
+      '#tes-panel .tes-path-summary { min-width: 0; overflow-wrap: anywhere; padding-bottom: var(--tes-gap);',
+      '  margin-bottom: var(--tes-gap); border-bottom: 1px solid var(--tm-border-2); }',
+      '#tes-panel .tes-path-summary-headline { font-weight: bold; }',
+      '#tes-panel .tes-path-summary-line { color: var(--tm-meta); font-size: var(--tes-text-sm); }',
+      '#tes-panel .tes-path-summary-line summary { cursor: pointer; }',
       '#tes-panel .tes-reset-armed { border-color: var(--tm-bad-text); color: var(--tm-bad-text); }',
       '#tes-panel .tes-finish { font-size: var(--tes-text-lg); font-weight: bold; color: var(--tm-good-text); margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-save-error { color: var(--tm-bad-text); font-weight: bold; margin-bottom: var(--tes-gap); }',
@@ -3092,6 +3245,27 @@
           nav.appendChild(btn);
         }
 
+        // Not a view target: it opens a block on Schedule rather than going
+        // anywhere, so it is built here rather than through navButton's
+        // onViewChange wiring. Disabled, never absent, so the row does not
+        // reflow as the queue gains and loses an honest finish date.
+        const summary = doc.createElement('button');
+        summary.className = model.summaryOpen
+          ? 'tes-path-summary-toggle tes-path-summary-open'
+          : 'tes-path-summary-toggle';
+        summary.textContent = 'summary';
+        summary.setAttribute('aria-pressed', model.summaryOpen ? 'true' : 'false');
+        if (!model.summaryAvailable) {
+          summary.disabled = true;
+          summary.title = model.summaryReason || '';
+        }
+        if (summary.addEventListener) {
+          summary.addEventListener('click', function () {
+            if (summary.disabled) return;
+            if (handlers.onSummaryToggle) handlers.onSummaryToggle();
+          });
+        }
+        nav.appendChild(summary);
         // Settings is a fixed landmark, not a fourth toggle target: it
         // renders on every view, identically, always enabled — a landmark
         // that greys out or moves when you land on it is not a landmark.
@@ -3724,6 +3898,33 @@
 
     const overview = doc.createElement('div');
     overview.className = 'tes-overview tes-schedule-overview';
+    // Above the finish line, inside the same outline: the summary answers
+    // "what does this path get me" next to the line that answers "when".
+    // A long category is a native disclosure: opening it fires no handler,
+    // so it cannot close the summary it sits in.
+    if (model.summaryOpen && model.pathSummary) {
+      const s = model.pathSummary;
+      const block = doc.createElement('div');
+      block.className = 'tes-path-summary';
+      const line = function (parent, tag, cls, text) {
+        const el = doc.createElement(tag);
+        if (cls) el.className = cls;
+        if (text != null) el.textContent = text;
+        parent.appendChild(el);
+        return el;
+      };
+      line(block, 'div', 'tes-path-summary-headline', s.headline);
+      line(block, 'div', 'tes-path-summary-finish', s.finish);
+      if (s.workingStats) line(block, 'div', 'tes-path-summary-line', s.workingStats);
+      for (const c of s.categories) {
+        if (!c.fullText) { line(block, 'div', 'tes-path-summary-line', c.text); continue; }
+        const more = line(block, 'details', 'tes-path-summary-line', null);
+        line(more, 'summary', null, c.text);
+        line(more, 'div', 'tes-path-summary-full', c.fullText);
+      }
+      if (s.healthNote) line(block, 'div', 'tes-note tes-path-summary-note', s.healthNote);
+      overview.appendChild(block);
+    }
 
     // The finish date is the number this whole tool exists to produce, so
     // it gets its own prominent line rather than sitting mid-paragraph in
@@ -4161,6 +4362,7 @@
       focusGroups: null, focuses: null, focusHealth: null, focusOpenCategories: [],
       focusOpenCompletedCategories: [],
       consumables: null,
+      summaryAvailable: false, summaryReason: PATH_SUMMARY_REASONS.noData, summaryOpen: false, pathSummary: null,
       shareText: '', importError: null,
     };
   }
@@ -4184,6 +4386,7 @@
     onFocusToggle: function () {}, onFocusPriority: function () {}, onFocusSectionToggle: function () {},
     onFocusCompletedToggle: function () {},
     onFocusRankToggle: function () {},
+    onSummaryToggle: function () {},
     // renderSettingsView (the only renderer that calls onImportPlan) is
     // unreachable through this handler set: both errorModel call sites pass
     // noopHandlers, errorModel hardcodes view: 'schedule', and renderPanel
@@ -4304,11 +4507,39 @@
     // A panel reopened later must never be found armed.
     let resetArmed = false;
 
+    // Whether the path summary is open. Held here, never in plan or settings:
+    // which block you last looked at is not a preference. closesSummary shuts
+    // it on every handler but its own, so any control the player touches,
+    // including one added after this, closes it without remembering to. When
+    // a handler changes state without drawing (the picker does), the wrapper
+    // draws for it, or a summary closed in state would stay on screen.
+    let summaryOpen = false;
+    let drawCount = 0;
+
+    function closesSummary(set, redraw) {
+      const out = {};
+      for (const key of Object.keys(set)) {
+        const fn = set[key];
+        out[key] = (typeof fn === 'function' && key !== 'onSummaryToggle')
+          ? function () {
+              const wasOpen = summaryOpen;
+              const drawsBefore = drawCount;
+              summaryOpen = false;
+              const result = fn.apply(this, arguments);
+              if (wasOpen && drawCount === drawsBefore) redraw();
+              return result;
+            }
+          : fn;
+      }
+      return out;
+    }
+
     // draw/buildPanelModel/renderPanel are unguarded and schedule() throws
     // plain Errors on unexpected input; without this the throw becomes an
     // unhandled rejection (init is async) and the page goes blank with no
     // hint why. Catching here keeps the failure inside the panel instead.
     function draw(currentPlan, saveFailed) {
+      drawCount += 1;
       try {
         const model = buildPanelModel({
           fetchResult: fetchResult,
@@ -4324,6 +4555,7 @@
           debugReport: debugReport,
           importError: importError,
           resetArmed: resetArmed,
+          summaryOpen: summaryOpen,
           focusOpenCategories: focusOpenCategories,
           focusOpenCompletedCategories: focusOpenCompletedCategories,
         });
@@ -4333,7 +4565,7 @@
           draw(next, !saved);
         }
 
-        return renderPanel(document, mount, model, {
+        return renderPanel(document, mount, model, closesSummary({
           onToggle: function () {
             resetArmed = false;
             presetError = null;
@@ -4588,6 +4820,19 @@
           // on. Arming never touches storage — only a confirm does, and only
           // through the same commit/saveSettings paths every other mutation
           // uses, so a failed write surfaces exactly the way it would there.
+          onSummaryToggle: function () {
+            resetArmed = false;
+            presetError = null;
+            // The block lives on Schedule. From anywhere else, one click goes
+            // there with it open, rather than a button that does nothing.
+            if (view !== 'schedule') {
+              view = 'schedule';
+              summaryOpen = true;
+            } else {
+              summaryOpen = !summaryOpen;
+            }
+            draw(currentPlan, saveFailed === true);
+          },
           onResetArm: function () {
             resetArmed = true;
             draw(currentPlan, saveFailed === true);
@@ -4622,7 +4867,7 @@
             // armed.
             draw(currentPlan, saveFailed === true);
           },
-        });
+        }, function () { draw(currentPlan, saveFailed === true); }));
       } catch (e) {
         const detail = (e && e.message) || String(e);
         return renderPanel(document, mount, errorModel(`Education Scheduler hit an error and stopped: ${detail}`), noopHandlers);

@@ -40,6 +40,10 @@ New to Torn education? Read the
   a projected finish for every queued course.
 - See each course's working-stat gains and Torn-provided learning outcomes
   directly in its queue row.
+- Open **summary** for the whole path at a glance: course and degree counts,
+  queued time, finish date, total working stats, and every bonus the queue
+  delivers, listed per selection rather than added across different kinds. It
+  closes as soon as you use anything else.
 - Choose from four prerequisite-safe ordering strategies: **My focus first**,
   **As listed**, **Shortest first**, and **Unlocks first**.
 - Reorder the queue by hand using the up and down controls on each row. A move
