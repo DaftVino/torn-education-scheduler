@@ -3140,3 +3140,74 @@ test('clicking a disabled summary toggle calls nothing', () => {
   fire(summaryButton(panel), 'click');
   assert.strictEqual(calls, 0);
 });
+
+function livePanel(doc) { return doc.querySelector('#tes-panel'); }
+function summaryBlock(doc) {
+  return descendants(livePanel(doc)).find((c) => c.className === 'tes-path-summary');
+}
+function navButtonLabelled(doc, re) {
+  const nav = descendants(livePanel(doc)).find((c) => c.className === 'tes-nav');
+  return nav.children.find((b) => re.test(b.textContent));
+}
+function pressed(doc) { return summaryButton(livePanel(doc)).attributes['aria-pressed']; }
+
+test('init: the summary opens on one click and closes on the next', async () => {
+  const { doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+  fire(summaryButton(livePanel(doc)), 'click');
+  // A handler fired by the render itself would close it during its own draw,
+  // leaving no block in the panel now in the document.
+  assert.ok(summaryBlock(doc), 'the summary did not open, or closed during its own draw');
+  assert.strictEqual(pressed(doc), 'true');
+  fire(summaryButton(livePanel(doc)), 'click');
+  assert.ok(!summaryBlock(doc));
+  assert.strictEqual(pressed(doc), 'false');
+});
+
+test('init: each other nav button closes the summary on that one click', async () => {
+  for (const re of [/^schedule$/, /^degrees$/, /^focus$/, /settings/, /^reset$/]) {
+    const { doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+    fire(summaryButton(livePanel(doc)), 'click');
+    assert.ok(summaryBlock(doc));
+    fire(navButtonLabelled(doc, re), 'click');
+    assert.strictEqual(pressed(doc), 'false', `${re} left the summary open`);
+    assert.ok(!summaryBlock(doc));
+  }
+});
+
+test('init: a picker change closes the summary although that handler never draws', async () => {
+  const { x, doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+  fire(summaryButton(livePanel(doc)), 'click');
+  const picker = () => descendants(livePanel(doc)).find((c) => c.className === 'tes-course-picker');
+  picker().value = x.ALL_COURSES_OPTION;
+  fire(picker(), 'change');
+  assert.ok(!summaryBlock(doc), 'state closed but the block stayed on screen');
+  assert.strictEqual(pressed(doc), 'false');
+  assert.strictEqual(picker().value, x.ALL_COURSES_OPTION, 'the forced redraw lost the choice');
+});
+
+test('init: removing a course closes the summary', async () => {
+  const { doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+  fire(summaryButton(livePanel(doc)), 'click');
+  fire(descendants(livePanel(doc)).find((c) => c.className === 'tes-remove-course'), 'click');
+  assert.ok(!summaryBlock(doc));
+  assert.strictEqual(pressed(doc), 'false');
+});
+
+test('init: from degrees, one click lands on Schedule with the summary open', async () => {
+  const { doc } = await bootInit({ queue: validQueue(5), collapsed: false });
+  fire(navButtonLabelled(doc, /^degrees$/), 'click');
+  fire(summaryButton(livePanel(doc)), 'click');
+  // VIEW_TITLES.schedule: the header names the view it landed on.
+  assert.strictEqual(livePanel(doc).children[0].children[0].textContent, 'Education Scheduler');
+  assert.ok(summaryBlock(doc));
+});
+
+test('init: emptying the queue closes the summary and disables its button', async () => {
+  const { doc } = await bootInit({ queue: validQueue(2), collapsed: false });
+  fire(summaryButton(livePanel(doc)), 'click');
+  for (let i = 0; i < 2; i++) {
+    fire(descendants(livePanel(doc)).find((c) => c.className === 'tes-remove-course'), 'click');
+  }
+  assert.ok(!summaryBlock(doc));
+  assert.strictEqual(summaryButton(livePanel(doc)).disabled, true);
+});

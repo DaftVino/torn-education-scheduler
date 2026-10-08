@@ -4386,6 +4386,7 @@
     onFocusToggle: function () {}, onFocusPriority: function () {}, onFocusSectionToggle: function () {},
     onFocusCompletedToggle: function () {},
     onFocusRankToggle: function () {},
+    onSummaryToggle: function () {},
     // renderSettingsView (the only renderer that calls onImportPlan) is
     // unreachable through this handler set: both errorModel call sites pass
     // noopHandlers, errorModel hardcodes view: 'schedule', and renderPanel
@@ -4506,11 +4507,39 @@
     // A panel reopened later must never be found armed.
     let resetArmed = false;
 
+    // Whether the path summary is open. Held here, never in plan or settings:
+    // which block you last looked at is not a preference. closesSummary shuts
+    // it on every handler but its own, so any control the player touches,
+    // including one added after this, closes it without remembering to. When
+    // a handler changes state without drawing (the picker does), the wrapper
+    // draws for it, or a summary closed in state would stay on screen.
+    let summaryOpen = false;
+    let drawCount = 0;
+
+    function closesSummary(set, redraw) {
+      const out = {};
+      for (const key of Object.keys(set)) {
+        const fn = set[key];
+        out[key] = (typeof fn === 'function' && key !== 'onSummaryToggle')
+          ? function () {
+              const wasOpen = summaryOpen;
+              const drawsBefore = drawCount;
+              summaryOpen = false;
+              const result = fn.apply(this, arguments);
+              if (wasOpen && drawCount === drawsBefore) redraw();
+              return result;
+            }
+          : fn;
+      }
+      return out;
+    }
+
     // draw/buildPanelModel/renderPanel are unguarded and schedule() throws
     // plain Errors on unexpected input; without this the throw becomes an
     // unhandled rejection (init is async) and the page goes blank with no
     // hint why. Catching here keeps the failure inside the panel instead.
     function draw(currentPlan, saveFailed) {
+      drawCount += 1;
       try {
         const model = buildPanelModel({
           fetchResult: fetchResult,
@@ -4526,6 +4555,7 @@
           debugReport: debugReport,
           importError: importError,
           resetArmed: resetArmed,
+          summaryOpen: summaryOpen,
           focusOpenCategories: focusOpenCategories,
           focusOpenCompletedCategories: focusOpenCompletedCategories,
         });
@@ -4535,7 +4565,7 @@
           draw(next, !saved);
         }
 
-        return renderPanel(document, mount, model, {
+        return renderPanel(document, mount, model, closesSummary({
           onToggle: function () {
             resetArmed = false;
             presetError = null;
@@ -4790,6 +4820,19 @@
           // on. Arming never touches storage — only a confirm does, and only
           // through the same commit/saveSettings paths every other mutation
           // uses, so a failed write surfaces exactly the way it would there.
+          onSummaryToggle: function () {
+            resetArmed = false;
+            presetError = null;
+            // The block lives on Schedule. From anywhere else, one click goes
+            // there with it open, rather than a button that does nothing.
+            if (view !== 'schedule') {
+              view = 'schedule';
+              summaryOpen = true;
+            } else {
+              summaryOpen = !summaryOpen;
+            }
+            draw(currentPlan, saveFailed === true);
+          },
           onResetArm: function () {
             resetArmed = true;
             draw(currentPlan, saveFailed === true);
@@ -4824,7 +4867,7 @@
             // armed.
             draw(currentPlan, saveFailed === true);
           },
-        });
+        }, function () { draw(currentPlan, saveFailed === true); }));
       } catch (e) {
         const detail = (e && e.message) || String(e);
         return renderPanel(document, mount, errorModel(`Education Scheduler hit an error and stopped: ${detail}`), noopHandlers);

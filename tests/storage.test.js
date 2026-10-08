@@ -92,3 +92,31 @@ test('the armed flag never reaches storage', async () => {
     if (raw) assert.ok(!/armed/i.test(raw), `${key} must not carry the armed flag`);
   }
 });
+
+// The summary's open state lives only in init()'s closure, the same as
+// resetArmed. Opening it must not touch storage at all, compared byte for
+// byte, so a write that a later save would overwrite cannot hide. A later
+// plan write must still carry exactly the plan's own two keys.
+test('the summary open state never reaches storage', async () => {
+  const doc = makeFakeDocument();
+  doc.cookie = 'rfc_v=abcdefghijklm';
+  const { exports: x, gmStore } = loadUserscript({
+    location: { search: '' },
+    document: doc,
+    fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(loadFixture()) }),
+  });
+  const d = x.parsePayload(loadFixture());
+  const queue = Array.from(x.allRemainingCourses(d.completedIds, d.courses, d.activeCourse)).slice(0, 3);
+  gmStore.set(x.STORAGE_KEY, JSON.stringify({ queue: queue, collapsed: false }));
+  await x.init();
+
+  const snapshot = () => [gmStore.get(x.STORAGE_KEY), gmStore.get(x.SETTINGS_KEY)];
+  const before = snapshot();
+  fire(descendants(doc.querySelector('#tes-panel')).find((c) => /tes-path-summary-toggle/.test(c.className)), 'click');
+  assert.ok(descendants(doc.querySelector('#tes-panel')).some((c) => c.className === 'tes-path-summary'),
+    'the summary never opened, so this test would pass vacuously');
+  assert.deepStrictEqual(snapshot(), before, 'opening the summary wrote to storage');
+
+  fire(descendants(doc.querySelector('#tes-panel')).find((c) => c.className === 'tes-header-toggle'), 'click');
+  assert.deepStrictEqual(Object.keys(JSON.parse(gmStore.get(x.STORAGE_KEY))).sort(), ['collapsed', 'queue']);
+});
