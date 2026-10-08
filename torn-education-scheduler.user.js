@@ -951,6 +951,76 @@
     return { unit, total, remaining, statable };
   }
 
+  // What a queued path delivers, per (category, selection) and never summed
+  // across them: the same rule focusTotals and focusScores keep. Each figure
+  // is focusTotals' own `remaining` with every course OUTSIDE the queue
+  // treated as banked, so the unit rule and FOCUS_UNSTATABLE are focusTotals'
+  // rather than a second copy of them. Within a category, units are grouped
+  // (percent, flat, count) and never ranked against each other.
+  // `unmatched` is this path's own data health: taxonomy rows on queued
+  // courses whose outcome text Torn no longer shows, plus outcome strings on
+  // queued courses the taxonomy never claimed. A catalogue-wide figure would
+  // warn a plan about courses it does not contain.
+  // FOCUS_CATEGORIES is declared further down; it is read only when this
+  // runs, long after the IIFE has initialised.
+  const PATH_GAIN_UNIT_RANK = Object.freeze({ percent: 0, flat: 1, count: 2 });
+  function pathGains(queue, courses) {
+    const map = (courses instanceof Map) ? courses : new Map();
+    const ids = Array.isArray(queue)
+      ? queue.filter(function (id, i, a) { return map.has(id) && a.indexOf(id) === i; })
+      : [];
+    const out = { courseCount: ids.length, degreeCount: 0, workingStats: [], categories: [], unmatched: 0 };
+    if (ids.length === 0) return out;
+
+    const queued = new Set(ids);
+    const notQueued = new Set();
+    for (const id of map.keys()) if (!queued.has(id)) notQueued.add(id);
+
+    out.degreeCount = ids.filter(function (id) { return map.get(id).tier === 3; }).length;
+
+    for (const stat of WORKING_STATS) {
+      const t = focusTotals({ category: FOCUS_WORKING_STATS, selection: stat }, map, notQueued);
+      if (t.remaining > 0) out.workingStats.push({ stat: stat, amount: t.remaining });
+    }
+
+    for (const category of FOCUS_CATEGORIES) {
+      if (category === FOCUS_WORKING_STATS) continue;
+      const selections = FOCUS_TAXONOMY
+        .filter(function (r) { return r.category === category; })
+        .map(function (r) { return r.selection; })
+        .filter(function (s, i, a) { return a.indexOf(s) === i; });
+      const gains = [];
+      for (const selection of selections) {
+        const t = focusTotals({ category: category, selection: selection }, map, notQueued);
+        if (t.remaining > 0) gains.push({ selection: selection, unit: t.unit, amount: t.remaining });
+      }
+      if (gains.length === 0) continue;
+      gains.sort(function (a, b) {
+        const ra = PATH_GAIN_UNIT_RANK[a.unit];
+        const rb = PATH_GAIN_UNIT_RANK[b.unit];
+        if (ra !== rb) return ra - rb;
+        if (a.unit !== 'count' && a.amount !== b.amount) return b.amount - a.amount;
+        return a.selection < b.selection ? -1 : a.selection > b.selection ? 1 : 0;
+      });
+      out.categories.push({ category: category, gains: gains });
+    }
+
+    for (const row of FOCUS_TAXONOMY) {
+      if (!queued.has(row.courseId)) continue;
+      const outcomes = map.get(row.courseId).learningOutcomes;
+      if (!Array.isArray(outcomes) || outcomes.indexOf(row.outcome) === -1) out.unmatched += 1;
+    }
+    for (const id of ids) {
+      const outcomes = map.get(id).learningOutcomes;
+      if (!Array.isArray(outcomes)) continue;
+      for (const o of outcomes) {
+        const claimed = FOCUS_TAXONOMY.some(function (r) { return r.courseId === id && r.outcome === o; });
+        if (!claimed) out.unmatched += 1;
+      }
+    }
+    return out;
+  }
+
   // Everything that must be done before this course can be: the parentId chain,
   // plus the rule the payload does not carry — a tier-3 bachelor requires every
   // tier-2 course in its own category. The two compose, which is why this is one
