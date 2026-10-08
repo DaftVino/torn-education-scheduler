@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-08
+
+**PATH SUMMARY.** One button now answers what a whole queued path gets you, not
+just when it finishes. Nothing about the arithmetic, stored plans, or security
+surface changed.
+
 ### Added
 
 - A **summary** toggle after Focus in the nav row. It opens a compact block

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Education Scheduler
 // @namespace    https://github.com/DaftVino/torn-education-scheduler
-// @version      1.2.0
+// @version      1.3.0
 // @description  TORN PDA COMPATIBLE. Plan Torn education with safe prerequisite queues, focus ordering, exact dates, degree/booster forecasts, perks, sharing, local saves, and diagnostics.
 // @author       DaftVino
 // @license      MIT
@@ -28,7 +28,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '1.2.0';
+  const SCRIPT_VERSION = '1.3.0';
   const EDU_ENDPOINT = '/page.php?sid=educationInitData';
   const FETCH_TIMEOUT_MS = 15000;
   const STORAGE_KEY = 'tes:plan';
