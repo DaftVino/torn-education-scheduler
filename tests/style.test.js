@@ -28,7 +28,7 @@ test('the token block declares every colour, type, spacing and focus token', () 
   for (const name of ['--tm-bg', '--tm-border-2', '--tm-text', '--tm-muted', '--tm-meta',
     '--tm-good-text', '--tm-bad-text', '--tes-text', '--tes-text-sm',
     '--tm-accent-text',
-    '--tes-gap', '--tes-gap-lg', '--tes-focus-ring']) {
+    '--tes-gap', '--tes-gap-lg', '--tes-focus-ring', '--tes-ink-on-light']) {
     assert.ok(block.includes(name), `missing token ${name}`);
   }
 });
@@ -261,3 +261,21 @@ test('every -text token clears WCAG AA against the panel background', () => {
 // background or border, the ratio() helper above is what that token's
 // contrast assertion should use — this comment is the reasoning that keeps
 // it from being reintroduced for the test's sake alone.
+
+test('the summary toggle is the one inverted control, with a named dark ink', () => {
+  const text = css();
+  const block = tokenBlock(text);
+  const ink = /--tes-ink-on-light:\s*(#[0-9a-fA-F]{6})/.exec(block);
+  assert.ok(ink, 'the inverted control needs its own ink token');
+  const white = /--tm-text:\s*(#[0-9a-fA-F]{6})/.exec(block)[1];
+  const green = /--tm-good-text:\s*(#[0-9a-fA-F]{6})/.exec(block)[1];
+  assert.ok(ratio(ink[1], white) >= 4.5, 'closed summary toggle fails AA');
+  assert.ok(ratio(ink[1], green) >= 4.5, 'open summary toggle fails AA');
+  assert.match(text, /\.tes-path-summary-toggle\s*\{[^}]*background:\s*var\(--tm-text\)[^}]*color:\s*var\(--tes-ink-on-light\)/);
+  assert.match(text, /\.tes-path-summary-open\s*\{[^}]*background:\s*var\(--tm-good-text\)/);
+  assert.match(text, /\.tes-path-summary-toggle:disabled\s*\{[^}]*background:\s*var\(--tm-hover\)[^}]*color:\s*var\(--tm-muted\)/);
+});
+
+test('the summary block wraps long bonus lines inside the panel', () => {
+  assert.match(css(), /\.tes-path-summary\s*\{[^}]*min-width:\s*0[^}]*overflow-wrap:\s*anywhere/);
+});

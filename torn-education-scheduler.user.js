@@ -2951,6 +2951,10 @@
       // used as text. The measured -text variants remain the only green/red
       // text colours because they clear AA against the panel background.
       '  --tm-good-bg: #2a6b3a; --tm-good-text: #7ee081; --tm-bad-text: #ff8080; --tm-accent-text: #6ea3d0;',
+      // The one dark ink in the panel, for the one inverted control. A
+      // background token must never be used as text (style test), so the
+      // summary toggle gets an ink named for what it is.
+      '  --tes-ink-on-light: #1f1f1f;',
       '  --tes-text-sm: 12px; --tes-text: 14px; --tes-text-lg: 1.25em;',
       '  --tes-gap-xs: 4px; --tes-gap-sm: 6px; --tes-gap: 8px; --tes-gap-lg: 14px;',
       '  --tes-focus-ring: 2px solid var(--tm-good-text);',
@@ -2971,6 +2975,14 @@
       '#tes-panel .tes-header-toggle { font-weight: normal; }',
       '#tes-panel .tes-nav { display: flex; gap: 6px; margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-nav .tes-settings { margin-left: auto; }',
+      '#tes-panel .tes-path-summary-toggle { background: var(--tm-text); color: var(--tes-ink-on-light); border-color: var(--tm-text); }',
+      '#tes-panel .tes-path-summary-toggle.tes-path-summary-open { background: var(--tm-good-text); border-color: var(--tm-good-text); }',
+      '#tes-panel .tes-path-summary-toggle:disabled { background: var(--tm-hover); color: var(--tm-muted); border-color: var(--tm-border-2); cursor: not-allowed; }',
+      '#tes-panel .tes-path-summary { min-width: 0; overflow-wrap: anywhere; padding-bottom: var(--tes-gap);',
+      '  margin-bottom: var(--tes-gap); border-bottom: 1px solid var(--tm-border-2); }',
+      '#tes-panel .tes-path-summary-headline { font-weight: bold; }',
+      '#tes-panel .tes-path-summary-line { color: var(--tm-meta); font-size: var(--tes-text-sm); }',
+      '#tes-panel .tes-path-summary-line summary { cursor: pointer; }',
       '#tes-panel .tes-reset-armed { border-color: var(--tm-bad-text); color: var(--tm-bad-text); }',
       '#tes-panel .tes-finish { font-size: var(--tes-text-lg); font-weight: bold; color: var(--tm-good-text); margin-bottom: var(--tes-gap); }',
       '#tes-panel .tes-save-error { color: var(--tm-bad-text); font-weight: bold; margin-bottom: var(--tes-gap); }',
@@ -3233,6 +3245,27 @@
           nav.appendChild(btn);
         }
 
+        // Not a view target: it opens a block on Schedule rather than going
+        // anywhere, so it is built here rather than through navButton's
+        // onViewChange wiring. Disabled, never absent, so the row does not
+        // reflow as the queue gains and loses an honest finish date.
+        const summary = doc.createElement('button');
+        summary.className = model.summaryOpen
+          ? 'tes-path-summary-toggle tes-path-summary-open'
+          : 'tes-path-summary-toggle';
+        summary.textContent = 'summary';
+        summary.setAttribute('aria-pressed', model.summaryOpen ? 'true' : 'false');
+        if (!model.summaryAvailable) {
+          summary.disabled = true;
+          summary.title = model.summaryReason || '';
+        }
+        if (summary.addEventListener) {
+          summary.addEventListener('click', function () {
+            if (summary.disabled) return;
+            if (handlers.onSummaryToggle) handlers.onSummaryToggle();
+          });
+        }
+        nav.appendChild(summary);
         // Settings is a fixed landmark, not a fourth toggle target: it
         // renders on every view, identically, always enabled — a landmark
         // that greys out or moves when you land on it is not a landmark.
@@ -3865,6 +3898,33 @@
 
     const overview = doc.createElement('div');
     overview.className = 'tes-overview tes-schedule-overview';
+    // Above the finish line, inside the same outline: the summary answers
+    // "what does this path get me" next to the line that answers "when".
+    // A long category is a native disclosure: opening it fires no handler,
+    // so it cannot close the summary it sits in.
+    if (model.summaryOpen && model.pathSummary) {
+      const s = model.pathSummary;
+      const block = doc.createElement('div');
+      block.className = 'tes-path-summary';
+      const line = function (parent, tag, cls, text) {
+        const el = doc.createElement(tag);
+        if (cls) el.className = cls;
+        if (text != null) el.textContent = text;
+        parent.appendChild(el);
+        return el;
+      };
+      line(block, 'div', 'tes-path-summary-headline', s.headline);
+      line(block, 'div', 'tes-path-summary-finish', s.finish);
+      if (s.workingStats) line(block, 'div', 'tes-path-summary-line', s.workingStats);
+      for (const c of s.categories) {
+        if (!c.fullText) { line(block, 'div', 'tes-path-summary-line', c.text); continue; }
+        const more = line(block, 'details', 'tes-path-summary-line', null);
+        line(more, 'summary', null, c.text);
+        line(more, 'div', 'tes-path-summary-full', c.fullText);
+      }
+      if (s.healthNote) line(block, 'div', 'tes-note tes-path-summary-note', s.healthNote);
+      overview.appendChild(block);
+    }
 
     // The finish date is the number this whole tool exists to produce, so
     // it gets its own prominent line rather than sitting mid-paragraph in
