@@ -8,7 +8,7 @@
   },
   "files": {
     ".claude/orient-hook.mjs": {
-      "digest": "sha256:f737c68c211837818fbdf3a41f41bd7a7df1de396c536258a26379f82d61580c",
+      "digest": "sha256:27f00f369cc26d5f8649e852f636fc6796f277452cd7a58332a5bd37ec75deea",
       "layer": "base",
       "mode": "copied"
     },
@@ -43,12 +43,12 @@
       "mode": "copied"
     },
     ".github/ISSUE_TEMPLATE/bug-report.yml": {
-      "digest": "sha256:0d83ba654fc3b8c33e91a5f81d0028d9942b7143fd5f1da98d8c9e77b6c3bc92",
+      "digest": "sha256:96238be58a7dc740ac22492f365453efd833639cd6863339cdf7dbcc51f8335e",
       "layer": "base",
       "mode": "copied"
     },
     ".github/ISSUE_TEMPLATE/feature-request.yml": {
-      "digest": "sha256:f4f04872f58b20f99f445937225afdc103262ebc94efa95fcb33fef71777e30a",
+      "digest": "sha256:439c31e8a0a0b01fa10037c0bbb2fa7b05e55f8dbd60deb85adfd972dded1141",
       "layer": "base",
       "mode": "copied"
     },
@@ -58,7 +58,7 @@
       "mode": "copied"
     },
     ".github/workflows/ci.yml": {
-      "digest": "sha256:9de4cdc19ccbfcd7d0f926e0e50acc378d5e606baed7ea0e1deffafd41aadf67",
+      "digest": "sha256:531d12f59c96799376f6856353712fdc33dc522a6c3a1b7f0a9aa03cdee8916d",
       "layer": "base",
       "mode": "copied"
     },
@@ -83,7 +83,7 @@
       "mode": "copied"
     },
     "docs/quick-ref-workflow.md": {
-      "digest": "sha256:00027a6c8480eca20d994ccf6584bf3a276eb669065f1a94137eee22140e9a77",
+      "digest": "sha256:80954db5e0462754fb498e200c6d4a7550ae8f8a0a887153c91eedefc6ad0596",
       "layer": "base",
       "mode": "copied"
     },
@@ -94,6 +94,11 @@
     },
     "README.md": {
       "digest": "sha256:4408946405efa3d39ed14c7e52e8383673ba4d76b533338563f3922abf3a336d",
+      "layer": "base",
+      "mode": "copied"
+    },
+    "scripts/resolve-node-version.mjs": {
+      "digest": "sha256:d625a099bf1af63b5b91d5f3faf02078fec0721f499f04f636161267551ce31f",
       "layer": "base",
       "mode": "copied"
     }
