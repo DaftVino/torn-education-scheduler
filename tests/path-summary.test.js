@@ -118,3 +118,119 @@ test('hostile input degrades to an empty result and never throws', () => {
   assert.deepStrictEqual(plain(x.pathGains('34', data.courses)), empty);
   assert.deepStrictEqual(plain(x.pathGains([999999], data.courses)), empty);
 });
+
+const NOW = 1767000000;
+function modelFor(x, data, queue, extra) {
+  return x.buildPanelModel(Object.assign({
+    fetchResult: { ok: true, data: data },
+    plan: { queue: queue, collapsed: false },
+    now: NOW,
+    settings: {},
+  }, extra || {}));
+}
+
+test('pathSummaryModel formats every line exactly, with overflow kept whole', () => {
+  const { x } = load();
+  const s = x.pathSummaryModel({
+    courseCount: 23, degreeCount: 2,
+    workingStats: [{ stat: 'intelligence', amount: 8080 }, { stat: 'endurance', amount: 3280 }],
+    categories: [
+      { category: 'Passive Stat Bonus', gains: [{ selection: 'Strength', unit: 'percent', amount: 5 }] },
+      { category: 'Combat Bonuses', gains: [
+        { selection: 'A', unit: 'percent', amount: 5 },
+        { selection: 'B', unit: 'percent', amount: 0.1 + 0.2 },
+        { selection: 'C', unit: 'flat', amount: 3 },
+        { selection: 'D', unit: 'flat', amount: 1 },
+        { selection: 'E', unit: 'count', amount: 1 },
+        { selection: 'F', unit: 'count', amount: 1 },
+      ] },
+    ],
+    unmatched: 1,
+  }, { totalLabel: '87 days 4 hrs', finishLabel: '2027-01-04 · 13:00 TCT' });
+  assert.strictEqual(s.headline, '23 courses · 2 degrees · 87 days 4 hrs queued');
+  assert.strictEqual(s.finish, 'Finishes 2027-01-04 · 13:00 TCT');
+  assert.strictEqual(s.workingStats, 'Working stats: +8,080 intelligence · +3,280 endurance');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s.categories)), [
+    { text: 'Passive Stat Bonus: Strength +5%', fullText: null },
+    { text: 'Combat Bonuses: A +5% · B +0.3% · C +3 · D +1 · +2 more',
+      fullText: 'Combat Bonuses: A +5% · B +0.3% · C +3 · D +1 · E · F' },
+  ]);
+  assert.match(s.healthNote, /not counted/);
+});
+
+test('pathSummaryModel singularises, drops a zero degree count, and omits empty lines', () => {
+  const { x } = load();
+  const s = x.pathSummaryModel({ courseCount: 1, degreeCount: 0, workingStats: [], categories: [], unmatched: 0 },
+    { totalLabel: '7 days', finishLabel: 'F' });
+  assert.strictEqual(s.headline, '1 course · 7 days queued');
+  assert.strictEqual(s.finish, 'Finishes F');
+  assert.strictEqual(s.workingStats, null);
+  assert.strictEqual(s.categories.length, 0);
+  assert.strictEqual(s.healthNote, null);
+});
+
+test('the summary never carries a Books floor date (spec D9)', () => {
+  const { x, data, all } = load();
+  const m = modelFor(x, data, all.slice(0, 5), { summaryOpen: true });
+  assert.ok(m.consumables && m.consumables.floorFinishLabel, 'the fixture path has a floor to leak');
+  assert.ok(!JSON.stringify(m.pathSummary).includes(m.consumables.floorFinishLabel));
+  assert.ok(!/floor/i.test(JSON.stringify(m.pathSummary)));
+});
+
+test('summaryAvailable is exactly the finish-date gate, with a reason per cause', () => {
+  const { x, data, all } = load();
+  const ok = modelFor(x, data, all.slice(0, 5));
+  assert.ok(ok.finishLabel);
+  assert.strictEqual(ok.summaryAvailable, true);
+  assert.strictEqual(ok.summaryReason, null);
+
+  const empty = modelFor(x, data, [], { summaryOpen: true });
+  assert.strictEqual(empty.summaryAvailable, false);
+  assert.strictEqual(empty.summaryReason, x.PATH_SUMMARY_REASONS.empty);
+  assert.strictEqual(empty.pathSummary, null);
+
+  // A bachelor with none of its prerequisites queued: problems, so no date.
+  const bachelor = all.find((id) => data.courses.get(id).tier === 3);
+  const broken = modelFor(x, data, [bachelor], { summaryOpen: true });
+  assert.ok(broken.problems.length > 0);
+  assert.strictEqual(broken.finishLabel, null);
+  assert.strictEqual(broken.summaryAvailable, false);
+  assert.strictEqual(broken.summaryReason, x.PATH_SUMMARY_REASONS.prerequisites);
+  assert.strictEqual(broken.summaryOpen, false);
+  assert.strictEqual(broken.pathSummary, null);
+});
+
+test('pathSummary is built only while open, and agrees with the finish line', () => {
+  const { x, data, all } = load();
+  const closed = modelFor(x, data, all.slice(0, 5));
+  assert.strictEqual(closed.summaryOpen, false);
+  assert.strictEqual(closed.pathSummary, null, 'a closed summary must cost nothing per draw');
+
+  const open = modelFor(x, data, all.slice(0, 5), { summaryOpen: true });
+  assert.strictEqual(open.summaryOpen, true);
+  assert.strictEqual(open.pathSummary.finish, `Finishes ${open.finishLabel}`);
+  assert.ok(open.pathSummary.headline.endsWith(`${open.totalLabel} queued`));
+});
+
+test('failure, error and loading models carry no summary, and say why', () => {
+  const { x } = load();
+  const failed = x.buildPanelModel({ fetchResult: { ok: false, reason: 'network', detail: 'x' },
+    plan: { queue: [], collapsed: false }, now: NOW, summaryOpen: true });
+  for (const m of [failed, x.errorModel('boom'), x.loadingModel()]) {
+    assert.strictEqual(m.summaryAvailable, false);
+    assert.strictEqual(m.summaryOpen, false);
+    assert.strictEqual(m.pathSummary, null);
+  }
+  assert.strictEqual(failed.summaryReason, x.PATH_SUMMARY_REASONS.noData);
+});
+
+test('a queue delivering no taxonomy bonus still has headline, finish and working stats', () => {
+  const { x, data, all } = load();
+  const bare = all.find((id) => (data.courses.get(id).learningOutcomes || []).length === 0
+    && data.courses.get(id).parentId == null);
+  assert.ok(bare, 'fixture has a root course with no learning outcomes');
+  const s = modelFor(x, data, [bare], { summaryOpen: true }).pathSummary;
+  assert.ok(s.headline && s.finish && s.workingStats);
+  assert.strictEqual(s.categories.length, 0);
+  assert.strictEqual(s.healthNote, null);
+});

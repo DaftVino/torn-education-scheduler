@@ -2365,6 +2365,56 @@
       : `${totals.remaining} course${totals.remaining === 1 ? '' : 's'} left, no fixed total`;
   }
 
+  // Why the summary toggle is disabled, one string per cause, so a failed
+  // fetch is never described as a problem with the player's queue.
+  const PATH_SUMMARY_REASONS = Object.freeze({
+    noData: 'No course data loaded, so there is no path to summarise.',
+    empty: 'Queue a course to see a path summary.',
+    prerequisites: 'This queue has unmet prerequisites, so it has no finish date to summarise.',
+  });
+
+  // The summary toggle's text, built here so the renderer only places strings.
+  // Every figure is one (category, selection) or one stat; nothing is summed
+  // across them, for the reason pathGains gives. No Books floor date: a floor
+  // without its Book count and cost is a number nobody can act on, and the
+  // booster block directly below already shows it with both.
+  const PATH_SUMMARY_ITEMS_PER_LINE = 4;
+  function pathSummaryModel(gains, labels) {
+    const num = function (n) { return Number(n.toFixed(2)).toLocaleString('en-US'); };
+    const plural = function (n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; };
+    const head = [plural(gains.courseCount, 'course')];
+    if (gains.degreeCount > 0) head.push(plural(gains.degreeCount, 'degree'));
+    // "queued": the finish date also waits for the active course, so a bare
+    // duration beside it would read as wrong.
+    head.push(`${labels.totalLabel} queued`);
+
+    const workingStats = gains.workingStats.length === 0 ? null
+      : 'Working stats: ' + gains.workingStats.map(function (w) { return `+${num(w.amount)} ${w.stat}`; }).join(' · ');
+
+    const categories = gains.categories.map(function (c) {
+      const items = c.gains.map(function (g) {
+        if (g.unit === 'percent') return `${g.selection} +${num(g.amount)}%`;
+        if (g.unit === 'flat') return `${g.selection} +${num(g.amount)}`;
+        return g.selection;
+      });
+      if (items.length <= PATH_SUMMARY_ITEMS_PER_LINE) {
+        return { text: `${c.category}: ${items.join(' · ')}`, fullText: null };
+      }
+      const shown = items.slice(0, PATH_SUMMARY_ITEMS_PER_LINE);
+      return {
+        text: `${c.category}: ${shown.join(' · ')} · +${items.length - shown.length} more`,
+        fullText: `${c.category}: ${items.join(' · ')}`,
+      };
+    });
+
+    const healthNote = gains.unmatched > 0
+      ? "Some of these courses' bonuses could not be matched to Torn's current text and are not counted."
+      : null;
+
+    return { headline: head.join(' · '), finish: `Finishes ${labels.finishLabel}`,
+      workingStats: workingStats, categories: categories, healthNote: healthNote };
+  }
+
   function buildPanelModel(state) {
     // Computed once, here, so nothing downstream depends on the caller having
     // normalised: panelSettings runs normaliseSettings, which turns anything —
@@ -2389,6 +2439,7 @@
       // No payload means no total to reduce, so there is no floor date to
       // quote — and a floor date is the one thing that must never be guessed.
       consumables: null,
+      summaryAvailable: false, summaryReason: PATH_SUMMARY_REASONS.noData, summaryOpen: false, pathSummary: null,
       orderModes: ORDER_MODE_LABELS,
       // Null until the player asks for it. An acquisition failure is exactly
       // when the report is most wanted — and it is genuinely reachable from
@@ -2691,6 +2742,19 @@
       };
     });
 
+    // The finish date's own gate, so the button's disabled state and the
+    // finish line cannot disagree about whether this queue is a plan. The
+    // summary itself is built only while open: pathGains costs about 7 ms on
+    // a full queue, and every click redraws.
+    const summaryAvailable = queue.length > 0 && problems.length === 0;
+    const summaryOpen = state.summaryOpen === true && summaryAvailable;
+    const pathSummary = summaryOpen
+      ? pathSummaryModel(pathGains(queue, data.courses), {
+          totalLabel: formatDuration(result.totalSeconds),
+          finishLabel: `${formatDate(result.finishesAt)} · ${formatTime(result.finishesAt)} TCT`,
+        })
+      : null;
+
     return {
       status: 'ok',
       message: null,
@@ -2722,6 +2786,13 @@
       settingsSaveError: state.settingsSaveFailed === true,
       perkInference: perkInference,
       consumables: consumablesModel,
+      // Closure state in init(), never stored. A summary cannot be open with
+      // nothing to show, even if a queue edit removed it between draws.
+      summaryAvailable: summaryAvailable,
+      summaryReason: summaryAvailable ? null
+        : (queue.length === 0 ? PATH_SUMMARY_REASONS.empty : PATH_SUMMARY_REASONS.prerequisites),
+      summaryOpen: summaryOpen,
+      pathSummary: pathSummary,
       orderModes: ORDER_MODE_LABELS,
       debugReport: state.debugReport || null,
       grid: grid,
@@ -4231,6 +4302,7 @@
       focusGroups: null, focuses: null, focusHealth: null, focusOpenCategories: [],
       focusOpenCompletedCategories: [],
       consumables: null,
+      summaryAvailable: false, summaryReason: PATH_SUMMARY_REASONS.noData, summaryOpen: false, pathSummary: null,
       shareText: '', importError: null,
     };
   }
